@@ -31,6 +31,11 @@ jobs:
       - name: Build web
         run: npx expo export --platform web
 
+      - name: Fix asset paths for GitHub Pages
+        run: |
+          sed -i 's|src="/_expo/|src="/SmartBrew/_expo/|g' dist/index.html
+          sed -i 's|href="/favicon.ico"|href="/SmartBrew/favicon.ico"|g' dist/index.html
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
