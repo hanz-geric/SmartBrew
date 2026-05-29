@@ -9,15 +9,10 @@ import {
 import { deleteApp, initializeApp } from 'firebase/app';
 import { getDoc, setDoc } from 'firebase/firestore';
 import { auth, firebaseConfig } from './config';
-import { userDoc, loginAttemptDoc } from './collections';
+import { userDoc } from './collections';
 import { AuthUser, UserRole } from '../types';
 
-// Users log in with a username; Firebase Auth requires an email.
-// We use a fake internal domain so usernames work as-is.
 const DOMAIN = '@smartbrew.app';
-
-const LOGIN_MAX_ATTEMPTS = 5;
-const LOGIN_LOCKOUT_MS   = 15 * 60 * 1000;
 
 export function usernameToEmail(username: string): string {
   return `${username.trim().toLowerCase()}${DOMAIN}`;
@@ -42,69 +37,16 @@ function mapFirebaseError(code: string): string {
   }
 }
 
-async function checkLoginLockout(username: string): Promise<void> {
-  let snap;
-  try {
-    snap = await getDoc(loginAttemptDoc(username));
-  } catch {
-    return; // Firestore unavailable — fail open so POS can still operate
-  }
-  if (!snap.exists()) return;
-  const { locked_until } = snap.data() as { locked_until: number | null };
-  if (locked_until && locked_until > Date.now()) {
-    const minutes = Math.ceil((locked_until - Date.now()) / 60_000);
-    throw new Error(`Too many failed attempts. Try again in ${minutes} minute(s).`);
-  }
-}
-
-async function recordFailedLoginAttempt(username: string): Promise<void> {
-  try {
-    const ref  = loginAttemptDoc(username);
-    const snap = await getDoc(ref);
-    const data = snap.exists()
-      ? (snap.data() as { count: number; locked_until: number | null })
-      : { count: 0, locked_until: null };
-    const newCount    = data.count + 1;
-    const lockedUntil = newCount >= LOGIN_MAX_ATTEMPTS
-      ? Date.now() + LOGIN_LOCKOUT_MS
-      : data.locked_until;
-    await setDoc(ref, { count: newCount, locked_until: lockedUntil });
-  } catch {
-    // Non-critical — swallow Firestore failures
-  }
-}
-
-async function resetLoginAttempts(username: string): Promise<void> {
-  try {
-    await setDoc(loginAttemptDoc(username), { count: 0, locked_until: null });
-  } catch {
-    // Non-critical — swallow Firestore failures
-  }
-}
-
 export async function loginWithUsername(
   username: string,
   password: string,
 ): Promise<AuthUser> {
-  const key   = username.trim().toLowerCase();
-  const email = usernameToEmail(key);
-
-  await checkLoginLockout(key);
-
+  const email = usernameToEmail(username.trim().toLowerCase());
   try {
     const credential = await signInWithEmailAndPassword(auth, email, password);
-    await resetLoginAttempts(key);
     return await buildAuthUser(credential.user);
   } catch (err: unknown) {
     const code = (err as { code?: string }).code ?? '';
-    if (
-      code === 'auth/wrong-password' ||
-      code === 'auth/invalid-credential' ||
-      code === 'auth/user-not-found'
-    ) {
-      await recordFailedLoginAttempt(key);
-      await checkLoginLockout(key); // throws lockout message if now locked
-    }
     console.error('[Firebase Auth] error code:', code, err);
     throw new Error(mapFirebaseError(code));
   }

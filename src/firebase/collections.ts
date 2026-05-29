@@ -19,4 +19,3 @@ export const orderDoc         = (id: string)       => doc(db, 'orders', id);
 export const sessionDoc       = (id: string)       => doc(db, 'cash_sessions', id);
 export const stockDoc         = (id: string)       => doc(db, 'stock_items', id);
 export const settingsDoc      = ()                 => doc(db, 'settings', 'config');
-export const loginAttemptDoc  = (username: string) => doc(db, 'login_attempts', username);

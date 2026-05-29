@@ -201,11 +201,14 @@ interface DiscountAuthProps {
   onSuccess: (nonce: string) => void;
 }
 
+const MAX_AUTH_ATTEMPTS = 3;
+
 function DiscountAuthModal({ onClose, onSuccess }: DiscountAuthProps) {
   const [username,   setUsername]   = useState('');
   const [password,   setPassword]   = useState('');
   const [verifying,  setVerifying]  = useState(false);
   const [authError,  setAuthError]  = useState('');
+  const [attempts,   setAttempts]   = useState(0);
 
   async function handleVerify() {
     setAuthError('');
@@ -218,11 +221,20 @@ function DiscountAuthModal({ onClose, onSuccess }: DiscountAuthProps) {
       const nonce = await verifyManagerAuth(username.trim(), password);
       onSuccess(nonce);
     } catch (e: unknown) {
-      setAuthError((e as Error).message || 'Verification failed.');
+      const next = attempts + 1;
+      setAttempts(next);
+      if (next >= MAX_AUTH_ATTEMPTS) {
+        onClose();
+        return;
+      }
+      setAuthError(`${(e as Error).message || 'Verification failed.'} (${next}/${MAX_AUTH_ATTEMPTS})`);
+      setPassword('');
     } finally {
       setVerifying(false);
     }
   }
+
+  const attemptsLeft = MAX_AUTH_ATTEMPTS - attempts;
 
   return (
     <Modal transparent animationType="fade" onRequestClose={onClose}>
@@ -260,6 +272,9 @@ function DiscountAuthModal({ onClose, onSuccess }: DiscountAuthProps) {
               secureTextEntry
             />
             {!!authError && <Text style={da.error}>{authError}</Text>}
+            {attempts > 0 && attemptsLeft > 0 && (
+              <Text style={da.attemptsLeft}>{attemptsLeft} attempt{attemptsLeft !== 1 ? 's' : ''} remaining</Text>
+            )}
           </View>
 
           <View style={da.footer}>
@@ -296,6 +311,7 @@ function CashierSwitchModal({ onClose, onSuccess }: CashierSwitchProps) {
   const [password,  setPassword]  = useState('');
   const [verifying, setVerifying] = useState(false);
   const [authError, setAuthError] = useState('');
+  const [attempts,  setAttempts]  = useState(0);
 
   async function handleSwitch() {
     setAuthError('');
@@ -308,11 +324,20 @@ function CashierSwitchModal({ onClose, onSuccess }: CashierSwitchProps) {
       const newUser = await switchCashierAuth(username.trim(), password);
       onSuccess(newUser);
     } catch (e: unknown) {
-      setAuthError((e as Error).message || 'Verification failed.');
+      const next = attempts + 1;
+      setAttempts(next);
+      if (next >= MAX_AUTH_ATTEMPTS) {
+        onClose();
+        return;
+      }
+      setAuthError(`${(e as Error).message || 'Verification failed.'} (${next}/${MAX_AUTH_ATTEMPTS})`);
+      setPassword('');
     } finally {
       setVerifying(false);
     }
   }
+
+  const attemptsLeft = MAX_AUTH_ATTEMPTS - attempts;
 
   return (
     <Modal transparent animationType="fade" onRequestClose={onClose}>
@@ -350,6 +375,9 @@ function CashierSwitchModal({ onClose, onSuccess }: CashierSwitchProps) {
               secureTextEntry
             />
             {!!authError && <Text style={da.error}>{authError}</Text>}
+            {attempts > 0 && attemptsLeft > 0 && (
+              <Text style={da.attemptsLeft}>{attemptsLeft} attempt{attemptsLeft !== 1 ? 's' : ''} remaining</Text>
+            )}
           </View>
 
           <View style={da.footer}>
@@ -1560,6 +1588,11 @@ const da = StyleSheet.create({
   error: {
     fontSize: FontSize.sm,
     color: Colors.danger,
+    marginTop: Spacing.xs,
+  },
+  attemptsLeft: {
+    fontSize: FontSize.xs,
+    color: Colors.gray500,
     marginTop: Spacing.xs,
   },
   footer: {
