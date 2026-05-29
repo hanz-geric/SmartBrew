@@ -1,15 +1,14 @@
-import { deleteObject, getDownloadURL, ref, uploadString } from 'firebase/storage';
-import * as FileSystem from 'expo-file-system/legacy';
+import { deleteObject, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { storage } from './config';
 
 export async function uploadProductImage(localUri: string, productKey: string): Promise<string> {
-  // expo-image-picker returns content:// URIs on Android which fetch() cannot read.
-  // Use expo-file-system to read the file as base64, then upload via uploadString.
-  const base64 = await FileSystem.readAsStringAsync(localUri, {
-    encoding: FileSystem.EncodingType.Base64,
-  });
+  // fetch() in Expo returns a native Blob (backed by the file on disk) rather than
+  // an in-memory Blob, so uploadBytes can use it without hitting React Native's
+  // "Creating blobs from ArrayBuffer is not supported" limitation.
+  const response = await fetch(localUri);
+  const blob = await response.blob();
   const storageRef = ref(storage, `product-images/${productKey}`);
-  await uploadString(storageRef, base64, 'base64', { contentType: 'image/jpeg' });
+  await uploadBytes(storageRef, blob, { contentType: 'image/jpeg' });
   return getDownloadURL(storageRef);
 }
 
