@@ -130,6 +130,10 @@ function SessionDrillModal({
   const productStats = buildProductStats(orders);
   const statTotal    = productStats.reduce((s, p) => s + p.revenue, 0);
 
+  // Detect cashier switches: unique cashier names across all orders
+  const cashierNames = [...new Set(orders.map((o) => o.cashier_name).filter(Boolean))];
+  const hadSwitches  = cashierNames.length > 1;
+
   return (
     <Modal transparent animationType="fade" onRequestClose={onClose}>
       <View style={d.overlay}>
@@ -152,6 +156,7 @@ function SessionDrillModal({
               <Chip label={`₱${revenue.toFixed(2)} revenue`} green />
               <Chip label={`₱${cashCollected.toFixed(2)} cash`} />
               {voidedCount > 0 && <Chip label={`${voidedCount} voided`} danger />}
+              {hadSwitches && <Chip label={`⇄ ${cashierNames.length} cashiers`} warning />}
             </View>
           )}
 
@@ -211,29 +216,43 @@ function SessionDrillModal({
               {orders.length === 0 ? (
                 <Text style={d.empty}>No orders in this session.</Text>
               ) : (
-                orders.map((order) => {
-                  const isVoided = order.status === 'cancelled';
+                orders.map((order, idx) => {
+                  const isVoided   = order.status === 'cancelled';
+                  const prevOrder  = idx > 0 ? orders[idx - 1] : null;
+                  const didSwitch  = hadSwitches && prevOrder && prevOrder.cashier_name !== order.cashier_name;
                   return (
-                    <View key={order.id} style={[d.orderRow, isVoided && d.orderRowVoided]}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[d.orderNum, isVoided && d.orderNumVoided]}>
-                          #{order.order_number}
-                        </Text>
-                        <Text style={d.orderMeta}>
-                          {fmtTime(order.created_at)}
-                          {' · '}{TYPE_LABELS[order.order_type] ?? order.order_type}
-                          {' · '}{PAY_LABELS[order.payment_method] ?? order.payment_method}
-                        </Text>
-                      </View>
-                      <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                        <Text style={[d.orderTotal, isVoided && d.orderTotalVoided]}>
-                          ₱{order.total_amount.toFixed(2)}
-                        </Text>
-                        {isVoided && (
-                          <View style={d.voidedBadge}>
-                            <Text style={d.voidedBadgeText}>Voided</Text>
-                          </View>
-                        )}
+                    <View key={order.id}>
+                      {(idx === 0 && hadSwitches) && (
+                        <View style={d.switchBanner}>
+                          <Text style={d.switchBannerText}>⇄ {order.cashier_name}</Text>
+                        </View>
+                      )}
+                      {didSwitch && (
+                        <View style={d.switchBanner}>
+                          <Text style={d.switchBannerText}>⇄ Switched to {order.cashier_name}</Text>
+                        </View>
+                      )}
+                      <View style={[d.orderRow, isVoided && d.orderRowVoided]}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[d.orderNum, isVoided && d.orderNumVoided]}>
+                            #{order.order_number}
+                          </Text>
+                          <Text style={d.orderMeta}>
+                            {fmtTime(order.created_at)}
+                            {' · '}{TYPE_LABELS[order.order_type] ?? order.order_type}
+                            {' · '}{PAY_LABELS[order.payment_method] ?? order.payment_method}
+                          </Text>
+                        </View>
+                        <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                          <Text style={[d.orderTotal, isVoided && d.orderTotalVoided]}>
+                            ₱{order.total_amount.toFixed(2)}
+                          </Text>
+                          {isVoided && (
+                            <View style={d.voidedBadge}>
+                              <Text style={d.voidedBadgeText}>Voided</Text>
+                            </View>
+                          )}
+                        </View>
                       </View>
                     </View>
                   );
@@ -247,9 +266,9 @@ function SessionDrillModal({
   );
 }
 
-function Chip({ label, green, danger }: { label: string; green?: boolean; danger?: boolean }) {
-  const bg   = danger ? Colors.dangerBg  : green ? Colors.green50   : Colors.gray100;
-  const text = danger ? Colors.danger    : green ? Colors.green700  : Colors.gray600;
+function Chip({ label, green, danger, warning }: { label: string; green?: boolean; danger?: boolean; warning?: boolean }) {
+  const bg   = danger ? Colors.dangerBg  : green ? Colors.green50  : warning ? Colors.warningBg : Colors.gray100;
+  const text = danger ? Colors.danger    : green ? Colors.green700 : warning ? Colors.warning   : Colors.gray600;
   return (
     <View style={[d.chip, { backgroundColor: bg }]}>
       <Text style={[d.chipText, { color: text }]}>{label}</Text>
@@ -691,4 +710,14 @@ const d = StyleSheet.create({
     backgroundColor: Colors.dangerBg,
   },
   voidedBadgeText: { fontSize: FontSize.xs, color: Colors.danger, fontWeight: FontWeight.bold },
+
+  switchBanner: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: Spacing.lg, paddingVertical: Spacing.xs,
+    backgroundColor: Colors.warningBg,
+    borderBottomWidth: 1, borderColor: Colors.warning + '44',
+  },
+  switchBannerText: {
+    fontSize: FontSize.xs, fontWeight: FontWeight.bold, color: Colors.warning,
+  },
 });

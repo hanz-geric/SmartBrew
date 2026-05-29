@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AdminStackParamList } from '../../navigation/AdminStack';
@@ -33,6 +33,8 @@ const NAV_ITEMS: { screen: NavScreen; label: string; icon: string; adminOnly?: b
 export default function AdminLayout({ active, children }: Props) {
   const navigation = useNavigation<AdminNav>();
   const user       = useAuthStore((s) => s.user)!;
+  const { width }  = useWindowDimensions();
+  const compact    = width < 900;  // small tablet — collapse sidebar labels
 
   async function handleLogout() {
     await logout();
@@ -41,13 +43,15 @@ export default function AdminLayout({ active, children }: Props) {
   return (
     <View style={s.root}>
       {/* ── Sidebar ── */}
-      <View style={s.sidebar}>
+      <View style={[s.sidebar, compact && s.sidebarCompact]}>
         <View style={s.brand}>
           <Text style={s.brandIcon}>☕</Text>
-          <Text style={s.brandName}>SmartBrew</Text>
-          <Text style={s.brandRole}>
-            {user.role === 'admin' ? 'Admin' : 'Manager'}
-          </Text>
+          {!compact && <Text style={s.brandName}>SmartBrew</Text>}
+          {!compact && (
+            <Text style={s.brandRole}>
+              {user.role === 'admin' ? 'Admin' : 'Manager'}
+            </Text>
+          )}
         </View>
 
         <View style={s.navItems}>
@@ -60,24 +64,26 @@ export default function AdminLayout({ active, children }: Props) {
             return (
               <TouchableOpacity
                 key={screen}
-                style={[s.navItem, isActive && s.navItemActive]}
+                style={[s.navItem, isActive && s.navItemActive, compact && s.navItemCompact]}
                 onPress={() => navigation.navigate(screen)}
                 activeOpacity={0.7}
               >
                 <Text style={s.navIcon}>{icon}</Text>
-                <Text style={[s.navLabel, isActive && s.navLabelActive]}>
-                  {label}
-                </Text>
+                {!compact && (
+                  <Text style={[s.navLabel, isActive && s.navLabelActive]}>
+                    {label}
+                  </Text>
+                )}
               </TouchableOpacity>
             );
           })}
         </View>
 
-        <View style={s.sidebarFooter}>
-          <Text style={s.userName} numberOfLines={1}>{user.full_name}</Text>
-          <Text style={s.userHandle} numberOfLines={1}>@{user.username}</Text>
+        <View style={[s.sidebarFooter, compact && s.sidebarFooterCompact]}>
+          {!compact && <Text style={s.userName} numberOfLines={1}>{user.full_name}</Text>}
+          {!compact && <Text style={s.userHandle} numberOfLines={1}>@{user.username}</Text>}
           <TouchableOpacity style={s.logoutBtn} onPress={handleLogout} activeOpacity={0.8}>
-            <Text style={s.logoutText}>Log out</Text>
+            <Text style={s.logoutText}>{compact ? '⏻' : 'Log out'}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -106,6 +112,9 @@ const s = StyleSheet.create({
     paddingTop: Spacing.xxl,
     paddingBottom: Spacing.xl,
     flexDirection: 'column',
+  },
+  sidebarCompact: {
+    width: 60,
   },
   brand: {
     paddingHorizontal: Spacing.lg,
@@ -144,6 +153,11 @@ const s = StyleSheet.create({
     marginHorizontal: Spacing.sm,
     borderRadius: Radius.md,
   },
+  navItemCompact: {
+    justifyContent: 'center',
+    paddingHorizontal: 0,
+    marginHorizontal: Spacing.xs,
+  },
   navItemActive: {
     backgroundColor: 'rgba(255,255,255,0.15)',
   },
@@ -166,6 +180,10 @@ const s = StyleSheet.create({
     borderTopWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
     gap: Spacing.xs,
+  },
+  sidebarFooterCompact: {
+    paddingHorizontal: Spacing.xs,
+    alignItems: 'center',
   },
   userName: {
     fontSize: FontSize.sm,

@@ -282,55 +282,61 @@ export default function StockScreen() {
         <View style={m.overlay}>
           <View style={m.sheet}>
             <Text style={m.title}>Adjust Stock</Text>
-            {adjustTarget && (
-              <View style={m.itemBox}>
-                <Text style={m.itemName}>{adjustTarget.name}</Text>
-                <Text style={m.itemCurrent}>
-                  Current: {adjustTarget.quantity_on_hand % 1 === 0
-                    ? adjustTarget.quantity_on_hand.toString()
-                    : adjustTarget.quantity_on_hand.toFixed(2)} {adjustTarget.unit}
-                </Text>
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={m.scrollContent}
+            >
+              {adjustTarget && (
+                <View style={m.itemBox}>
+                  <Text style={m.itemName}>{adjustTarget.name}</Text>
+                  <Text style={m.itemCurrent}>
+                    Current: {adjustTarget.quantity_on_hand % 1 === 0
+                      ? adjustTarget.quantity_on_hand.toString()
+                      : adjustTarget.quantity_on_hand.toFixed(2)} {adjustTarget.unit}
+                  </Text>
+                </View>
+              )}
+
+              <Text style={m.label}>Quantity Change</Text>
+              <Text style={m.hint}>Positive to add · Negative to subtract</Text>
+              <TextInput
+                style={m.input}
+                placeholder="e.g. 50 or -10"
+                placeholderTextColor={Colors.gray400}
+                keyboardType="numeric"
+                value={adjustDelta}
+                onChangeText={(t) => { setAdjustDelta(t); setAdjustError(''); }}
+              />
+
+              <Text style={m.label}>Reason</Text>
+              <View style={m.reasons}>
+                {REASONS.map((r) => (
+                  <TouchableOpacity
+                    key={r}
+                    style={[m.reasonBtn, adjustReason === r && m.reasonBtnSel]}
+                    onPress={() => setAdjustReason(r)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[m.reasonDot, adjustReason === r && m.reasonDotSel]} />
+                    <Text style={[m.reasonText, adjustReason === r && m.reasonTextSel]}>{r}</Text>
+                  </TouchableOpacity>
+                ))}
               </View>
-            )}
 
-            <Text style={m.label}>Quantity Change</Text>
-            <Text style={m.hint}>Positive to add · Negative to subtract</Text>
-            <TextInput
-              style={m.input}
-              placeholder="e.g. 50 or -10"
-              placeholderTextColor={Colors.gray400}
-              keyboardType="numeric"
-              value={adjustDelta}
-              onChangeText={(t) => { setAdjustDelta(t); setAdjustError(''); }}
-            />
+              <Text style={m.label}>Notes <Text style={m.optional}>(optional)</Text></Text>
+              <TextInput
+                style={[m.input, m.notesInput]}
+                placeholder="e.g. Received from supplier"
+                placeholderTextColor={Colors.gray400}
+                multiline
+                numberOfLines={2}
+                value={adjustNotes}
+                onChangeText={setAdjustNotes}
+              />
 
-            <Text style={m.label}>Reason</Text>
-            <View style={m.reasons}>
-              {REASONS.map((r) => (
-                <TouchableOpacity
-                  key={r}
-                  style={[m.reasonBtn, adjustReason === r && m.reasonBtnSel]}
-                  onPress={() => setAdjustReason(r)}
-                  activeOpacity={0.7}
-                >
-                  <View style={[m.reasonDot, adjustReason === r && m.reasonDotSel]} />
-                  <Text style={[m.reasonText, adjustReason === r && m.reasonTextSel]}>{r}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <Text style={m.label}>Notes <Text style={m.optional}>(optional)</Text></Text>
-            <TextInput
-              style={[m.input, m.notesInput]}
-              placeholder="e.g. Received from supplier"
-              placeholderTextColor={Colors.gray400}
-              multiline
-              numberOfLines={2}
-              value={adjustNotes}
-              onChangeText={setAdjustNotes}
-            />
-
-            {!!adjustError && <Text style={m.error}>{adjustError}</Text>}
+              {!!adjustError && <Text style={m.error}>{adjustError}</Text>}
+            </ScrollView>
 
             <View style={m.actions}>
               <TouchableOpacity style={m.cancelBtn} onPress={closeAdjust} disabled={adjusting}>
@@ -458,10 +464,11 @@ const m = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center', padding: Spacing.xl,
   },
   sheet: {
-    width: '100%', maxWidth: 420,
+    width: '100%', maxWidth: 420, maxHeight: '88%',
     backgroundColor: Colors.surface, borderRadius: Radius.xl,
     padding: Spacing.xl, gap: Spacing.md, ...Shadow.lg,
   },
+  scrollContent: { gap: Spacing.md },
   title:    { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: Colors.gray900 },
   itemBox:  {
     backgroundColor: Colors.green50, borderRadius: Radius.md,
