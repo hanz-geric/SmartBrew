@@ -8,7 +8,7 @@ import { getRecentSessions, getSessionsInRange, getOrdersBySession } from '../..
 import { CashSession, Order, PaymentMethod } from '../../types';
 import { exportCsv } from '../../utils/csvExport';
 import {
-  Colors, FontSize, FontWeight, Radius, Shadow, Spacing,
+  Colors, FontSize, FontWeight, Radius, Shadow, Spacing, rs,
 } from '../../constants/theme';
 
 // ─── Period helpers ───────────────────────────────────────────────────────────
@@ -87,7 +87,7 @@ function buildProductStats(orders: Order[]): ProductStat[] {
   const map: Record<string, ProductStat> = {};
   for (const order of orders) {
     if (order.status === 'cancelled') continue;
-    for (const item of order.items) {
+    for (const item of (order.items ?? [])) {
       if (!map[item.product_name]) {
         map[item.product_name] = { name: item.product_name, qty: 0, revenue: 0, orderCount: 0 };
       }
@@ -182,6 +182,7 @@ function SessionDrillModal({
               <View style={[d.tableRow, d.tableHeader]}>
                 <Text style={[d.colProduct, d.colHead]}>Product</Text>
                 <Text style={[d.colQty, d.colHead]}>Qty</Text>
+                <Text style={[d.colOrders, d.colHead]}>Orders</Text>
                 <Text style={[d.colRev, d.colHead]}>Revenue</Text>
               </View>
               {productStats.length === 0 ? (
@@ -191,6 +192,7 @@ function SessionDrillModal({
                   <View key={stat.name} style={d.tableRow}>
                     <Text style={d.colProduct} numberOfLines={1}>{stat.name}</Text>
                     <Text style={d.colQty}>{stat.qty}</Text>
+                    <Text style={d.colOrders}>{stat.orderCount}</Text>
                     <Text style={d.colRev}>₱{stat.revenue.toFixed(2)}</Text>
                   </View>
                 ))
@@ -199,6 +201,7 @@ function SessionDrillModal({
                 <View style={[d.tableRow, d.tableFooter]}>
                   <Text style={[d.colProduct, d.footerText]}>Total</Text>
                   <Text style={d.colQty} />
+                  <Text style={d.colOrders} />
                   <Text style={[d.colRev, d.footerText]}>₱{statTotal.toFixed(2)}</Text>
                 </View>
               )}
@@ -666,8 +669,9 @@ const d = StyleSheet.create({
   tableHeader: { backgroundColor: Colors.gray50 },
   tableFooter: { backgroundColor: Colors.green50, borderTopWidth: 1, borderTopColor: Colors.border },
   colProduct:  { flex: 1, fontSize: FontSize.sm, color: Colors.gray800 },
-  colQty:      { width: 50, textAlign: 'right', fontSize: FontSize.sm, color: Colors.gray700 },
-  colRev:      { width: 90, textAlign: 'right', fontSize: FontSize.sm, color: Colors.gray700 },
+  colQty:      { width: rs(44), textAlign: 'right', fontSize: FontSize.sm, color: Colors.gray700 },
+  colOrders:   { width: rs(56), textAlign: 'right', fontSize: FontSize.sm, color: Colors.gray700 },
+  colRev:      { width: rs(90), textAlign: 'right', fontSize: FontSize.sm, color: Colors.gray700 },
   colHead:     { fontWeight: FontWeight.bold, color: Colors.gray500, fontSize: FontSize.xs, textTransform: 'uppercase' },
   footerText:  { fontWeight: FontWeight.bold, color: Colors.green700 },
 

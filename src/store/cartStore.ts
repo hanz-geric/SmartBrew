@@ -11,15 +11,16 @@ interface CartState {
   total: number;
 
   addItem: (
-    productId:    string,
-    name:         string,
-    basePrice:    number,
-    cost:         number,
-    modifiers:    SelectedModifier[],
-    notes?:       string,
+    productId:     string,
+    name:          string,
+    basePrice:     number,
+    cost:          number,
+    modifiers:     SelectedModifier[],
+    notes?:        string,
     trackingMode?: import('../types').TrackingMode,
     stockItemId?:  string | null,
     recipeLines?:  RecipeLine[],
+    needsKitchen?: boolean,
   ) => void;
   updateQuantity: (cartKey: string, quantity: number) => void;
   updateNote: (cartKey: string, note: string) => void;
@@ -41,7 +42,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   items: {},
   total: 0,
 
-  addItem: (productId, name, basePrice, cost, modifiers, notes = '', trackingMode, stockItemId, recipeLines) => {
+  addItem: (productId, name, basePrice, cost, modifiers, notes = '', trackingMode, stockItemId, recipeLines, needsKitchen) => {
     const modifierIds = modifiers.map((m) => m.modifier_id);
     const cartKey = buildCartKey(productId, modifierIds);
     const modifierTotal = modifiers.reduce((s, m) => s + m.price_delta, 0);
@@ -54,19 +55,20 @@ export const useCartStore = create<CartState>((set, get) => ({
         [cartKey]: existing
           ? { ...existing, quantity: existing.quantity + 1 }
           : {
-              cart_key:      cartKey,
-              product_id:    productId,
+              cart_key:       cartKey,
+              product_id:     productId,
               name,
-              base_price:    basePrice,
-              unit_cost:     cost,
+              base_price:     basePrice,
+              unit_cost:      cost,
               modifier_total: modifierTotal,
-              unit_price:    unitPrice,
+              unit_price:     unitPrice,
               modifiers,
-              quantity:      1,
+              quantity:       1,
               notes,
-              tracking_mode: trackingMode,
-              stock_item_id: stockItemId,
-              recipe_lines:  recipeLines,
+              tracking_mode:  trackingMode,
+              stock_item_id:  stockItemId,
+              recipe_lines:   recipeLines,
+              needs_kitchen:  needsKitchen,
             },
       };
       return { items: updated, total: calcTotal(updated) };

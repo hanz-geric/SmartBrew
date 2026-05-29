@@ -92,7 +92,7 @@ function buildOrdersCsv(orders: Order[], includeProfit: boolean): Parameters<typ
 
 export default function OrderHistoryScreen() {
   const currentUser = useAuthStore((s) => s.user)!;
-  const canVoid     = currentUser.role === 'admin' || currentUser.role === 'manager';
+  const canVoid     = currentUser.role === 'admin';
   const isAdmin     = currentUser.role === 'admin';
 
   const [period,     setPeriod]     = useState<Period>('today');

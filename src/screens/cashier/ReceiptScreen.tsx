@@ -1,12 +1,17 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  FlatList, ScrollView, StyleSheet, Text, TouchableOpacity, View,
+  ActivityIndicator, Alert, FlatList, ScrollView,
+  StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { CashierStackParamList } from '../../navigation/CashierStack';
 import { useCartStore } from '../../store/cartStore';
+import { getSettings } from '../../firebase/firestoreService';
+import { buildReceipt } from '../../utils/printerTemplates';
+import { printBytes } from '../../services/printerService';
+import { Settings } from '../../types';
 import {
-  Colors, FontSize, FontWeight, Radius, Shadow, Spacing,
+  Colors, FontSize, FontWeight, Radius, Shadow, Spacing, isTablet,
 } from '../../constants/theme';
 
 type Props = NativeStackScreenProps<CashierStackParamList, 'Receipt'>;
@@ -28,9 +33,33 @@ export default function ReceiptScreen({ route, navigation }: Props) {
   const { order, change, session, printWarnings } = route.params;
   const clearCart = useCartStore((s) => s.clearCart);
 
+  const [settings,  setSettings]  = useState<Settings>({});
+  const [printing,  setPrinting]  = useState(false);
+
+  useEffect(() => {
+    getSettings().then(setSettings).catch(() => {});
+  }, []);
+
   function handleNewOrder() {
     clearCart();
     navigation.replace('POS', { session });
+  }
+
+  async function handlePrint() {
+    setPrinting(true);
+    try {
+      const bytes = buildReceipt(order, change, settings);
+      await printBytes(bytes, {
+        type:     (settings.receipt_printer_type ?? 'wifi') as 'wifi' | 'bluetooth',
+        ip:       settings.receipt_printer_ip,
+        port:     settings.receipt_printer_port,
+        btDevice: settings.receipt_printer_bt,
+      });
+    } catch (e: unknown) {
+      Alert.alert('Print Failed', (e as Error).message ?? 'Could not reach printer.');
+    } finally {
+      setPrinting(false);
+    }
   }
 
   const dateStr = new Date(order.created_at).toLocaleString('en-PH', {
@@ -124,6 +153,10 @@ export default function ReceiptScreen({ route, navigation }: Props) {
               <Text style={s.changeAmt}>₱{change.toFixed(2)}</Text>
             </View>
           )}
+          <View style={s.totalsRow}>
+            <Text style={s.totalsLabel}>Cashier</Text>
+            <Text style={s.totalsValue}>{order.cashier_name}</Text>
+          </View>
         </View>
 
         <View style={s.divider} />
@@ -136,6 +169,18 @@ export default function ReceiptScreen({ route, navigation }: Props) {
 
         <TouchableOpacity style={s.newOrderBtn} onPress={handleNewOrder} activeOpacity={0.8}>
           <Text style={s.newOrderText}>New Order</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[s.printBtn, printing && s.printBtnOff]}
+          onPress={handlePrint}
+          disabled={printing}
+          activeOpacity={0.8}
+        >
+          {printing
+            ? <ActivityIndicator color={Colors.gray700} size="small" />
+            : <Text style={s.printBtnText}>🖨️ Print Receipt</Text>
+          }
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -330,7 +375,7 @@ const s = StyleSheet.create({
 
   // Actions panel
   actions: {
-    width: 280,
+    width: isTablet ? 360 : 280,
     backgroundColor: Colors.surface,
     padding: Spacing.xxl,
     justifyContent: 'center',
@@ -355,6 +400,20 @@ const s = StyleSheet.create({
     fontSize: FontSize.xl,
     fontWeight: FontWeight.bold,
     color: Colors.white,
+  },
+  printBtn: {
+    borderRadius: Radius.md,
+    paddingVertical: Spacing.lg,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: Colors.gray300,
+    backgroundColor: Colors.surface,
+  },
+  printBtnOff:  { opacity: 0.6 },
+  printBtnText: {
+    fontSize: FontSize.base,
+    fontWeight: FontWeight.semibold,
+    color: Colors.gray700,
   },
   sessionBtn: {
     borderRadius: Radius.md,

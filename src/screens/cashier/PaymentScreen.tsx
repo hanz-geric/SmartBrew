@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator, FlatList, ScrollView, StyleSheet,
   Text, TextInput, TouchableOpacity, View,
@@ -8,15 +8,17 @@ import { useShallow } from 'zustand/react/shallow';
 import { CashierStackParamList } from '../../navigation/CashierStack';
 import { useAuthStore } from '../../store/authStore';
 import { useCartStore } from '../../store/cartStore';
-import { createOrder } from '../../firebase/firestoreService';
+import { createOrder, getSettings } from '../../firebase/firestoreService';
 import { enqueueOrder } from '../../db/queries/queue';
 import { syncPendingOrders } from '../../services/syncService';
+import { buildKitchenTicket } from '../../utils/printerTemplates';
+import { printBytes } from '../../services/printerService';
 import {
   AuthUser, CartItem, CashSession, CheckoutPayload,
-  Order, OrderItem, OrderType, PaymentMethod,
+  Order, OrderItem, OrderType, PaymentMethod, Settings,
 } from '../../types';
 import {
-  Colors, FontSize, FontWeight, Radius, Shadow, Spacing,
+  Colors, FontSize, FontWeight, Radius, Shadow, Spacing, isTablet,
 } from '../../constants/theme';
 
 type Props = NativeStackScreenProps<CashierStackParamList, 'Payment'>;
@@ -102,6 +104,11 @@ export default function PaymentScreen({ route, navigation }: Props) {
   const [reference,    setReference]   = useState('');
   const [submitting,   setSubmitting]  = useState(false);
   const [error,        setError]       = useState('');
+  const [settings,     setSettings]    = useState<Settings>({});
+
+  useEffect(() => {
+    getSettings().then(setSettings).catch(() => {});
+  }, []);
 
   const ceilTotal = Math.ceil(total);
   const cashNum   = parseFloat(cashReceived) || 0;
@@ -137,8 +144,19 @@ export default function PaymentScreen({ route, navigation }: Props) {
 
     try {
       order = await createOrder(payload, session, user);
-      // Opportunistically flush any queued orders in the background
       syncPendingOrders(session, user).catch(() => {});
+
+      // Fire kitchen ticket if any item needs it — non-blocking, failures are silent
+      const needsKitchen = cartItems.some((i) => i.needs_kitchen);
+      if (needsKitchen) {
+        const kitchenBytes = buildKitchenTicket(order, settings);
+        printBytes(kitchenBytes, {
+          type:     (settings.kitchen_printer_type ?? 'wifi') as 'wifi' | 'bluetooth',
+          ip:       settings.kitchen_printer_ip,
+          port:     settings.kitchen_printer_port,
+          btDevice: settings.kitchen_printer_bt,
+        }).catch(() => {});
+      }
     } catch {
       // Network unavailable — queue locally
       try {
@@ -376,6 +394,7 @@ const s = StyleSheet.create({
   // Left panel
   left: {
     flex: 1,
+    maxWidth: isTablet ? 600 : undefined,
     borderRightWidth: 1,
     borderColor: Colors.border,
     backgroundColor: Colors.surface,
@@ -472,6 +491,7 @@ const s = StyleSheet.create({
   // Right panel
   right: {
     flex: 1,
+    maxWidth: isTablet ? 600 : undefined,
     backgroundColor: Colors.surface,
   },
   rightContent: {

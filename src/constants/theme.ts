@@ -1,3 +1,23 @@
+import { Dimensions } from 'react-native';
+
+const { width: SCREEN_W } = Dimensions.get('window');
+
+export const BREAKPOINTS = {
+  tablet:      768,
+  tabletLarge: 1024,
+} as const;
+
+/** True when the app is running on a tablet-sized screen (>= 768 logical px wide). */
+export const isTablet = SCREEN_W >= BREAKPOINTS.tablet;
+
+/**
+ * Responsive scale — returns `value * factor` on tablet, plain `value` on phone.
+ * Default factor 1.2 gives a gentle bump without over-scaling.
+ */
+export function rs(value: number, factor = 1.2): number {
+  return isTablet ? Math.round(value * factor) : value;
+}
+
 export const Colors = {
   // Green palette (matches PHP app)
   green50:  '#f0fdf4',
@@ -37,34 +57,34 @@ export const Colors = {
 } as const;
 
 export const Spacing = {
-  xs:   4,
-  sm:   8,
-  md:   12,
-  lg:   16,
-  xl:   20,
-  xxl:  28,
-  xxxl: 40,
-} as const;
+  xs:   rs(4),
+  sm:   rs(8),
+  md:   rs(12),
+  lg:   rs(16),
+  xl:   rs(20),
+  xxl:  rs(28),
+  xxxl: rs(40),
+};
 
 export const Radius = {
-  sm:  6,
-  md:  8,
-  lg:  10,
-  xl:  14,
+  sm:   rs(6),
+  md:   rs(8),
+  lg:   rs(10),
+  xl:   rs(14),
   full: 999,
-} as const;
+};
 
 export const FontSize = {
-  xs:   10,
-  sm:   12,
-  base: 14,
-  md:   15,
-  lg:   16,
-  xl:   18,
-  xxl:  20,
-  xxxl: 24,
-  display: 28,
-} as const;
+  xs:      rs(10),
+  sm:      rs(12),
+  base:    rs(14),
+  md:      rs(15),
+  lg:      rs(16),
+  xl:      rs(18),
+  xxl:     rs(20),
+  xxxl:    rs(24),
+  display: rs(28),
+};
 
 export const FontWeight = {
   normal:    '400' as const,

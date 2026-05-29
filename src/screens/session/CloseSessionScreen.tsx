@@ -7,6 +7,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { CashierStackParamList } from '../../navigation/CashierStack';
 import { closeSession, getSession } from '../../firebase/firestoreService';
 import { logout } from '../../firebase/auth';
+import { useCartStore } from '../../store/cartStore';
 import { CashSession } from '../../types';
 import {
   Colors, FontSize, FontWeight, Radius, Shadow, Spacing,
@@ -23,11 +24,13 @@ function formatDateTime(iso: string): string {
 
 export default function CloseSessionScreen({ route, navigation }: Props) {
   const { session: initialSession } = route.params;
+  const clearCart = useCartStore((s) => s.clearCart);
 
   const [session,    setSession]    = useState<CashSession>(initialSession);
   const [fetching,   setFetching]   = useState(true);
   const [actualCash, setActualCash] = useState('');
   const [closing,    setClosing]    = useState(false);
+  const [closed,     setClosed]     = useState(false);
   const [error,      setError]      = useState('');
 
   // Fetch live session so cash_collected reflects orders placed during the shift
@@ -40,7 +43,15 @@ export default function CloseSessionScreen({ route, navigation }: Props) {
   const expectedCash = session.starting_cash + (session.cash_collected ?? 0);
   const actualNum    = parseFloat(actualCash) || 0;
   const hasActual    = actualCash.trim().length > 0 && !isNaN(parseFloat(actualCash));
-  const difference   = hasActual ? actualNum - expectedCash : null;
+  const difference   = actualNum - expectedCash;
+
+  // Shift duration string (computed once session is loaded)
+  const durationStr = (() => {
+    const ms = Date.now() - new Date(session.start_time).getTime();
+    const h  = Math.floor(ms / 3_600_000);
+    const m  = Math.floor((ms % 3_600_000) / 60_000);
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  })();
 
   async function handleClose() {
     if (!hasActual) { setError('Enter the actual cash in drawer.'); return; }
@@ -48,100 +59,66 @@ export default function CloseSessionScreen({ route, navigation }: Props) {
     setError('');
     try {
       await closeSession(session.id, actualNum, expectedCash);
-      await logout();
+      setClosed(true);   // reveal results panel — do NOT logout yet
     } catch {
       setError('Failed to close session. Check your connection.');
       setClosing(false);
     }
   }
 
+  async function handleDone() {
+    clearCart();
+    await logout();
+  }
+
   return (
     <KeyboardAvoidingView
       style={s.root}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
-        {/* Header */}
-        <View style={s.header}>
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            style={s.backBtn}
-            hitSlop={8}
-          >
-            <Text style={s.backText}>← Back</Text>
-          </TouchableOpacity>
-          <Text style={s.headerTitle}>End Shift</Text>
-        </View>
 
         {fetching ? (
           <View style={s.center}>
             <ActivityIndicator size="large" color={Colors.green600} />
           </View>
-        ) : (
-          <View style={s.card}>
-            {/* Session info — always visible */}
-            <Text style={s.sectionLabel}>Session Summary</Text>
-            <View style={s.infoGrid}>
-              <InfoRow label="Cashier"      value={session.cashier_name} />
-              <InfoRow label="Shift Start"  value={formatDateTime(session.start_time)} />
-              <InfoRow label="Starting Cash" value={`₱${session.starting_cash.toFixed(2)}`} />
+        ) : !closed ? (
+          /* ── Step 1: Blind count ── */
+          <>
+            <View style={s.header}>
+              <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={8}>
+                <Text style={s.backText}>← Back</Text>
+              </TouchableOpacity>
+              <Text style={s.headerTitle}>🔒 Close Shift</Text>
             </View>
 
-            {/* Blind count — cashier enters without seeing expected */}
-            <View style={s.divider} />
-            <Text style={s.sectionLabel}>Count Your Drawer</Text>
-            <Text style={s.inputHint}>
-              Count your cash physically, then enter the total below.
-            </Text>
-            <Text style={s.inputLabel}>Actual Cash (₱)</Text>
-            <TextInput
-              style={s.input}
-              placeholder="0.00"
-              placeholderTextColor={Colors.gray400}
-              keyboardType="numeric"
-              value={actualCash}
-              onChangeText={(t) => { setActualCash(t); setError(''); }}
-              returnKeyType="done"
-              onSubmitEditing={handleClose}
-            />
+            <View style={s.card}>
+              <View style={s.infoGrid}>
+                <InfoRow label="Cashier"     value={session.cashier_name} />
+                <InfoRow label="Shift Start" value={formatDateTime(session.start_time)} />
+                <InfoRow label="Duration"    value={durationStr} />
+              </View>
 
-            {/* Cash summary + difference — revealed only after count is entered */}
-            {hasActual && (
-              <>
-                <View style={s.divider} />
-                <Text style={s.sectionLabel}>Cash Summary</Text>
-                <View style={s.infoGrid}>
-                  <InfoRow label="Cash Sales"         value={`₱${(session.cash_collected ?? 0).toFixed(2)}`} />
-                  <InfoRow label="Expected in Drawer" value={`₱${expectedCash.toFixed(2)}`} highlight />
-                </View>
+              <View style={s.divider} />
+              <Text style={s.sectionLabel}>Count Your Drawer</Text>
+              <Text style={s.inputHint}>
+                Count your cash physically, then enter the total below.
+              </Text>
+              <Text style={s.inputLabel}>Cash in Drawer (₱)</Text>
+              <TextInput
+                style={s.input}
+                placeholder="0.00"
+                placeholderTextColor={Colors.gray400}
+                keyboardType="numeric"
+                value={actualCash}
+                onChangeText={(t) => { setActualCash(t); setError(''); }}
+                returnKeyType="done"
+                onSubmitEditing={handleClose}
+              />
 
-                {difference !== null && (
-                  <View style={[
-                    s.diffBox,
-                    difference > 0  && s.diffOver,
-                    difference < 0  && s.diffShort,
-                    difference === 0 && s.diffExact,
-                  ]}>
-                    <Text style={s.diffLabel}>
-                      {difference > 0 ? 'Over' : difference < 0 ? 'Short' : 'Exact'}
-                    </Text>
-                    <Text style={s.diffAmount}>
-                      {difference === 0
-                        ? '₱0.00'
-                        : `${difference > 0 ? '+' : ''}₱${difference.toFixed(2)}`}
-                    </Text>
-                  </View>
-                )}
-              </>
-            )}
+              {!!error && <Text style={s.error}>{error}</Text>}
+            </View>
 
-            {!!error && <Text style={s.error}>{error}</Text>}
-          </View>
-        )}
-
-        {/* Actions — hidden while loading live session */}
-        {!fetching && (
-          <>
             <TouchableOpacity
               style={[s.closeBtn, (!hasActual || closing) && s.closeBtnOff]}
               onPress={handleClose}
@@ -160,6 +137,54 @@ export default function CloseSessionScreen({ route, navigation }: Props) {
               disabled={closing}
             >
               <Text style={s.cancelBtnText}>Cancel — Keep Session Open</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          /* ── Step 2: Results panel (shown only after POST succeeds) ── */
+          <>
+            <View style={s.header}>
+              <Text style={s.headerTitle}>Shift Closed</Text>
+            </View>
+
+            <View style={s.card}>
+              <Text style={s.sectionLabel}>Cash Reconciliation</Text>
+              <View style={s.infoGrid}>
+                <InfoRow label="Your Count" value={`₱${actualNum.toFixed(2)}`} />
+                <InfoRow label="Expected"   value={`₱${expectedCash.toFixed(2)}`} highlight />
+                <InfoRow label="Variance"
+                  value={difference === 0
+                    ? '₱0.00'
+                    : `${difference > 0 ? '+' : ''}₱${difference.toFixed(2)}`}
+                />
+              </View>
+
+              <View style={[
+                s.diffBox,
+                difference > 0  && s.diffOver,
+                difference < 0  && s.diffShort,
+                difference === 0 && s.diffExact,
+              ]}>
+                <Text style={s.diffLabel}>
+                  {difference > 0
+                    ? 'ℹ️ Overage'
+                    : difference < 0
+                    ? '⚠️ Shortage'
+                    : '✅ Balanced'}
+                </Text>
+                <Text style={s.diffAmount}>
+                  {difference === 0
+                    ? '₱0.00'
+                    : `${difference > 0 ? '+' : ''}₱${difference.toFixed(2)}`}
+                </Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={s.closeBtn}
+              onPress={handleDone}
+              activeOpacity={0.8}
+            >
+              <Text style={s.closeBtnText}>Done — Go to Login</Text>
             </TouchableOpacity>
           </>
         )}

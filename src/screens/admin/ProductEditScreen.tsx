@@ -145,48 +145,30 @@ export default function ProductEditScreen() {
 
     setSaving(true);
     try {
+      const builtRecipe = trackingMode === 'recipe' ? recipeLines : [];
+      const baseData = {
+        name:            trimmed,
+        price:           priceNum,
+        cost:            costNum,
+        category_id:     categoryId,
+        category_name:   selectedCat?.name ?? '',
+        tracking_mode:   trackingMode,
+        stock_item_id:   trackingMode === 'direct' ? (stockItemId ?? null) : null,
+        recipe_lines:    builtRecipe,
+        needs_kitchen:   needsKitchen,
+        is_active:       isActive,
+        modifier_groups: builtGroups,
+      };
+
       let finalImage = image;
       if (image && !image.startsWith('https://')) {
-        // local URI — upload to Firebase Storage
-        const key = productId ?? `new-${Date.now()}`;
-        finalImage = await uploadProductImage(image, key);
-      }
-
-      const builtRecipe = trackingMode === 'recipe' ? recipeLines : [];
-
-      const savedId = await upsertProduct(
-        {
-          name:            trimmed,
-          price:           priceNum,
-          cost:            costNum,
-          category_id:     categoryId,
-          category_name:   selectedCat?.name ?? '',
-          tracking_mode:   trackingMode,
-          stock_item_id:   trackingMode === 'direct' ? (stockItemId ?? null) : null,
-          recipe_lines:    builtRecipe,
-          image:           finalImage,
-          needs_kitchen:   needsKitchen,
-          is_active:       isActive,
-          modifier_groups: builtGroups,
-        },
-        productId,
-      );
-
-      // If it was a new product saved with a temp key, re-upload image under the real ID
-      if (!productId && image && !image.startsWith('https://')) {
-        const realUrl = await uploadProductImage(image, savedId);
-        await upsertProduct(
-          {
-            name: trimmed, price: priceNum, cost: costNum,
-            category_id: categoryId, category_name: selectedCat?.name ?? '',
-            tracking_mode: trackingMode,
-            stock_item_id: trackingMode === 'direct' ? (stockItemId ?? null) : null,
-            recipe_lines: builtRecipe,
-            image: realUrl, needs_kitchen: needsKitchen,
-            is_active: isActive, modifier_groups: builtGroups,
-          },
-          savedId,
-        );
+        // For new products, save without image first to get the Firestore ID,
+        // then upload once under the real ID — avoids the orphaned temp-key file.
+        const targetId = productId ?? await upsertProduct({ ...baseData, image: null }, undefined);
+        finalImage = await uploadProductImage(image, targetId);
+        await upsertProduct({ ...baseData, image: finalImage }, targetId);
+      } else {
+        await upsertProduct({ ...baseData, image: finalImage }, productId);
       }
 
       navigation.goBack();
@@ -220,7 +202,7 @@ export default function ProductEditScreen() {
     <AdminLayout active="Products">
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView style={s.scroll} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
           {/* Header */}

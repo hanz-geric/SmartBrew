@@ -9,11 +9,11 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AdminLayout from './AdminLayout';
 import { AdminStackParamList } from '../../navigation/AdminStack';
 import {
-  getAllModifierGroups, upsertModifierGroup, deleteModifierGroup,
+  getAllModifierGroups, upsertModifierGroup, deleteModifierGroup, listStockItems,
 } from '../../firebase/firestoreService';
-import { Modifier } from '../../types';
+import { Modifier, RecipeLine, StockItem } from '../../types';
 import {
-  Colors, FontSize, FontWeight, Radius, Shadow, Spacing,
+  Colors, FontSize, FontWeight, Radius, Shadow, Spacing, rs,
 } from '../../constants/theme';
 
 type Nav   = NativeStackNavigationProp<AdminStackParamList>;
@@ -39,10 +39,11 @@ export default function ModifierGroupEditScreen() {
   const { groupId } = route.params;
   const isNew = !groupId;
 
-  const [loading,  setLoading]  = useState(!isNew);
-  const [saving,   setSaving]   = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [error,    setError]    = useState('');
+  const [loading,    setLoading]    = useState(true);
+  const [saving,     setSaving]     = useState(false);
+  const [deleting,   setDeleting]   = useState(false);
+  const [error,      setError]      = useState('');
+  const [stockItems, setStockItems] = useState<StockItem[]>([]);
 
   // Group fields
   const [name,       setName]       = useState('');
@@ -56,25 +57,30 @@ export default function ModifierGroupEditScreen() {
 
   const scrollRef = useRef<ScrollView>(null);
 
-  useEffect(() => {
-    if (!isNew) load();
-  }, []);
+  useEffect(() => { load(); }, []);
 
   async function load() {
     try {
-      const groups = await getAllModifierGroups();
-      const g      = groups.find((x) => x.id === groupId);
-      if (g) {
-        setName(g.name);
-        setIsRequired(g.is_required);
-        setMaxSelect(String(g.max_select));
-        setSortOrder(String(g.sort_order ?? 0));
-        setIsActive(g.is_active !== false);
-        setModifiers(
-          g.modifiers.length > 0
-            ? g.modifiers.map((m) => ({ ...m, _key: m.id }))
-            : [makeNewModifier()],
-        );
+      const [groups, items] = await Promise.all([
+        getAllModifierGroups(),
+        listStockItems(),
+      ]);
+      setStockItems(items.filter((i) => i.is_active));
+
+      if (!isNew) {
+        const g = groups.find((x) => x.id === groupId);
+        if (g) {
+          setName(g.name);
+          setIsRequired(g.is_required);
+          setMaxSelect(String(g.max_select));
+          setSortOrder(String(g.sort_order ?? 0));
+          setIsActive(g.is_active !== false);
+          setModifiers(
+            g.modifiers.length > 0
+              ? g.modifiers.map((m) => ({ ...m, _key: m.id }))
+              : [makeNewModifier()],
+          );
+        }
       }
     } catch {
       setError('Failed to load group.');
@@ -112,11 +118,14 @@ export default function ModifierGroupEditScreen() {
     if (validMods.length === 0) { setError('Add at least one modifier option.'); return; }
 
     const cleanMods: Modifier[] = validMods.map((m, i) => ({
-      id:          m.id,
-      name:        m.name.trim(),
-      price_delta: parseFloat(String(m.price_delta)) || 0,
-      sort_order:  m.sort_order ?? i,
-      is_active:   m.is_active,
+      id:           m.id,
+      name:         m.name.trim(),
+      price_delta:  parseFloat(String(m.price_delta)) || 0,
+      sort_order:   m.sort_order ?? i,
+      is_active:    m.is_active,
+      recipe_lines: (m.recipe_lines ?? []).filter(
+        (l) => l.stock_item_id && l.quantity_required > 0,
+      ),
     }));
 
     setSaving(true);
@@ -182,7 +191,7 @@ export default function ModifierGroupEditScreen() {
     <AdminLayout active="Modifiers">
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView
           ref={scrollRef}
@@ -281,6 +290,7 @@ export default function ModifierGroupEditScreen() {
                 onChange={(patch) => updateModifier(m._key, patch)}
                 onRemove={() => removeModifier(m._key)}
                 showRemove={modifiers.length > 1 || m.name.trim() !== ''}
+                stockItems={stockItems}
               />
             ))}
 
@@ -317,57 +327,149 @@ export default function ModifierGroupEditScreen() {
 // ─── ModifierRow ──────────────────────────────────────────────────────────────
 
 function ModifierRow({
-  modifier, index, onChange, onRemove, showRemove,
+  modifier, index, onChange, onRemove, showRemove, stockItems,
 }: {
   modifier:   LocalModifier;
   index:      number;
   onChange:   (patch: Partial<LocalModifier>) => void;
   onRemove:   () => void;
   showRemove: boolean;
+  stockItems: StockItem[];
 }) {
+  const lines = modifier.recipe_lines ?? [];
+  const [showRecipe, setShowRecipe] = useState(lines.length > 0);
+
+  function updateLine(i: number, patch: Partial<RecipeLine>) {
+    const next = lines.map((l, idx) => idx === i ? { ...l, ...patch } : l);
+    onChange({ recipe_lines: next });
+  }
+
+  function addLine() {
+    onChange({ recipe_lines: [...lines, { stock_item_id: '', quantity_required: 0 }] });
+  }
+
+  function removeLine(i: number) {
+    onChange({ recipe_lines: lines.filter((_, idx) => idx !== i) });
+  }
+
   return (
     <View style={mr.root}>
-      <View style={mr.indexBadge}>
-        <Text style={mr.indexText}>{index + 1}</Text>
-      </View>
+      {/* Row header */}
+      <View style={mr.header}>
+        <View style={mr.indexBadge}>
+          <Text style={mr.indexText}>{index + 1}</Text>
+        </View>
 
-      <View style={mr.fields}>
-        <TextInput
-          style={mr.nameInput}
-          value={modifier.name}
-          onChangeText={(v) => onChange({ name: v })}
-          placeholder="Option name (e.g. Large)"
-          placeholderTextColor={Colors.gray400}
-        />
-        <View style={mr.row}>
-          <View style={mr.priceWrap}>
-            <Text style={mr.pricePrefix}>+₱</Text>
-            <TextInput
-              style={mr.priceInput}
-              value={modifier.price_delta === 0 ? '' : String(modifier.price_delta)}
-              onChangeText={(v) => onChange({ price_delta: parseFloat(v) || 0 })}
-              placeholder="0"
-              placeholderTextColor={Colors.gray400}
-              keyboardType="decimal-pad"
-            />
-          </View>
-          <View style={mr.switchWrap}>
-            <Text style={mr.switchLabel}>Active</Text>
-            <Switch
-              value={modifier.is_active}
-              onValueChange={(v) => onChange({ is_active: v })}
-              trackColor={{ true: Colors.green600, false: Colors.gray300 }}
-              thumbColor={Colors.white}
-              style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
-            />
+        <View style={mr.fields}>
+          <TextInput
+            style={mr.nameInput}
+            value={modifier.name}
+            onChangeText={(v) => onChange({ name: v })}
+            placeholder="Option name (e.g. Extra Cream)"
+            placeholderTextColor={Colors.gray400}
+          />
+          <View style={mr.row}>
+            <View style={mr.priceWrap}>
+              <Text style={mr.pricePrefix}>+₱</Text>
+              <TextInput
+                style={mr.priceInput}
+                value={modifier.price_delta === 0 ? '' : String(modifier.price_delta)}
+                onChangeText={(v) => onChange({ price_delta: parseFloat(v) || 0 })}
+                placeholder="0"
+                placeholderTextColor={Colors.gray400}
+                keyboardType="decimal-pad"
+              />
+            </View>
+            <View style={mr.switchWrap}>
+              <Text style={mr.switchLabel}>Active</Text>
+              <Switch
+                value={modifier.is_active}
+                onValueChange={(v) => onChange({ is_active: v })}
+                trackColor={{ true: Colors.green600, false: Colors.gray300 }}
+                thumbColor={Colors.white}
+                style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
+              />
+            </View>
           </View>
         </View>
+
+        {showRemove && (
+          <TouchableOpacity style={mr.removeBtn} onPress={onRemove} activeOpacity={0.7}>
+            <Text style={mr.removeText}>✕</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
-      {showRemove && (
-        <TouchableOpacity style={mr.removeBtn} onPress={onRemove} activeOpacity={0.7}>
-          <Text style={mr.removeText}>✕</Text>
-        </TouchableOpacity>
+      {/* Recipe toggle */}
+      <TouchableOpacity
+        style={mr.recipeToggle}
+        onPress={() => {
+          if (showRecipe && lines.length > 0) {
+            onChange({ recipe_lines: [] });
+          }
+          setShowRecipe((v) => !v);
+        }}
+        activeOpacity={0.7}
+      >
+        <Text style={mr.recipeToggleText}>
+          {showRecipe
+            ? `📦 ${lines.filter((l) => l.stock_item_id && l.quantity_required > 0).length} ingredient${lines.filter((l) => l.stock_item_id && l.quantity_required > 0).length !== 1 ? 's' : ''} — hide`
+            : '📦 Add ingredient deductions'}
+        </Text>
+      </TouchableOpacity>
+
+      {/* Inline recipe builder */}
+      {showRecipe && (
+        <View style={mr.recipeSection}>
+          {stockItems.length === 0 ? (
+            <Text style={mr.noStock}>No active stock items. Create some in Stock Management first.</Text>
+          ) : (
+            <>
+              {lines.map((line, li) => {
+                const linked = stockItems.find((s) => s.id === line.stock_item_id);
+                return (
+                  <View key={li} style={mr.recipeLine}>
+                    {/* Stock item chips */}
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={mr.chipScroll}>
+                      <View style={{ flexDirection: 'row', gap: Spacing.xs }}>
+                        {stockItems.map((si) => (
+                          <TouchableOpacity
+                            key={si.id}
+                            style={[mr.chip, line.stock_item_id === si.id && mr.chipSel]}
+                            onPress={() => updateLine(li, { stock_item_id: si.id })}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={[mr.chipText, line.stock_item_id === si.id && mr.chipTextSel]}>
+                              {si.name}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </ScrollView>
+                    {/* Qty + unit + remove */}
+                    <View style={mr.qtyRow}>
+                      <TextInput
+                        style={mr.qtyInput}
+                        value={line.quantity_required === 0 ? '' : String(line.quantity_required)}
+                        onChangeText={(v) => updateLine(li, { quantity_required: parseFloat(v) || 0 })}
+                        keyboardType="decimal-pad"
+                        placeholder="Qty"
+                        placeholderTextColor={Colors.gray400}
+                      />
+                      <Text style={mr.unitLabel}>{linked?.unit ?? '—'}</Text>
+                      <TouchableOpacity style={mr.removeLineBtn} onPress={() => removeLine(li)} activeOpacity={0.7}>
+                        <Text style={mr.removeText}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                );
+              })}
+              <TouchableOpacity style={mr.addLineBtn} onPress={addLine} activeOpacity={0.7}>
+                <Text style={mr.addLineBtnText}>+ Add Ingredient</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
       )}
     </View>
   );
@@ -529,19 +631,22 @@ const sw = StyleSheet.create({
 
 const mr = StyleSheet.create({
   root: {
+    backgroundColor: Colors.background,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    overflow: 'hidden',
+  },
+  header: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: Spacing.sm,
-    backgroundColor: Colors.background,
-    borderRadius: Radius.md,
     padding: Spacing.sm,
-    borderWidth: 1,
-    borderColor: Colors.border,
   },
   indexBadge: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: rs(24),
+    height: rs(24),
+    borderRadius: rs(12),
     backgroundColor: Colors.gray200,
     alignItems: 'center',
     justifyContent: 'center',
@@ -578,16 +683,99 @@ const mr = StyleSheet.create({
     fontSize: FontSize.base,
     color: Colors.gray800,
   },
-  switchWrap: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  switchWrap:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
   switchLabel: { fontSize: FontSize.xs, color: Colors.gray500 },
   removeBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: rs(28),
+    height: rs(28),
+    borderRadius: rs(14),
     backgroundColor: Colors.dangerBg,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
   },
   removeText: { fontSize: 12, color: Colors.danger, fontWeight: FontWeight.bold },
+
+  // Recipe section
+  recipeToggle: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderTopWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.gray50,
+  },
+  recipeToggleText: {
+    fontSize: FontSize.xs,
+    color: Colors.green700,
+    fontWeight: FontWeight.medium,
+  },
+  recipeSection: {
+    borderTopWidth: 1,
+    borderColor: Colors.border,
+    padding: Spacing.sm,
+    gap: Spacing.sm,
+    backgroundColor: Colors.green50,
+  },
+  noStock: { fontSize: FontSize.xs, color: Colors.gray400 },
+  recipeLine: {
+    backgroundColor: Colors.white,
+    borderRadius: Radius.sm,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: Spacing.sm,
+    gap: Spacing.xs,
+  },
+  chipScroll: { maxHeight: rs(44) },
+  chip: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: Radius.md,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    backgroundColor: Colors.white,
+    height: rs(36),
+    justifyContent: 'center',
+  },
+  chipSel:     { borderColor: Colors.green600, backgroundColor: Colors.green50 },
+  chipText:    { fontSize: FontSize.sm, color: Colors.gray600, fontWeight: FontWeight.medium },
+  chipTextSel: { color: Colors.green700, fontWeight: FontWeight.bold },
+  qtyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  qtyInput: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    fontSize: FontSize.sm,
+    color: Colors.gray800,
+    backgroundColor: Colors.white,
+    width: rs(88),
+    textAlign: 'center',
+  },
+  unitLabel: { fontSize: FontSize.sm, color: Colors.gray500, flex: 1 },
+  removeLineBtn: {
+    width: rs(24),
+    height: rs(24),
+    borderRadius: rs(12),
+    backgroundColor: Colors.dangerBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addLineBtn: {
+    borderWidth: 1.5,
+    borderColor: Colors.green600,
+    borderStyle: 'dashed',
+    borderRadius: Radius.sm,
+    paddingVertical: Spacing.xs,
+    alignItems: 'center',
+  },
+  addLineBtnText: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.semibold,
+    color: Colors.green700,
+  },
 });

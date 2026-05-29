@@ -9,7 +9,7 @@ import { useAuthStore } from '../../store/authStore';
 import { getOpenSession, openSession } from '../../firebase/firestoreService';
 import { CashSession } from '../../types';
 import {
-  Colors, FontSize, FontWeight, Radius, Shadow, Spacing,
+  Colors, FontSize, FontWeight, Radius, Shadow, Spacing, isTablet,
 } from '../../constants/theme';
 
 type Props = NativeStackScreenProps<CashierStackParamList, 'SessionGate'>;
@@ -110,7 +110,7 @@ export default function SessionGateScreen({ navigation }: Props) {
   return (
     <KeyboardAvoidingView
       style={s.center}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={s.card}>
         <Text style={s.logo}>☕ SmartBrew POS</Text>
@@ -128,6 +128,22 @@ export default function SessionGateScreen({ navigation }: Props) {
           returnKeyType="done"
           onSubmitEditing={handleOpenSession}
         />
+
+        {/* Quick-fill denominations */}
+        <View style={s.quickRow}>
+          {[500, 1000, 2000, 5000].map((amt) => (
+            <TouchableOpacity
+              key={amt}
+              style={s.quickBtn}
+              onPress={() => { setStartingCash(String(amt)); setError(''); }}
+              activeOpacity={0.7}
+            >
+              <Text style={s.quickBtnText}>
+                ₱{amt.toLocaleString()}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
 
         {!!error && <Text style={s.error}>{error}</Text>}
 
@@ -157,7 +173,7 @@ const s = StyleSheet.create({
   },
   card: {
     width: '100%',
-    maxWidth: 400,
+    maxWidth: isTablet ? 480 : 400,
     backgroundColor: Colors.surface,
     borderRadius: Radius.xl,
     padding: Spacing.xxl,
@@ -186,6 +202,25 @@ const s = StyleSheet.create({
     color: Colors.green700,
     textAlign: 'center',
     fontWeight: FontWeight.medium,
+  },
+  quickRow: {
+    flexDirection: 'row',
+    gap: Spacing.xs,
+    flexWrap: 'wrap',
+  },
+  quickBtn: {
+    flex: 1,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.gray100,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+  },
+  quickBtnText: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
+    color: Colors.gray700,
   },
   label: {
     fontSize: FontSize.sm,

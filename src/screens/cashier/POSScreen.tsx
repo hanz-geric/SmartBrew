@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator, Alert, AppState, AppStateStatus, FlatList,
   Image, KeyboardAvoidingView, Modal, Platform, ScrollView,
-  StyleSheet, Text, TextInput, TouchableOpacity, View,
+  StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useShallow } from 'zustand/react/shallow';
@@ -17,7 +17,7 @@ import {
   Category, ModifierGroup, Product, SelectedModifier,
 } from '../../types';
 import {
-  Colors, FontSize, FontWeight, Radius, Shadow, Spacing,
+  Colors, FontSize, FontWeight, Radius, Shadow, Spacing, isTablet, rs, BREAKPOINTS,
 } from '../../constants/theme';
 
 type Props = NativeStackScreenProps<CashierStackParamList, 'POS'>;
@@ -75,7 +75,13 @@ function ModifierModal({ product, onClose, onAdd }: ModModalProps) {
     for (const g of product.modifier_groups) {
       for (const id of selections[g.id] ?? []) {
         const mod = g.modifiers.find((m) => m.id === id);
-        if (mod) mods.push({ modifier_id: mod.id, modifier_name: mod.name, group_name: g.name, price_delta: mod.price_delta });
+        if (mod) mods.push({
+          modifier_id:   mod.id,
+          modifier_name: mod.name,
+          group_name:    g.name,
+          price_delta:   mod.price_delta,
+          recipe_lines:  mod.recipe_lines?.length ? mod.recipe_lines : undefined,
+        });
       }
     }
     onAdd(mods, qty, notes);
@@ -383,6 +389,7 @@ function ProductCard({ product, onPress }: ProductCardProps) {
     <TouchableOpacity
       style={[pc.card, isOut && pc.cardOut]}
       onPress={() => onPress(product)}
+      disabled={isOut}
       activeOpacity={0.75}
     >
       <View style={pc.imageBox}>
@@ -417,6 +424,7 @@ export default function POSScreen({ route, navigation }: Props) {
   const [products,    setProducts]   = useState<Product[]>([]);
   const [categories,  setCategories] = useState<Category[]>([]);
   const [loading,     setLoading]    = useState(true);
+  const [loadError,   setLoadError]  = useState(false);
   const [selCat,      setSelCat]     = useState<string | null>(null);
   const [search,      setSearch]     = useState('');
   const [modProduct,  setModProduct] = useState<Product | null>(null);
@@ -450,10 +458,14 @@ export default function POSScreen({ route, navigation }: Props) {
   }, []);
 
   async function loadData() {
+    setLoadError(false);
+    setLoading(true);
     try {
       const [prods, cats] = await Promise.all([getProducts(), getCategories()]);
       setProducts(prods);
       setCategories(cats);
+    } catch {
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -483,17 +495,18 @@ export default function POSScreen({ route, navigation }: Props) {
   }, [products, selCat, search]);
 
   const handleProductPress = useCallback((product: Product) => {
+    if (product.stock_status === 'out') return;
     if (product.modifier_groups.length > 0) {
       setModProduct(product);
     } else {
-      addItem(product.id, product.name, product.price, product.cost, [], '', product.tracking_mode, product.stock_item_id, product.recipe_lines);
+      addItem(product.id, product.name, product.price, product.cost, [], '', product.tracking_mode, product.stock_item_id, product.recipe_lines, product.needs_kitchen);
     }
   }, [addItem]);
 
   function handleModifierAdd(mods: SelectedModifier[], qty: number, notes: string) {
     if (!modProduct) return;
     for (let i = 0; i < qty; i++) {
-      addItem(modProduct.id, modProduct.name, modProduct.price, modProduct.cost, mods, notes, modProduct.tracking_mode, modProduct.stock_item_id, modProduct.recipe_lines);
+      addItem(modProduct.id, modProduct.name, modProduct.price, modProduct.cost, mods, notes, modProduct.tracking_mode, modProduct.stock_item_id, modProduct.recipe_lines, modProduct.needs_kitchen);
     }
     setModProduct(null);
   }
@@ -539,6 +552,9 @@ export default function POSScreen({ route, navigation }: Props) {
     clearDiscount();
   }
 
+  const { width: windowWidth } = useWindowDimensions();
+  const numCols = windowWidth >= BREAKPOINTS.tabletLarge ? 4 : windowWidth >= BREAKPOINTS.tablet ? 3 : 2;
+
   const totalQty = cartItems.reduce((s, i) => s + i.quantity, 0);
 
   return (
@@ -550,7 +566,11 @@ export default function POSScreen({ route, navigation }: Props) {
           <View>
             <Text style={s.shopName}>☕ SmartBrew POS</Text>
             <Text style={s.sessionInfo}>
-              {user.full_name} · Session #{session.id.slice(-6).toUpperCase()}
+              {user.full_name} · Started{' '}
+              {new Date(session.start_time).toLocaleTimeString('en-PH', {
+                hour: 'numeric', minute: '2-digit', hour12: true,
+              })}
+              {' '}· ₱{session.starting_cash.toFixed(2)} opening cash
             </Text>
           </View>
           <View style={s.topBarActions}>
@@ -632,11 +652,19 @@ export default function POSScreen({ route, navigation }: Props) {
           <View style={s.loadingBox}>
             <ActivityIndicator size="large" color={Colors.green600} />
           </View>
+        ) : loadError ? (
+          <View style={s.loadingBox}>
+            <Text style={s.loadErrorText}>Could not load products.</Text>
+            <TouchableOpacity style={s.retryBtn} onPress={loadData}>
+              <Text style={s.retryBtnText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
         ) : (
           <FlatList
             data={filtered}
             keyExtractor={(p) => p.id}
-            numColumns={3}
+            numColumns={numCols}
+            key={numCols}
             contentContainerStyle={s.gridContent}
             renderItem={({ item }) => (
               <ProductCard product={item} onPress={handleProductPress} />
@@ -658,7 +686,17 @@ export default function POSScreen({ route, navigation }: Props) {
             Order {totalQty > 0 ? `(${totalQty})` : ''}
           </Text>
           {cartItems.length > 0 && (
-            <TouchableOpacity onPress={() => { clearCart(); clearDiscount(); }} hitSlop={8}>
+            <TouchableOpacity
+              onPress={() => Alert.alert(
+                'Clear Cart',
+                'Remove all items from the order?',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Clear', style: 'destructive', onPress: () => { clearCart(); clearDiscount(); } },
+                ],
+              )}
+              hitSlop={8}
+            >
               <Text style={s.clearText}>Clear</Text>
             </TouchableOpacity>
           )}
@@ -784,7 +822,9 @@ export default function POSScreen({ route, navigation }: Props) {
             disabled={cartItems.length === 0}
             activeOpacity={0.8}
           >
-            <Text style={s.checkoutText}>Checkout</Text>
+            <Text style={s.checkoutText}>
+              Checkout{totalQty > 0 ? ` (${totalQty})` : ''}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -980,6 +1020,23 @@ const s = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    gap: Spacing.md,
+  },
+  loadErrorText: {
+    fontSize: FontSize.base,
+    color: Colors.danger,
+    fontWeight: FontWeight.medium,
+  },
+  retryBtn: {
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.green600,
+  },
+  retryBtnText: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.bold,
+    color: Colors.white,
   },
   emptyBox: {
     padding: Spacing.xxxl,
@@ -993,6 +1050,8 @@ const s = StyleSheet.create({
   // Right panel
   right: {
     flex: 1,
+    minWidth: isTablet ? 320 : 260,
+    maxWidth: isTablet ? 420 : 320,
     backgroundColor: Colors.surface,
     flexDirection: 'column',
   },
@@ -1273,7 +1332,7 @@ const mm = StyleSheet.create({
   },
   sheet: {
     width: '100%',
-    maxWidth: 480,
+    maxWidth: isTablet ? 560 : 480,
     backgroundColor: Colors.surface,
     borderRadius: Radius.xl,
     overflow: 'hidden',
@@ -1448,7 +1507,7 @@ const da = StyleSheet.create({
   },
   sheet: {
     width: '100%',
-    maxWidth: 400,
+    maxWidth: isTablet ? 480 : 400,
     backgroundColor: Colors.surface,
     borderRadius: Radius.xl,
     overflow: 'hidden',

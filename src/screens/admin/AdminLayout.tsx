@@ -6,7 +6,7 @@ import { AdminStackParamList } from '../../navigation/AdminStack';
 import { useAuthStore } from '../../store/authStore';
 import { logout } from '../../firebase/auth';
 import {
-  Colors, FontSize, FontWeight, Radius, Spacing,
+  Colors, FontSize, FontWeight, Radius, Spacing, isTablet, rs,
 } from '../../constants/theme';
 
 type AdminNav  = NativeStackNavigationProp<AdminStackParamList>;
@@ -18,15 +18,16 @@ interface Props {
   children: React.ReactNode;
 }
 
-const NAV_ITEMS: { screen: NavScreen; label: string; icon: string; adminOnly?: boolean }[] = [
-  { screen: 'Dashboard', label: 'Dashboard', icon: '📊' },
-  { screen: 'Orders',    label: 'Orders',    icon: '🧾' },
-  { screen: 'Sessions',  label: 'Sessions',  icon: '💰' },
-  { screen: 'Products',  label: 'Menu',      icon: '🍽️', adminOnly: true },
-  { screen: 'Modifiers', label: 'Modifiers', icon: '🎛️', adminOnly: true },
-  { screen: 'Stock',     label: 'Stock',     icon: '📦' },
-  { screen: 'Users',     label: 'Users',     icon: '👥', adminOnly: true },
-  { screen: 'Settings',  label: 'Settings',  icon: '⚙️', adminOnly: true },
+const NAV_ITEMS: { screen: NavScreen; label: string; icon: string; adminOnly?: boolean; managerOnly?: boolean }[] = [
+  { screen: 'Dashboard', label: 'Dashboard',  icon: '📊' },
+  { screen: 'Orders',    label: 'Orders',     icon: '🧾' },
+  { screen: 'Sessions',  label: 'Sessions',   icon: '💰' },
+  { screen: 'Products',  label: 'Menu',       icon: '🍽️', adminOnly: true },
+  { screen: 'Products',  label: 'Categories', icon: '🏷️', managerOnly: true },
+  { screen: 'Modifiers', label: 'Modifiers',  icon: '🎛️', adminOnly: true },
+  { screen: 'Stock',     label: 'Stock',      icon: '📦' },
+  { screen: 'Users',     label: 'Users',      icon: '👥', adminOnly: true },
+  { screen: 'Settings',  label: 'Settings',   icon: '⚙️', adminOnly: true },
 ];
 
 export default function AdminLayout({ active, children }: Props) {
@@ -50,7 +51,11 @@ export default function AdminLayout({ active, children }: Props) {
         </View>
 
         <View style={s.navItems}>
-          {NAV_ITEMS.filter((item) => !item.adminOnly || user.role === 'admin').map(({ screen, label, icon }) => {
+          {NAV_ITEMS.filter((item) => {
+            if (item.adminOnly  && user.role !== 'admin')   return false;
+            if (item.managerOnly && user.role !== 'manager') return false;
+            return true;
+          }).map(({ screen, label, icon }) => {
             const isActive = active === screen;
             return (
               <TouchableOpacity
@@ -79,7 +84,9 @@ export default function AdminLayout({ active, children }: Props) {
 
       {/* ── Main content ── */}
       <View style={s.content}>
-        {children}
+        <View style={s.contentInner}>
+          {children}
+        </View>
       </View>
     </View>
   );
@@ -94,7 +101,7 @@ const s = StyleSheet.create({
 
   // Sidebar
   sidebar: {
-    width: 200,
+    width: isTablet ? 240 : 200,
     backgroundColor: Colors.green800,
     paddingTop: Spacing.xxl,
     paddingBottom: Spacing.xl,
@@ -108,7 +115,7 @@ const s = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   brandIcon: {
-    fontSize: 28,
+    fontSize: rs(28),
   },
   brandName: {
     fontSize: FontSize.lg,
@@ -141,7 +148,7 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.15)',
   },
   navIcon: {
-    fontSize: 16,
+    fontSize: rs(16),
   },
   navLabel: {
     fontSize: FontSize.base,
@@ -186,5 +193,11 @@ const s = StyleSheet.create({
   content: {
     flex: 1,
     overflow: 'hidden',
+  },
+  contentInner: {
+    flex: 1,
+    width: '100%',
+    maxWidth: isTablet ? 1280 : undefined,
+    alignSelf: 'center',
   },
 });

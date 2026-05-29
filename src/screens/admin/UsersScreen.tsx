@@ -11,7 +11,7 @@ import { listUsers } from '../../firebase/firestoreService';
 import { useAuthStore } from '../../store/authStore';
 import { UserProfile } from '../../types';
 import {
-  Colors, FontSize, FontWeight, Radius, Shadow, Spacing,
+  Colors, FontSize, FontWeight, Radius, Shadow, Spacing, rs,
 } from '../../constants/theme';
 
 type Nav = NativeStackNavigationProp<AdminStackParamList>;
@@ -235,7 +235,7 @@ const ug = StyleSheet.create({
     overflow: 'hidden',
     ...Shadow.sm,
   },
-  divider: { height: 1, backgroundColor: Colors.border, marginLeft: 60 },
+  divider: { height: 1, backgroundColor: Colors.border, marginLeft: rs(60) },
 });
 
 const ur = StyleSheet.create({
@@ -246,9 +246,9 @@ const ur = StyleSheet.create({
     gap: Spacing.md,
   },
   avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: rs(48),
+    height: rs(48),
+    borderRadius: rs(24),
     backgroundColor: Colors.green100,
     alignItems: 'center',
     justifyContent: 'center',

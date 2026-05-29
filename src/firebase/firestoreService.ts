@@ -100,7 +100,9 @@ export async function createOrder(
   const nowISO     = now.toISOString();
   const dateStr    = nowISO.slice(0, 10).replace(/-/g, '');
   const seq        = String(now.getTime()).slice(-5);
-  const orderNumber = `${dateStr}-${seq}`;
+  // Firestore ID suffix makes the number unique even if two orders land in the same millisecond
+  const newRef     = doc(ordersCol());
+  const orderNumber = `${dateStr}-${seq}-${newRef.id.slice(0, 4).toUpperCase()}`;
 
   const subtotal       = payload.cart_snapshot.reduce(
     (s, item) => s + item.unit_price * item.quantity, 0,
@@ -112,14 +114,24 @@ export async function createOrder(
   );
 
   const items: OrderItem[] = payload.cart_snapshot.map((item: CartItem) => ({
-    product_id:   item.product_id,
-    product_name: item.name,
-    unit_price:   item.unit_price,
-    unit_cost:    item.unit_cost,
-    quantity:     item.quantity,
-    subtotal:     item.unit_price * item.quantity,
-    notes:        item.notes || null,
-    modifiers:    item.modifiers,
+    product_id:    item.product_id,
+    product_name:  item.name,
+    unit_price:    item.unit_price,
+    unit_cost:     item.unit_cost,
+    quantity:      item.quantity,
+    subtotal:      item.unit_price * item.quantity,
+    notes:         item.notes || null,
+    modifiers:     item.modifiers.map((m) => ({
+      modifier_id:   m.modifier_id,
+      modifier_name: m.modifier_name,
+      group_name:    m.group_name,
+      price_delta:   m.price_delta,
+      recipe_lines:  m.recipe_lines ?? [],
+    })),
+    // Snapshot for stock reversal on void
+    tracking_mode: item.tracking_mode ?? 'none',
+    stock_item_id: item.stock_item_id ?? null,
+    recipe_lines:  item.recipe_lines ?? [],
   }));
 
   const orderData = {
@@ -142,15 +154,14 @@ export async function createOrder(
   };
 
   const batch  = writeBatch(db);
-  const newRef = doc(ordersCol());
   batch.set(newRef, orderData);
 
-  // Track cash collected on the session
+  // Track cash collected on the session using atomic increment so concurrent
+  // writes and the stale in-memory session object cannot corrupt the running total.
   if (payload.payment_method === 'cash') {
-    const newCollected = (session.cash_collected ?? 0) + totalAmount;
     batch.update(sessionDoc(session.id), {
-      cash_collected: newCollected,
-      expected_cash:  session.starting_cash + newCollected,
+      cash_collected: increment(totalAmount),
+      expected_cash:  increment(totalAmount),
     });
   }
 
@@ -169,6 +180,17 @@ export async function createOrder(
         }
       }
     }
+
+    // Deduct stock for modifier recipe lines (e.g. extra cream, extra shot)
+    for (const mod of item.modifiers) {
+      for (const line of (mod.recipe_lines ?? [])) {
+        if (line.stock_item_id && line.quantity_required > 0) {
+          batch.update(stockDoc(line.stock_item_id), {
+            quantity_on_hand: increment(-(line.quantity_required * item.quantity)),
+          });
+        }
+      }
+    }
   }
 
   await batch.commit();
@@ -176,10 +198,50 @@ export async function createOrder(
 }
 
 export async function voidOrder(orderId: string): Promise<void> {
-  await updateDoc(orderDoc(orderId), {
-    status:         'cancelled',
-    payment_status: 'unpaid',
-  });
+  const snap = await getDoc(orderDoc(orderId));
+  if (!snap.exists()) return;
+  const order = { id: snap.id, ...(snap.data() as Omit<Order, 'id'>) };
+
+  const batch = writeBatch(db);
+  batch.update(orderDoc(orderId), { status: 'cancelled', payment_status: 'unpaid' });
+
+  // Reverse cash collected on the session
+  if (order.payment_method === 'cash' && order.session_id) {
+    batch.update(sessionDoc(order.session_id), {
+      cash_collected: increment(-order.total_amount),
+      expected_cash:  increment(-order.total_amount),
+    });
+  }
+
+  // Reverse stock deductions using the snapshot stored at order time
+  for (const item of order.items) {
+    if (item.tracking_mode === 'direct' && item.stock_item_id) {
+      batch.update(stockDoc(item.stock_item_id), {
+        quantity_on_hand: increment(item.quantity),
+      });
+    } else if (item.tracking_mode === 'recipe' && item.recipe_lines?.length) {
+      for (const line of item.recipe_lines) {
+        if (line.stock_item_id && line.quantity_required > 0) {
+          batch.update(stockDoc(line.stock_item_id), {
+            quantity_on_hand: increment(line.quantity_required * item.quantity),
+          });
+        }
+      }
+    }
+
+    // Reverse modifier recipe line deductions
+    for (const mod of item.modifiers) {
+      for (const line of (mod.recipe_lines ?? [])) {
+        if (line.stock_item_id && line.quantity_required > 0) {
+          batch.update(stockDoc(line.stock_item_id), {
+            quantity_on_hand: increment(line.quantity_required * item.quantity),
+          });
+        }
+      }
+    }
+  }
+
+  await batch.commit();
 }
 
 export async function getOrdersBySession(sessionId: string): Promise<Order[]> {
@@ -251,15 +313,44 @@ export async function saveSettings(settings: Settings): Promise<void> {
 // ─── Products & Categories (POS — active only) ────────────────────────────────
 
 export async function getProducts(): Promise<Product[]> {
-  const q    = query(productsCol(), where('is_active', '==', true));
-  const snap = await getDocs(q);
-  return snap.docs.map((d) => ({
-    id:              d.id,
-    ...(d.data()  as Omit<Product, 'id'>),
-    stock_status:    (d.data().stock_status    as Product['stock_status'])   ?? 'ok',
-    modifier_groups: (d.data().modifier_groups as Product['modifier_groups']) ?? [],
-    recipe_lines:    (d.data().recipe_lines    as Product['recipe_lines'])   ?? [],
-  }));
+  const [prodSnap, stockSnap] = await Promise.all([
+    getDocs(query(productsCol(), where('is_active', '==', true))),
+    getDocs(stockCol()),
+  ]);
+
+  // Build a map of stock item id → { qty, reorder } for O(1) lookup
+  const stockMap = new Map<string, { qty: number; reorder: number }>();
+  for (const d of stockSnap.docs) {
+    const data = d.data() as DocumentData;
+    stockMap.set(d.id, {
+      qty:     (data.quantity_on_hand as number) ?? 0,
+      reorder: (data.reorder_level    as number) ?? 0,
+    });
+  }
+
+  return prodSnap.docs.map((d) => {
+    const data          = d.data() as DocumentData;
+    const trackingMode  = data.tracking_mode as Product['tracking_mode'];
+    const stockItemId   = data.stock_item_id as string | null;
+
+    let stock_status: Product['stock_status'] = 'ok';
+    if (trackingMode === 'direct' && stockItemId) {
+      const si = stockMap.get(stockItemId);
+      if (si) {
+        stock_status = si.qty <= 0 ? 'out'
+          : (si.reorder > 0 && si.qty <= si.reorder) ? 'low'
+          : 'ok';
+      }
+    }
+
+    return {
+      id:              d.id,
+      ...(data        as Omit<Product, 'id'>),
+      stock_status,
+      modifier_groups: (data.modifier_groups as Product['modifier_groups']) ?? [],
+      recipe_lines:    (data.recipe_lines    as Product['recipe_lines'])   ?? [],
+    };
+  });
 }
 
 export async function getCategories(): Promise<Category[]> {
@@ -425,29 +516,32 @@ export interface LifetimeStats {
 }
 
 export async function getLifetimeStats(): Promise<LifetimeStats> {
-  const completedQ  = query(ordersCol(), where('status', '==', 'completed'));
-  const allQ        = ordersCol();
+  const completedQ   = query(ordersCol(), where('status', '==', 'completed'));
+  const cancelledQ   = query(ordersCol(), where('status', '==', 'cancelled'));
+  const pendingQ     = query(ordersCol(), where('status', '==', 'pending'));
 
-  const [agg, allSnap] = await Promise.all([
+  const [agg, cancelledCount, pendingCount] = await Promise.all([
     getAggregateFromServer(completedQ, {
       total_revenue: sum('total_amount'),
       total_profit:  sum('profit_amount'),
       total_orders:  count(),
     }),
-    getDocs(query(ordersCol())),
+    getCountFromServer(cancelledQ),
+    getCountFromServer(pendingQ),
   ]);
 
-  const statusMap: Record<string, number> = {};
-  allSnap.forEach((d) => {
-    const s = d.data().status as string;
-    statusMap[s] = (statusMap[s] ?? 0) + 1;
-  });
+  const completedCount = agg.data().total_orders ?? 0;
+  const by_status = [
+    { status: 'completed',  count: completedCount },
+    { status: 'cancelled',  count: cancelledCount.data().count },
+    { status: 'pending',    count: pendingCount.data().count },
+  ].filter((s) => s.count > 0);
 
   return {
     total_revenue: agg.data().total_revenue ?? 0,
     total_profit:  agg.data().total_profit  ?? 0,
-    total_orders:  agg.data().total_orders  ?? 0,
-    by_status:     Object.entries(statusMap).map(([status, c]) => ({ status, count: c })),
+    total_orders:  completedCount,
+    by_status,
   };
 }
 

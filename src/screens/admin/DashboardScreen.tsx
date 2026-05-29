@@ -11,7 +11,7 @@ import {
 import { useAuthStore } from '../../store/authStore';
 import { Order, PaymentMethod } from '../../types';
 import {
-  Colors, FontSize, FontWeight, Radius, Shadow, Spacing,
+  Colors, FontSize, FontWeight, Radius, Shadow, Spacing, rs,
 } from '../../constants/theme';
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
@@ -285,14 +285,14 @@ export default function DashboardScreen() {
                 <View style={s.tableCard}>
                   <View style={[s.tableRow, s.tableHeader]}>
                     <Text style={[s.tableCell, s.tableCellFlex, s.tableHeaderText]}>Product</Text>
-                    <Text style={[s.tableCell, s.tableHeaderText, { width: 48, textAlign: 'right' }]}>Qty</Text>
-                    <Text style={[s.tableCell, s.tableHeaderText, { width: 96, textAlign: 'right' }]}>Revenue</Text>
+                    <Text style={[s.tableCell, s.tableHeaderText, { width: rs(48), textAlign: 'right' }]}>Qty</Text>
+                    <Text style={[s.tableCell, s.tableHeaderText, { width: rs(96), textAlign: 'right' }]}>Revenue</Text>
                   </View>
                   {top5.map((p, idx) => (
                     <View key={idx} style={[s.tableRow, idx < top5.length - 1 && s.tableRowBorder]}>
                       <Text style={[s.tableCell, s.tableCellFlex, s.tableCellText]} numberOfLines={1}>{p.name}</Text>
-                      <Text style={[s.tableCell, { width: 48, textAlign: 'right', color: Colors.gray700 }]}>{p.qty}</Text>
-                      <Text style={[s.tableCell, { width: 96, textAlign: 'right', color: Colors.green700, fontWeight: FontWeight.semibold }]}>
+                      <Text style={[s.tableCell, { width: rs(48), textAlign: 'right', color: Colors.gray700 }]}>{p.qty}</Text>
+                      <Text style={[s.tableCell, { width: rs(96), textAlign: 'right', color: Colors.green700, fontWeight: FontWeight.semibold }]}>
                         {fmtPeso(p.revenue)}
                       </Text>
                     </View>
@@ -307,9 +307,9 @@ export default function DashboardScreen() {
               <View style={s.tableCard}>
                 <View style={[s.tableRow, s.tableHeader]}>
                   <Text style={[s.tableCell, s.tableCellFlex, s.tableHeaderText]}>Date</Text>
-                  <Text style={[s.tableCell, s.tableHeaderText, { width: 96, textAlign: 'right' }]}>Revenue</Text>
+                  <Text style={[s.tableCell, s.tableHeaderText, { width: rs(96), textAlign: 'right' }]}>Revenue</Text>
                   {isAdmin && (
-                    <Text style={[s.tableCell, s.tableHeaderText, { width: 96, textAlign: 'right' }]}>Profit</Text>
+                    <Text style={[s.tableCell, s.tableHeaderText, { width: rs(96), textAlign: 'right' }]}>Profit</Text>
                   )}
                 </View>
                 {days7.map((day, idx) => {
@@ -319,11 +319,11 @@ export default function DashboardScreen() {
                       <Text style={[s.tableCell, s.tableCellFlex, s.tableCellText, isToday && { fontWeight: FontWeight.bold }]}>
                         {isToday ? 'Today' : day.label}
                       </Text>
-                      <Text style={[s.tableCell, { width: 96, textAlign: 'right', color: day.revenue > 0 ? Colors.green700 : Colors.gray400, fontWeight: FontWeight.medium }]}>
+                      <Text style={[s.tableCell, { width: rs(96), textAlign: 'right', color: day.revenue > 0 ? Colors.green700 : Colors.gray400, fontWeight: FontWeight.medium }]}>
                         {day.revenue > 0 ? fmtPeso(day.revenue) : '—'}
                       </Text>
                       {isAdmin && (
-                        <Text style={[s.tableCell, { width: 96, textAlign: 'right', color: day.profit > 0 ? Colors.info : day.profit < 0 ? Colors.danger : Colors.gray400, fontWeight: FontWeight.medium }]}>
+                        <Text style={[s.tableCell, { width: rs(96), textAlign: 'right', color: day.profit > 0 ? Colors.info : day.profit < 0 ? Colors.danger : Colors.gray400, fontWeight: FontWeight.medium }]}>
                           {day.revenue > 0 ? fmtPeso(day.profit) : '—'}
                         </Text>
                       )}

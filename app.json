@@ -1,13 +1,15 @@
 {
   "expo": {
-    "name": "SmartBrewApp",
+    "name": "SmartBrew POS",
     "slug": "SmartBrewApp",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "runtimeVersion": "1.0.0",
+    "orientation": "landscape",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.smartbrew.pos"
     },
     "android": {
       "adaptiveIcon": {
@@ -17,7 +19,16 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.SmartBrewApp"
+      "package": "com.smartbrew.pos",
+      "permissions": [
+        "BLUETOOTH",
+        "BLUETOOTH_ADMIN",
+        "BLUETOOTH_CONNECT",
+        "BLUETOOTH_SCAN",
+        "ACCESS_FINE_LOCATION",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -28,6 +39,17 @@
       "expo-sqlite",
       "expo-secure-store",
       "expo-sharing"
-    ]
+    ],
+    "updates": {
+      "url": "https://u.expo.dev/c8f75f66-476b-46eb-a12f-773a1f349458",
+      "enabled": true,
+      "fallbackToCacheTimeout": 0
+    },
+    "extra": {
+      "eas": {
+        "projectId": "c8f75f66-476b-46eb-a12f-773a1f349458"
+      }
+    },
+    "owner": "chonchonmaro"
   }
 }

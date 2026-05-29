@@ -8,6 +8,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AdminLayout from './AdminLayout';
 import { AdminStackParamList } from '../../navigation/AdminStack';
 import { getAllCategories, getAllProducts } from '../../firebase/firestoreService';
+import { useAuthStore } from '../../store/authStore';
 import { Category, Product } from '../../types';
 import {
   Colors, FontSize, FontWeight, Radius, Shadow, Spacing,
@@ -18,7 +19,10 @@ type Tab = 'products' | 'categories';
 
 export default function ProductsScreen() {
   const navigation = useNavigation<Nav>();
-  const [tab, setTab]             = useState<Tab>('products');
+  const user       = useAuthStore((s) => s.user)!;
+  const isAdmin    = user.role === 'admin';
+
+  const [tab, setTab]             = useState<Tab>(isAdmin ? 'products' : 'categories');
   const [products,   setProducts]   = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading,    setLoading]    = useState(true);
@@ -53,35 +57,39 @@ export default function ProductsScreen() {
       <View style={s.root}>
         {/* Header */}
         <View style={s.header}>
-          <Text style={s.title}>Menu Management</Text>
-          <TouchableOpacity
-            style={s.addBtn}
-            onPress={() =>
-              tab === 'products'
-                ? navigation.navigate('ProductEdit', {})
-                : navigation.navigate('CategoryEdit', {})
-            }
-            activeOpacity={0.8}
-          >
-            <Text style={s.addBtnText}>+ Add {tab === 'products' ? 'Product' : 'Category'}</Text>
-          </TouchableOpacity>
+          <Text style={s.title}>{isAdmin ? 'Menu Management' : 'Categories'}</Text>
+          {isAdmin && (
+            <TouchableOpacity
+              style={s.addBtn}
+              onPress={() =>
+                tab === 'products'
+                  ? navigation.navigate('ProductEdit', {})
+                  : navigation.navigate('CategoryEdit', {})
+              }
+              activeOpacity={0.8}
+            >
+              <Text style={s.addBtnText}>+ Add {tab === 'products' ? 'Product' : 'Category'}</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
-        {/* Tabs */}
-        <View style={s.tabs}>
-          {(['products', 'categories'] as Tab[]).map((t) => (
-            <TouchableOpacity
-              key={t}
-              style={[s.tab, tab === t && s.tabActive]}
-              onPress={() => setTab(t)}
-              activeOpacity={0.7}
-            >
-              <Text style={[s.tabText, tab === t && s.tabTextActive]}>
-                {t === 'products' ? `Products (${products.length})` : `Categories (${categories.length})`}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        {/* Tabs — admin sees both; manager sees categories only */}
+        {isAdmin && (
+          <View style={s.tabs}>
+            {(['products', 'categories'] as Tab[]).map((t) => (
+              <TouchableOpacity
+                key={t}
+                style={[s.tab, tab === t && s.tabActive]}
+                onPress={() => setTab(t)}
+                activeOpacity={0.7}
+              >
+                <Text style={[s.tabText, tab === t && s.tabTextActive]}>
+                  {t === 'products' ? `Products (${products.length})` : `Categories (${categories.length})`}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
         {loading ? (
           <View style={s.center}>
@@ -131,7 +139,7 @@ export default function ProductsScreen() {
                 key={cat.id}
                 category={cat}
                 count={products.filter((p) => p.category_id === cat.id).length}
-                onPress={() => navigation.navigate('CategoryEdit', { categoryId: cat.id })}
+                onPress={isAdmin ? () => navigation.navigate('CategoryEdit', { categoryId: cat.id }) : undefined}
               />
             ))}
             {categories.length === 0 && (
@@ -174,9 +182,9 @@ function ProductRow({ product, onPress }: { product: Product; onPress: () => voi
 
 function CategoryRow({
   category, count, onPress,
-}: { category: Category; count: number; onPress: () => void }) {
+}: { category: Category; count: number; onPress?: () => void }) {
   return (
-    <TouchableOpacity style={cr.row} onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity style={cr.row} onPress={onPress} activeOpacity={onPress ? 0.7 : 1} disabled={!onPress}>
       <View style={cr.main}>
         <View style={cr.nameRow}>
           <Text style={cr.name}>{category.name}</Text>
@@ -184,7 +192,7 @@ function CategoryRow({
         </View>
         <Text style={cr.hint}>{count} product{count !== 1 ? 's' : ''} · order #{category.sort_order}</Text>
       </View>
-      <Text style={cr.chevron}>›</Text>
+      {onPress && <Text style={cr.chevron}>›</Text>}
     </TouchableOpacity>
   );
 }

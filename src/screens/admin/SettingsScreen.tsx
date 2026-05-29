@@ -1,17 +1,45 @@
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator, KeyboardAvoidingView, Platform,
+  ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform,
   ScrollView, StyleSheet, Text, TextInput,
   TouchableOpacity, View,
 } from 'react-native';
 import AdminLayout from './AdminLayout';
 import { getSettings, saveSettings } from '../../firebase/firestoreService';
 import { PaperWidth, Settings } from '../../types';
+import { buildTestPage } from '../../utils/printerTemplates';
+import { printBytes, scanWifiPrinters, scanBluetoothPrinters, DiscoveredPrinter } from '../../services/printerService';
 import {
   Colors, FontSize, FontWeight, Radius, Shadow, Spacing,
 } from '../../constants/theme';
 
+// ─── Printer model catalogue ──────────────────────────────────────────────────
+
+const PRINTER_MODELS: { key: string; label: string; detail: string }[] = [
+  { key: 'epson_tm',  label: 'Epson TM series',    detail: 'TM-T20, TM-T82, TM-T88' },
+  { key: 'star_tsp',  label: 'Star TSP / mC-Print', detail: 'TSP100, mC-Print2, mC-Print3' },
+  { key: 'bixolon',   label: 'Bixolon SPP series',  detail: 'SPP-R200, SPP-R300, SPP-R310' },
+  { key: 'xprinter',  label: 'Xprinter XP series',  detail: 'XP-58, XP-80, XP-N160II' },
+  { key: 'citizen',   label: 'Citizen CT series',   detail: 'CT-S310, CT-S651, CT-D150' },
+  { key: 'generic',   label: 'Generic ESC/POS',     detail: 'Any ESC/POS-compatible printer' },
+];
+
 type PrinterType = 'wifi' | 'bluetooth';
+
+interface PrinterState {
+  type:  PrinterType;
+  ip:    string;
+  port:  string;
+  bt:    string;
+  width: PaperWidth;
+  model: string;
+}
+
+const DEFAULT_PRINTER: PrinterState = {
+  type: 'wifi', ip: '', port: '', bt: '', width: '80mm', model: 'generic',
+};
+
+// ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function SettingsScreen() {
   const [loading,  setLoading]  = useState(true);
@@ -19,25 +47,23 @@ export default function SettingsScreen() {
   const [saved,    setSaved]    = useState(false);
   const [error,    setError]    = useState('');
 
-  // Business
+  // Business info
   const [bizName,    setBizName]    = useState('');
   const [bizAddress, setBizAddress] = useState('');
   const [bizPhone,   setBizPhone]   = useState('');
   const [footer,     setFooter]     = useState('');
 
-  // Receipt printer
-  const [rcptType,  setRcptType]  = useState<PrinterType>('wifi');
-  const [rcptIp,    setRcptIp]    = useState('');
-  const [rcptPort,  setRcptPort]  = useState('');
-  const [rcptBt,    setRcptBt]    = useState('');
-  const [rcptWidth, setRcptWidth] = useState<PaperWidth>('80mm');
+  // Printer states
+  const [rcpt, setRcpt] = useState<PrinterState>(DEFAULT_PRINTER);
+  const [kit,  setKit]  = useState<PrinterState>(DEFAULT_PRINTER);
 
-  // Kitchen printer
-  const [kitType,  setKitType]  = useState<PrinterType>('wifi');
-  const [kitIp,    setKitIp]    = useState('');
-  const [kitPort,  setKitPort]  = useState('');
-  const [kitBt,    setKitBt]    = useState('');
-  const [kitWidth, setKitWidth] = useState<PaperWidth>('80mm');
+  // Scan modal
+  const [scanTarget,   setScanTarget]   = useState<'receipt' | 'kitchen' | null>(null);
+  const [scanning,     setScanning]     = useState(false);
+  const [foundPrinters, setFoundPrinters] = useState<DiscoveredPrinter[]>([]);
+
+  // Print test
+  const [testTarget, setTestTarget] = useState<'receipt' | 'kitchen' | null>(null);
 
   useEffect(() => { load(); }, []);
 
@@ -48,16 +74,23 @@ export default function SettingsScreen() {
       setBizAddress(s.business_address ?? '');
       setBizPhone(s.business_phone   ?? '');
       setFooter(s.receipt_footer     ?? '');
-      setRcptType(s.receipt_printer_type   ?? 'wifi');
-      setRcptIp(s.receipt_printer_ip     ?? '');
-      setRcptPort(s.receipt_printer_port != null ? String(s.receipt_printer_port) : '');
-      setRcptBt(s.receipt_printer_bt     ?? '');
-      setRcptWidth(s.receipt_paper_width  ?? '80mm');
-      setKitType(s.kitchen_printer_type   ?? 'wifi');
-      setKitIp(s.kitchen_printer_ip      ?? '');
-      setKitPort(s.kitchen_printer_port  != null ? String(s.kitchen_printer_port) : '');
-      setKitBt(s.kitchen_printer_bt      ?? '');
-      setKitWidth(s.kitchen_paper_width   ?? '80mm');
+
+      setRcpt({
+        type:  (s.receipt_printer_type  ?? 'wifi') as PrinterType,
+        ip:    s.receipt_printer_ip    ?? '',
+        port:  s.receipt_printer_port  != null ? String(s.receipt_printer_port) : '',
+        bt:    s.receipt_printer_bt    ?? '',
+        width: (s.receipt_paper_width  ?? '80mm') as PaperWidth,
+        model: s.receipt_printer_model ?? 'generic',
+      });
+      setKit({
+        type:  (s.kitchen_printer_type  ?? 'wifi') as PrinterType,
+        ip:    s.kitchen_printer_ip    ?? '',
+        port:  s.kitchen_printer_port  != null ? String(s.kitchen_printer_port) : '',
+        bt:    s.kitchen_printer_bt    ?? '',
+        width: (s.kitchen_paper_width  ?? '80mm') as PaperWidth,
+        model: s.kitchen_printer_model ?? 'generic',
+      });
     } catch {
       setError('Failed to load settings.');
     } finally {
@@ -67,8 +100,7 @@ export default function SettingsScreen() {
 
   function parsePort(raw: string): number | undefined {
     const n = parseInt(raw.trim(), 10);
-    if (isNaN(n) || n < 1 || n > 65535) return undefined;
-    return n;
+    return isNaN(n) || n < 1 || n > 65535 ? undefined : n;
   }
 
   async function handleSave() {
@@ -76,43 +108,100 @@ export default function SettingsScreen() {
     setSaved(false);
     setError('');
 
-    // Validate ports before saving
-    if (rcptType === 'wifi' && rcptPort.trim()) {
-      const p = parsePort(rcptPort);
-      if (p === undefined) { setError('Receipt printer port must be 1–65535.'); setSaving(false); return; }
+    if (rcpt.type === 'wifi' && rcpt.port.trim()) {
+      if (parsePort(rcpt.port) === undefined) {
+        setError('Receipt printer port must be 1–65535.'); setSaving(false); return;
+      }
     }
-    if (kitType === 'wifi' && kitPort.trim()) {
-      const p = parsePort(kitPort);
-      if (p === undefined) { setError('Kitchen printer port must be 1–65535.'); setSaving(false); return; }
+    if (kit.type === 'wifi' && kit.port.trim()) {
+      if (parsePort(kit.port) === undefined) {
+        setError('Kitchen printer port must be 1–65535.'); setSaving(false); return;
+      }
     }
 
     const settings: Settings = {
-      business_name:         bizName.trim()    || undefined,
-      business_address:      bizAddress.trim() || undefined,
-      business_phone:        bizPhone.trim()   || undefined,
-      receipt_footer:        footer.trim()     || undefined,
-      receipt_printer_type:  rcptType,
-      receipt_printer_ip:    rcptType === 'wifi'      ? rcptIp.trim()  || undefined : undefined,
-      receipt_printer_port:  rcptType === 'wifi'      ? parsePort(rcptPort) : undefined,
-      receipt_printer_bt:    rcptType === 'bluetooth' ? rcptBt.trim()  || undefined : undefined,
-      receipt_paper_width:   rcptWidth,
-      kitchen_printer_type:  kitType,
-      kitchen_printer_ip:    kitType === 'wifi'      ? kitIp.trim()   || undefined : undefined,
-      kitchen_printer_port:  kitType === 'wifi'      ? parsePort(kitPort) : undefined,
-      kitchen_printer_bt:    kitType === 'bluetooth' ? kitBt.trim()   || undefined : undefined,
-      kitchen_paper_width:   kitWidth,
+      business_name:          bizName.trim()    || undefined,
+      business_address:       bizAddress.trim() || undefined,
+      business_phone:         bizPhone.trim()   || undefined,
+      receipt_footer:         footer.trim()     || undefined,
+      receipt_printer_type:   rcpt.type,
+      receipt_printer_ip:     rcpt.type === 'wifi'      ? rcpt.ip.trim()  || undefined : undefined,
+      receipt_printer_port:   rcpt.type === 'wifi'      ? parsePort(rcpt.port) : undefined,
+      receipt_printer_bt:     rcpt.type === 'bluetooth' ? rcpt.bt.trim()  || undefined : undefined,
+      receipt_paper_width:    rcpt.width,
+      receipt_printer_model:  rcpt.model || undefined,
+      kitchen_printer_type:   kit.type,
+      kitchen_printer_ip:     kit.type === 'wifi'       ? kit.ip.trim()   || undefined : undefined,
+      kitchen_printer_port:   kit.type === 'wifi'       ? parsePort(kit.port) : undefined,
+      kitchen_printer_bt:     kit.type === 'bluetooth'  ? kit.bt.trim()   || undefined : undefined,
+      kitchen_paper_width:    kit.width,
+      kitchen_printer_model:  kit.model || undefined,
     };
+
     try {
       await saveSettings(settings);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (e: unknown) {
       const msg = (e as { code?: string }).code === 'permission-denied'
-        ? 'Permission denied — contact your administrator.'
+        ? 'Permission denied.'
         : 'Failed to save. Check your connection.';
       setError(msg);
     } finally {
       setSaving(false);
+    }
+  }
+
+  // ── Scan modal ─────────────────────────────────────────────────────────────
+
+  async function openScan(target: 'receipt' | 'kitchen') {
+    const printer = target === 'receipt' ? rcpt : kit;
+    setScanTarget(target);
+    setFoundPrinters([]);
+    setScanning(true);
+    try {
+      const results = printer.type === 'wifi'
+        ? await scanWifiPrinters()
+        : await scanBluetoothPrinters();
+      setFoundPrinters(results);
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  function selectDiscoveredPrinter(p: DiscoveredPrinter) {
+    const patch: Partial<PrinterState> =
+      p.type === 'wifi'
+        ? { ip: p.address, port: '9100' }
+        : { bt: p.name };
+
+    if (scanTarget === 'receipt') setRcpt((prev) => ({ ...prev, ...patch }));
+    else                          setKit ((prev) => ({ ...prev, ...patch }));
+    setScanTarget(null);
+  }
+
+  // ── Print test ─────────────────────────────────────────────────────────────
+
+  async function handlePrintTest(target: 'receipt' | 'kitchen') {
+    setTestTarget(target);
+    const printer = target === 'receipt' ? rcpt : kit;
+    const settings: Settings = {
+      business_name:       bizName.trim() || undefined,
+      receipt_paper_width: rcpt.width,
+      kitchen_paper_width: kit.width,
+    };
+    try {
+      const bytes = buildTestPage(settings, target);
+      await printBytes(bytes, {
+        type:     printer.type,
+        ip:       printer.ip  || undefined,
+        port:     parsePort(printer.port),
+        btDevice: printer.bt  || undefined,
+      });
+    } catch (e: unknown) {
+      Alert.alert('Print Test Failed', (e as Error).message ?? 'Unknown error.');
+    } finally {
+      setTestTarget(null);
     }
   }
 
@@ -130,7 +219,7 @@ export default function SettingsScreen() {
     <AdminLayout active="Settings">
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView
           style={s.scroll}
@@ -144,7 +233,15 @@ export default function SettingsScreen() {
               {!!error  && <Text style={s.errorText}>{error}</Text>}
               {saved    && <Text style={s.savedText}>✓ Saved</Text>}
               <TouchableOpacity
-                style={[s.saveBtn, saving && s.saveBtnOff]}
+                style={[s.discardBtn, saving && s.btnOff]}
+                onPress={load}
+                disabled={saving}
+                activeOpacity={0.8}
+              >
+                <Text style={s.discardBtnText}>Discard Changes</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.saveBtn, saving && s.btnOff]}
                 onPress={handleSave}
                 disabled={saving}
                 activeOpacity={0.8}
@@ -160,140 +257,285 @@ export default function SettingsScreen() {
           {/* Business Info */}
           <Section title="Business Info">
             <Field label="Business Name">
-              <TextInput
-                style={s.input}
-                value={bizName}
-                onChangeText={setBizName}
-                placeholder="SmartBrew Café"
-                placeholderTextColor={Colors.gray400}
-              />
+              <TextInput style={s.input} value={bizName} onChangeText={setBizName}
+                placeholder="SmartBrew Café" placeholderTextColor={Colors.gray400} />
             </Field>
             <Field label="Address">
-              <TextInput
-                style={s.input}
-                value={bizAddress}
-                onChangeText={setBizAddress}
-                placeholder="123 Main St, City"
-                placeholderTextColor={Colors.gray400}
-              />
+              <TextInput style={s.input} value={bizAddress} onChangeText={setBizAddress}
+                placeholder="123 Main St, City" placeholderTextColor={Colors.gray400} />
             </Field>
             <Field label="Phone">
-              <TextInput
-                style={s.input}
-                value={bizPhone}
-                onChangeText={setBizPhone}
-                placeholder="+63 900 000 0000"
-                placeholderTextColor={Colors.gray400}
-                keyboardType="phone-pad"
-              />
+              <TextInput style={s.input} value={bizPhone} onChangeText={setBizPhone}
+                placeholder="+63 900 000 0000" placeholderTextColor={Colors.gray400}
+                keyboardType="phone-pad" />
             </Field>
           </Section>
 
-          {/* Receipt */}
+          {/* Receipt Footer */}
           <Section title="Receipt">
             <Field label="Footer Text" hint="Printed at the bottom of every receipt">
-              <TextInput
-                style={[s.input, s.multiline]}
-                value={footer}
-                onChangeText={setFooter}
-                placeholder="Thank you for visiting!"
-                placeholderTextColor={Colors.gray400}
-                multiline
-                numberOfLines={3}
-              />
+              <TextInput style={[s.input, s.multiline]} value={footer} onChangeText={setFooter}
+                placeholder="Thank you for visiting!" placeholderTextColor={Colors.gray400}
+                multiline numberOfLines={3} />
             </Field>
           </Section>
 
           {/* Receipt Printer */}
-          <Section title="Receipt Printer">
-            <Field label="Paper Width">
-              <WidthToggle value={rcptWidth} onChange={setRcptWidth} />
-            </Field>
-            <Field label="Connection Type">
-              <TypeToggle value={rcptType} onChange={setRcptType} />
-            </Field>
-            {rcptType === 'wifi' ? (
-              <>
-                <Field label="Printer IP Address" hint="e.g. 192.168.1.200">
-                  <TextInput
-                    style={s.input}
-                    value={rcptIp}
-                    onChangeText={setRcptIp}
-                    placeholder="192.168.1.200"
-                    placeholderTextColor={Colors.gray400}
-                    keyboardType="numeric"
-                  />
-                </Field>
-                <Field label="Port" hint="Default 9100 — leave blank unless your printer uses a different port">
-                  <TextInput
-                    style={s.input}
-                    value={rcptPort}
-                    onChangeText={setRcptPort}
-                    placeholder="9100"
-                    placeholderTextColor={Colors.gray400}
-                    keyboardType="numeric"
-                  />
-                </Field>
-              </>
-            ) : (
-              <Field label="Bluetooth Device Name" hint="Exact name shown in device Bluetooth settings">
-                <TextInput
-                  style={s.input}
-                  value={rcptBt}
-                  onChangeText={setRcptBt}
-                  placeholder="POS-Printer"
-                  placeholderTextColor={Colors.gray400}
-                />
-              </Field>
-            )}
-          </Section>
+          <PrinterSection
+            title="Receipt Printer"
+            printer={rcpt}
+            onChange={setRcpt}
+            onScan={() => openScan('receipt')}
+            onTest={() => handlePrintTest('receipt')}
+            testing={testTarget === 'receipt'}
+          />
 
           {/* Kitchen Printer */}
-          <Section title="Kitchen Printer">
-            <Field label="Paper Width">
-              <WidthToggle value={kitWidth} onChange={setKitWidth} />
-            </Field>
-            <Field label="Connection Type">
-              <TypeToggle value={kitType} onChange={setKitType} />
-            </Field>
-            {kitType === 'wifi' ? (
-              <>
-                <Field label="Printer IP Address" hint="e.g. 192.168.1.201">
-                  <TextInput
-                    style={s.input}
-                    value={kitIp}
-                    onChangeText={setKitIp}
-                    placeholder="192.168.1.201"
-                    placeholderTextColor={Colors.gray400}
-                    keyboardType="numeric"
-                  />
-                </Field>
-                <Field label="Port" hint="Default 9100 — leave blank unless your printer uses a different port">
-                  <TextInput
-                    style={s.input}
-                    value={kitPort}
-                    onChangeText={setKitPort}
-                    placeholder="9100"
-                    placeholderTextColor={Colors.gray400}
-                    keyboardType="numeric"
-                  />
-                </Field>
-              </>
-            ) : (
-              <Field label="Bluetooth Device Name">
-                <TextInput
-                  style={s.input}
-                  value={kitBt}
-                  onChangeText={setKitBt}
-                  placeholder="Kitchen-Printer"
-                  placeholderTextColor={Colors.gray400}
-                />
-              </Field>
-            )}
-          </Section>
+          <PrinterSection
+            title="Kitchen Printer"
+            printer={kit}
+            onChange={setKit}
+            onScan={() => openScan('kitchen')}
+            onTest={() => handlePrintTest('kitchen')}
+            testing={testTarget === 'kitchen'}
+          />
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Scan Modal */}
+      <ScanModal
+        visible={scanTarget !== null}
+        printerType={scanTarget === 'receipt' ? rcpt.type : kit.type}
+        scanning={scanning}
+        found={foundPrinters}
+        onSelect={selectDiscoveredPrinter}
+        onClose={() => setScanTarget(null)}
+      />
     </AdminLayout>
+  );
+}
+
+// ─── PrinterSection ───────────────────────────────────────────────────────────
+
+function PrinterSection({
+  title, printer, onChange, onScan, onTest, testing,
+}: {
+  title:    string;
+  printer:  PrinterState;
+  onChange: (p: PrinterState) => void;
+  onScan:   () => void;
+  onTest:   () => void;
+  testing:  boolean;
+}) {
+  const set = (patch: Partial<PrinterState>) => onChange({ ...printer, ...patch });
+  const configured = printer.type === 'wifi' ? printer.ip : printer.bt;
+
+  return (
+    <Section title={title}>
+      {/* Connection type */}
+      <Field label="Connection Type">
+        <TypeToggle value={printer.type} onChange={(t) => set({ type: t })} />
+      </Field>
+
+      {/* Search button + current device */}
+      <View style={ps.searchRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={ps.deviceLabel}>
+            {configured
+              ? printer.type === 'wifi'
+                ? `${printer.ip}:${printer.port || 9100}`
+                : printer.bt
+              : 'No printer configured'}
+          </Text>
+          {configured ? (
+            <Text style={ps.deviceSub}>
+              {PRINTER_MODELS.find((m) => m.key === printer.model)?.label ?? 'Generic ESC/POS'}
+            </Text>
+          ) : null}
+        </View>
+        <TouchableOpacity style={ps.scanBtn} onPress={onScan} activeOpacity={0.8}>
+          <Text style={ps.scanBtnText}>🔍 Search</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Manual entry */}
+      {printer.type === 'wifi' ? (
+        <View style={ps.manualRow}>
+          <View style={{ flex: 2 }}>
+            <Field label="IP Address" hint="e.g. 192.168.1.200">
+              <TextInput style={s.input} value={printer.ip}
+                onChangeText={(v) => set({ ip: v })}
+                placeholder="192.168.1.200" placeholderTextColor={Colors.gray400}
+                keyboardType="numeric" />
+            </Field>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Field label="Port" hint="Default 9100">
+              <TextInput style={s.input} value={printer.port}
+                onChangeText={(v) => set({ port: v })}
+                placeholder="9100" placeholderTextColor={Colors.gray400}
+                keyboardType="numeric" />
+            </Field>
+          </View>
+        </View>
+      ) : (
+        <Field label="Bluetooth Device Name" hint="Exact name shown in device Bluetooth settings">
+          <TextInput style={s.input} value={printer.bt}
+            onChangeText={(v) => set({ bt: v })}
+            placeholder="POS-Printer" placeholderTextColor={Colors.gray400} />
+        </Field>
+      )}
+
+      {/* Printer model */}
+      <Field label="Printer Model">
+        <View style={ps.modelGrid}>
+          {PRINTER_MODELS.map((m) => (
+            <TouchableOpacity
+              key={m.key}
+              style={[ps.modelBtn, printer.model === m.key && ps.modelBtnSel]}
+              onPress={() => set({ model: m.key })}
+              activeOpacity={0.7}
+            >
+              <Text style={[ps.modelLabel, printer.model === m.key && ps.modelLabelSel]}>
+                {m.label}
+              </Text>
+              <Text style={[ps.modelDetail, printer.model === m.key && ps.modelDetailSel]}>
+                {m.detail}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </Field>
+
+      {/* Paper width */}
+      <Field label="Paper Width">
+        <WidthToggle value={printer.width} onChange={(w) => set({ width: w })} />
+      </Field>
+
+      {/* Print test */}
+      <TouchableOpacity
+        style={[ps.testBtn, testing && ps.testBtnOff]}
+        onPress={onTest}
+        disabled={testing}
+        activeOpacity={0.8}
+      >
+        {testing
+          ? <ActivityIndicator color={Colors.white} size="small" />
+          : <Text style={ps.testBtnText}>🖨️ Print Test</Text>
+        }
+      </TouchableOpacity>
+    </Section>
+  );
+}
+
+// ─── ScanModal ────────────────────────────────────────────────────────────────
+
+function ScanModal({
+  visible, printerType, scanning, found, onSelect, onClose,
+}: {
+  visible:     boolean;
+  printerType: PrinterType;
+  scanning:    boolean;
+  found:       DiscoveredPrinter[];
+  onSelect:    (p: DiscoveredPrinter) => void;
+  onClose:     () => void;
+}) {
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <View style={sm.overlay}>
+        <View style={sm.sheet}>
+          {/* Header */}
+          <View style={sm.header}>
+            <View style={{ flex: 1 }}>
+              <Text style={sm.title}>
+                {printerType === 'wifi' ? '📶 WiFi Printers' : '🔵 Bluetooth Printers'}
+              </Text>
+              <Text style={sm.subtitle}>
+                {scanning
+                  ? 'Scanning your network…'
+                  : found.length > 0
+                  ? `${found.length} printer${found.length !== 1 ? 's' : ''} found`
+                  : 'No printers found automatically'}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={onClose} hitSlop={12}>
+              <Text style={sm.closeX}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Body */}
+          <ScrollView style={sm.body} contentContainerStyle={sm.bodyContent}>
+            {scanning ? (
+              <View style={sm.scanningBox}>
+                <ActivityIndicator size="large" color={Colors.green600} />
+                <Text style={sm.scanningText}>
+                  {printerType === 'wifi'
+                    ? 'Searching for printers on your network via mDNS…'
+                    : 'Scanning for Bluetooth printers nearby…'}
+                </Text>
+                <Text style={sm.scanningHint}>This may take a few seconds.</Text>
+              </View>
+            ) : found.length > 0 ? (
+              found.map((p, i) => (
+                <TouchableOpacity
+                  key={i}
+                  style={sm.printerRow}
+                  onPress={() => onSelect(p)}
+                  activeOpacity={0.7}
+                >
+                  <View style={sm.printerIcon}>
+                    <Text style={sm.printerIconText}>
+                      {p.type === 'wifi' ? '📶' : '🔵'}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={sm.printerName}>{p.name}</Text>
+                    <Text style={sm.printerAddr}>
+                      {p.address}
+                      {p.paired === false ? '  •  not paired' : ''}
+                      {p.paired === true  ? '  •  paired'     : ''}
+                    </Text>
+                  </View>
+                  <Text style={sm.selectText}>Select ›</Text>
+                </TouchableOpacity>
+              ))
+            ) : (
+              <View style={sm.emptyBox}>
+                <Text style={sm.emptyTitle}>No printers found</Text>
+                <Text style={sm.emptyBody}>
+                  {printerType === 'wifi'
+                    ? 'Make sure the printer is powered on and connected to the same WiFi network. You can also enter the IP address manually.'
+                    : 'Make sure the printer is powered on and Bluetooth is enabled on this device. You may need to pair it in your device\'s Bluetooth settings first.'}
+                </Text>
+                {Platform.OS === 'web' && (
+                  <View style={sm.nativeBadge}>
+                    <Text style={sm.nativeBadgeText}>
+                      ⚠ Printer scanning requires the native Android/iOS app.
+                      {'\n'}Run npx expo prebuild and rebuild to enable.
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
+          </ScrollView>
+
+          {/* Footer */}
+          <View style={sm.footer}>
+            <Text style={sm.footerHint}>
+              Not finding your printer? Enter the {printerType === 'wifi' ? 'IP address' : 'device name'} manually above.
+            </Text>
+            <TouchableOpacity style={sm.closeBtn} onPress={onClose} activeOpacity={0.8}>
+              <Text style={sm.closeBtnText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -308,9 +550,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function Field({
-  label, hint, children,
-}: { label: string; hint?: string; children: React.ReactNode }) {
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <View style={fld.root}>
       <Text style={fld.label}>{label}</Text>
@@ -320,18 +560,12 @@ function Field({
   );
 }
 
-function TypeToggle({
-  value, onChange,
-}: { value: PrinterType; onChange: (v: PrinterType) => void }) {
+function TypeToggle({ value, onChange }: { value: PrinterType; onChange: (v: PrinterType) => void }) {
   return (
     <View style={tt.row}>
       {(['wifi', 'bluetooth'] as PrinterType[]).map((t) => (
-        <TouchableOpacity
-          key={t}
-          style={[tt.btn, value === t && tt.btnSel]}
-          onPress={() => onChange(t)}
-          activeOpacity={0.7}
-        >
+        <TouchableOpacity key={t} style={[tt.btn, value === t && tt.btnSel]}
+          onPress={() => onChange(t)} activeOpacity={0.7}>
           <Text style={[tt.text, value === t && tt.textSel]}>
             {t === 'wifi' ? '📶 WiFi' : '🔵 Bluetooth'}
           </Text>
@@ -341,20 +575,14 @@ function TypeToggle({
   );
 }
 
-function WidthToggle({
-  value, onChange,
-}: { value: PaperWidth; onChange: (v: PaperWidth) => void }) {
+function WidthToggle({ value, onChange }: { value: PaperWidth; onChange: (v: PaperWidth) => void }) {
   return (
     <View style={tt.row}>
       {(['58mm', '80mm'] as PaperWidth[]).map((w) => (
-        <TouchableOpacity
-          key={w}
-          style={[tt.btn, value === w && tt.btnSel]}
-          onPress={() => onChange(w)}
-          activeOpacity={0.7}
-        >
+        <TouchableOpacity key={w} style={[tt.btn, value === w && tt.btnSel]}
+          onPress={() => onChange(w)} activeOpacity={0.7}>
           <Text style={[tt.text, value === w && tt.textSel]}>
-            {w === '58mm' ? '58 mm  (32 chars)' : '80 mm  (48 chars)'}
+            {w === '58mm' ? '58 mm  (32 cols)' : '80 mm  (48 cols)'}
           </Text>
         </TouchableOpacity>
       ))}
@@ -365,126 +593,183 @@ function WidthToggle({
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
-  scroll:  { flex: 1, backgroundColor: Colors.background },
-  content: { padding: Spacing.xl, gap: Spacing.xl, paddingBottom: Spacing.xxxl },
-  center:  { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  scroll:   { flex: 1, backgroundColor: Colors.background },
+  content:  { padding: Spacing.xl, gap: Spacing.xl, paddingBottom: Spacing.xxxl },
+  center:   { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
   pageHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: Spacing.md,
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'center', flexWrap: 'wrap', gap: Spacing.md,
   },
-  pageTitle: {
-    fontSize: FontSize.display,
-    fontWeight: FontWeight.bold,
-    color: Colors.gray900,
+  pageTitle: { fontSize: FontSize.display, fontWeight: FontWeight.bold, color: Colors.gray900 },
+  saveRow:   { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, flexWrap: 'wrap' },
+
+  errorText:      { fontSize: FontSize.sm, color: Colors.danger, maxWidth: 280 },
+  savedText:      { fontSize: FontSize.sm, color: Colors.green700, fontWeight: FontWeight.semibold },
+
+  discardBtn: {
+    borderWidth: 1.5, borderColor: Colors.gray300, borderRadius: Radius.md,
+    paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md,
+    alignItems: 'center', backgroundColor: Colors.surface,
   },
-  saveRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-    flexWrap: 'wrap',
-  },
-  errorText: {
-    fontSize: FontSize.sm,
-    color: Colors.danger,
-    maxWidth: 280,
-  },
-  savedText: {
-    fontSize: FontSize.sm,
-    color: Colors.green700,
-    fontWeight: FontWeight.semibold,
-  },
+  discardBtnText: { fontSize: FontSize.base, fontWeight: FontWeight.medium, color: Colors.gray600 },
+
   saveBtn: {
-    backgroundColor: Colors.green600,
-    borderRadius: Radius.md,
-    paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.md,
-    minWidth: 130,
-    alignItems: 'center',
-    ...Shadow.sm,
+    backgroundColor: Colors.green600, borderRadius: Radius.md,
+    paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md,
+    minWidth: 130, alignItems: 'center', ...Shadow.sm,
   },
-  saveBtnOff: { opacity: 0.6 },
-  saveBtnText: {
-    fontSize: FontSize.base,
-    fontWeight: FontWeight.bold,
-    color: Colors.white,
-  },
+  saveBtnText: { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: Colors.white },
+  btnOff:      { opacity: 0.6 },
 
   input: {
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: Radius.md,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    fontSize: FontSize.base,
-    color: Colors.gray800,
-    backgroundColor: Colors.white,
+    borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.md,
+    paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md,
+    fontSize: FontSize.base, color: Colors.gray800, backgroundColor: Colors.white,
   },
-  multiline: {
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
+  multiline: { minHeight: 80, textAlignVertical: 'top' },
 });
 
 const sec = StyleSheet.create({
   root:  { gap: Spacing.sm },
   title: {
-    fontSize: FontSize.base,
-    fontWeight: FontWeight.bold,
-    color: Colors.gray500,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    fontSize: FontSize.base, fontWeight: FontWeight.bold, color: Colors.gray500,
+    textTransform: 'uppercase', letterSpacing: 0.5,
   },
   card: {
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.xl,
-    padding: Spacing.xl,
-    gap: Spacing.lg,
-    ...Shadow.sm,
+    backgroundColor: Colors.surface, borderRadius: Radius.xl,
+    padding: Spacing.xl, gap: Spacing.lg, ...Shadow.sm,
   },
 });
 
 const fld = StyleSheet.create({
   root:  { gap: Spacing.xs },
-  label: {
-    fontSize: FontSize.sm,
-    fontWeight: FontWeight.semibold,
-    color: Colors.gray700,
-  },
-  hint: {
-    fontSize: FontSize.xs,
-    color: Colors.gray400,
-  },
+  label: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.gray700 },
+  hint:  { fontSize: FontSize.xs, color: Colors.gray400 },
 });
 
 const tt = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-  },
-  btn: {
-    flex: 1,
-    paddingVertical: Spacing.md,
-    borderRadius: Radius.md,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-    alignItems: 'center',
+  row:     { flexDirection: 'row', gap: Spacing.sm },
+  btn:     {
+    flex: 1, paddingVertical: Spacing.md, borderRadius: Radius.md,
+    borderWidth: 1.5, borderColor: Colors.border, alignItems: 'center',
     backgroundColor: Colors.surface,
   },
-  btnSel: {
-    borderColor: Colors.green600,
-    backgroundColor: Colors.green50,
+  btnSel:  { borderColor: Colors.green600, backgroundColor: Colors.green50 },
+  text:    { fontSize: FontSize.sm, fontWeight: FontWeight.medium, color: Colors.gray600 },
+  textSel: { color: Colors.green700, fontWeight: FontWeight.bold },
+});
+
+const ps = StyleSheet.create({
+  searchRow: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    backgroundColor: Colors.gray50, borderRadius: Radius.md,
+    borderWidth: 1, borderColor: Colors.border,
+    paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md,
   },
-  text: {
-    fontSize: FontSize.sm,
-    fontWeight: FontWeight.medium,
-    color: Colors.gray600,
+  deviceLabel: { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: Colors.gray800 },
+  deviceSub:   { fontSize: FontSize.xs, color: Colors.gray500, marginTop: 2 },
+  scanBtn: {
+    backgroundColor: Colors.green600, borderRadius: Radius.md,
+    paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm, ...Shadow.sm,
   },
-  textSel: {
-    color: Colors.green700,
-    fontWeight: FontWeight.bold,
+  scanBtnText: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: Colors.white },
+
+  manualRow: { flexDirection: 'row', gap: Spacing.md },
+
+  modelGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  modelBtn: {
+    minWidth: '45%', flex: 1, padding: Spacing.md,
+    borderRadius: Radius.md, borderWidth: 1.5, borderColor: Colors.border,
+    backgroundColor: Colors.surface, gap: 2,
   },
+  modelBtnSel:    { borderColor: Colors.green600, backgroundColor: Colors.green50 },
+  modelLabel:     { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.gray700 },
+  modelLabelSel:  { color: Colors.green700 },
+  modelDetail:    { fontSize: FontSize.xs, color: Colors.gray400 },
+  modelDetailSel: { color: Colors.green600 },
+
+  testBtn: {
+    backgroundColor: Colors.gray800, borderRadius: Radius.md,
+    paddingVertical: Spacing.md, alignItems: 'center', ...Shadow.sm,
+  },
+  testBtnOff:  { opacity: 0.6 },
+  testBtnText: { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: Colors.white },
+});
+
+const sm = StyleSheet.create({
+  overlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center', alignItems: 'center', padding: Spacing.xl,
+  },
+  sheet: {
+    width: '100%', maxWidth: 520, maxHeight: '80%',
+    backgroundColor: Colors.surface, borderRadius: Radius.xl,
+    overflow: 'hidden', ...Shadow.lg,
+  },
+  header: {
+    flexDirection: 'row', alignItems: 'flex-start',
+    padding: Spacing.xl, gap: Spacing.md,
+    backgroundColor: Colors.green700,
+  },
+  title:    { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: Colors.white },
+  subtitle: { fontSize: FontSize.sm, color: Colors.green200, marginTop: 2 },
+  closeX:   { fontSize: FontSize.xl, color: Colors.white, fontWeight: FontWeight.bold },
+
+  body:        { flex: 1 },
+  bodyContent: { padding: Spacing.lg, gap: Spacing.sm },
+
+  scanningBox: {
+    paddingVertical: Spacing.xxxl, alignItems: 'center', gap: Spacing.lg,
+  },
+  scanningText: {
+    fontSize: FontSize.base, color: Colors.gray700,
+    textAlign: 'center', fontWeight: FontWeight.medium,
+  },
+  scanningHint: { fontSize: FontSize.sm, color: Colors.gray400, textAlign: 'center' },
+
+  printerRow: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    backgroundColor: Colors.surface, borderRadius: Radius.lg,
+    borderWidth: 1, borderColor: Colors.border, padding: Spacing.lg,
+  },
+  printerIcon: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.green50,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  printerIconText: { fontSize: 18 },
+  printerName:     { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: Colors.gray900 },
+  printerAddr:     { fontSize: FontSize.xs, color: Colors.gray500, marginTop: 2 },
+  selectText:      { fontSize: FontSize.sm, color: Colors.green700, fontWeight: FontWeight.semibold },
+
+  emptyBox: {
+    paddingVertical: Spacing.xxl, alignItems: 'center', gap: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+  },
+  emptyTitle: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.gray700 },
+  emptyBody: {
+    fontSize: FontSize.sm, color: Colors.gray500,
+    textAlign: 'center', lineHeight: 20,
+  },
+  nativeBadge: {
+    backgroundColor: Colors.warningBg, borderRadius: Radius.md,
+    padding: Spacing.md, borderWidth: 1, borderColor: Colors.warning + '44',
+    marginTop: Spacing.sm,
+  },
+  nativeBadgeText: {
+    fontSize: FontSize.xs, color: Colors.warning,
+    fontWeight: FontWeight.medium, textAlign: 'center', lineHeight: 18,
+  },
+
+  footer: {
+    borderTopWidth: 1, borderColor: Colors.border,
+    padding: Spacing.lg, gap: Spacing.md,
+    backgroundColor: Colors.surface,
+  },
+  footerHint: { fontSize: FontSize.xs, color: Colors.gray400, textAlign: 'center' },
+  closeBtn: {
+    backgroundColor: Colors.green600, borderRadius: Radius.md,
+    paddingVertical: Spacing.md, alignItems: 'center',
+  },
+  closeBtnText: { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: Colors.white },
 });

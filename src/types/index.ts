@@ -21,11 +21,12 @@ export interface UserProfile {
 }
 
 export interface Modifier {
-  id:          string;
-  name:        string;
-  price_delta: number;
-  sort_order:  number;
-  is_active:   boolean;
+  id:            string;
+  name:          string;
+  price_delta:   number;
+  sort_order:    number;
+  is_active:     boolean;
+  recipe_lines?: RecipeLine[];  // stock deducted when this modifier is selected
 }
 
 export interface ModifierGroup {
@@ -72,6 +73,7 @@ export interface SelectedModifier {
   modifier_name: string;
   group_name:    string;
   price_delta:   number;
+  recipe_lines?: RecipeLine[];  // snapshot carried for stock deduction at checkout
 }
 
 export interface CartItem {
@@ -88,6 +90,7 @@ export interface CartItem {
   tracking_mode?:  TrackingMode;
   stock_item_id?:  string | null;
   recipe_lines?:   RecipeLine[];
+  needs_kitchen?:  boolean;
 }
 
 export interface CashSession {
@@ -125,14 +128,18 @@ export interface Order {
 }
 
 export interface OrderItem {
-  product_id:   string;
-  product_name: string;
-  unit_price:   number;
-  unit_cost:    number;
-  quantity:     number;
-  subtotal:     number;
-  notes:        string | null;
-  modifiers:    SelectedModifier[];
+  product_id:     string;
+  product_name:   string;
+  unit_price:     number;
+  unit_cost:      number;
+  quantity:       number;
+  subtotal:       number;
+  notes:          string | null;
+  modifiers:      SelectedModifier[];
+  // Stock snapshot — stored at order time so voidOrder can reverse deductions
+  tracking_mode?: TrackingMode;
+  stock_item_id?: string | null;
+  recipe_lines?:  RecipeLine[];
 }
 
 export interface StockItem {
@@ -149,20 +156,22 @@ export interface StockItem {
 export type PaperWidth = '58mm' | '80mm';
 
 export interface Settings {
-  business_name?:          string;
-  business_address?:       string;
-  business_phone?:         string;
-  receipt_footer?:         string;
-  receipt_printer_type?:   'wifi' | 'bluetooth';
-  receipt_printer_ip?:     string;
-  receipt_printer_port?:   number;
-  receipt_printer_bt?:     string;
-  receipt_paper_width?:    PaperWidth;
-  kitchen_printer_type?:   'wifi' | 'bluetooth';
-  kitchen_printer_ip?:     string;
-  kitchen_printer_port?:   number;
-  kitchen_printer_bt?:     string;
-  kitchen_paper_width?:    PaperWidth;
+  business_name?:           string;
+  business_address?:        string;
+  business_phone?:          string;
+  receipt_footer?:          string;
+  receipt_printer_type?:    'wifi' | 'bluetooth';
+  receipt_printer_ip?:      string;
+  receipt_printer_port?:    number;
+  receipt_printer_bt?:      string;
+  receipt_paper_width?:     PaperWidth;
+  receipt_printer_model?:   string;
+  kitchen_printer_type?:    'wifi' | 'bluetooth';
+  kitchen_printer_ip?:      string;
+  kitchen_printer_port?:    number;
+  kitchen_printer_bt?:      string;
+  kitchen_paper_width?:     PaperWidth;
+  kitchen_printer_model?:   string;
 }
 
 export interface PendingOrder {
