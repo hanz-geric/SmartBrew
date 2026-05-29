@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AdminStackParamList } from '../../navigation/AdminStack';
@@ -34,7 +34,7 @@ export default function AdminLayout({ active, children }: Props) {
   const navigation = useNavigation<AdminNav>();
   const user       = useAuthStore((s) => s.user)!;
   const { width }  = useWindowDimensions();
-  const compact    = width < 900;  // small tablet — collapse sidebar labels
+  const compact    = width < 960;
 
   async function handleLogout() {
     await logout();
@@ -54,30 +54,30 @@ export default function AdminLayout({ active, children }: Props) {
           )}
         </View>
 
-        <View style={s.navItems}>
+        <ScrollView style={s.navItems} showsVerticalScrollIndicator={false}>
           {NAV_ITEMS.filter((item) => {
-            if (item.adminOnly  && user.role !== 'admin')   return false;
+            if (item.adminOnly   && user.role !== 'admin')   return false;
             if (item.managerOnly && user.role !== 'manager') return false;
             return true;
           }).map(({ screen, label, icon }) => {
             const isActive = active === screen;
             return (
               <TouchableOpacity
-                key={screen}
+                key={`${screen}-${label}`}
                 style={[s.navItem, isActive && s.navItemActive, compact && s.navItemCompact]}
                 onPress={() => navigation.navigate(screen)}
                 activeOpacity={0.7}
               >
                 <Text style={s.navIcon}>{icon}</Text>
                 {!compact && (
-                  <Text style={[s.navLabel, isActive && s.navLabelActive]}>
+                  <Text style={[s.navLabel, isActive && s.navLabelActive]} numberOfLines={1}>
                     {label}
                   </Text>
                 )}
               </TouchableOpacity>
             );
           })}
-        </View>
+        </ScrollView>
 
         <View style={[s.sidebarFooter, compact && s.sidebarFooterCompact]}>
           {!compact && <Text style={s.userName} numberOfLines={1}>{user.full_name}</Text>}
@@ -107,14 +107,18 @@ const s = StyleSheet.create({
 
   // Sidebar
   sidebar: {
-    width: isTablet ? 240 : 200,
+    width: '20%',
+    minWidth: 160,
+    maxWidth: 240,
     backgroundColor: Colors.green800,
     paddingTop: Spacing.xxl,
     paddingBottom: Spacing.xl,
     flexDirection: 'column',
   },
   sidebarCompact: {
-    width: 60,
+    width: 56,
+    minWidth: 56,
+    maxWidth: 56,
   },
   brand: {
     paddingHorizontal: Spacing.lg,
