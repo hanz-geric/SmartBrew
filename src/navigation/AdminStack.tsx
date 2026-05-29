@@ -33,7 +33,7 @@ const Stack = createNativeStackNavigator<AdminStackParamList>();
 
 export default function AdminStack() {
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator screenOptions={{ headerShown: false, animation: 'none' }}>
       <Stack.Screen name="Dashboard"         component={DashboardScreen} />
       <Stack.Screen name="Orders"            component={OrderHistoryScreen} />
       <Stack.Screen name="Sessions"          component={SessionsScreen} />
