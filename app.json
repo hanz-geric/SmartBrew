@@ -38,7 +38,8 @@
     "plugins": [
       "expo-sqlite",
       "expo-secure-store",
-      "expo-sharing"
+      "expo-sharing",
+      "expo-image-picker"
     ],
     "updates": {
       "url": "https://u.expo.dev/c8f75f66-476b-46eb-a12f-773a1f349458",

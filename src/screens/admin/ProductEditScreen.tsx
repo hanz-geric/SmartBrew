@@ -98,20 +98,28 @@ export default function ProductEditScreen() {
   }
 
   async function pickImage() {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      setError('Gallery permission is required to pick an image.');
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: 'images',
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.7,
-    });
-    if (!result.canceled && result.assets.length > 0) {
-      setImage(result.assets[0].uri);
-      setError('');
+    try {
+      const { status, canAskAgain } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        setError(
+          canAskAgain
+            ? 'Gallery permission denied. Please allow access and try again.'
+            : 'Gallery permission permanently denied. Enable it in device Settings → Apps → SmartBrew POS → Permissions.',
+        );
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: 'images',
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+      });
+      if (!result.canceled && result.assets.length > 0) {
+        setImage(result.assets[0].uri);
+        setError('');
+      }
+    } catch (e: unknown) {
+      setError('Could not open gallery. ' + ((e as Error).message ?? ''));
     }
   }
 
