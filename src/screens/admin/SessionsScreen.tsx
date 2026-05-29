@@ -216,43 +216,30 @@ function SessionDrillModal({
               {orders.length === 0 ? (
                 <Text style={d.empty}>No orders in this session.</Text>
               ) : (
-                orders.map((order, idx) => {
-                  const isVoided   = order.status === 'cancelled';
-                  const prevOrder  = idx > 0 ? orders[idx - 1] : null;
-                  const didSwitch  = hadSwitches && prevOrder && prevOrder.cashier_name !== order.cashier_name;
+                orders.map((order) => {
+                  const isVoided = order.status === 'cancelled';
                   return (
-                    <View key={order.id}>
-                      {(idx === 0 && hadSwitches) && (
-                        <View style={d.switchBanner}>
-                          <Text style={d.switchBannerText}>⇄ {order.cashier_name}</Text>
-                        </View>
-                      )}
-                      {didSwitch && (
-                        <View style={d.switchBanner}>
-                          <Text style={d.switchBannerText}>⇄ Switched to {order.cashier_name}</Text>
-                        </View>
-                      )}
-                      <View style={[d.orderRow, isVoided && d.orderRowVoided]}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={[d.orderNum, isVoided && d.orderNumVoided]}>
-                            #{order.order_number}
-                          </Text>
-                          <Text style={d.orderMeta}>
-                            {fmtTime(order.created_at)}
-                            {' · '}{TYPE_LABELS[order.order_type] ?? order.order_type}
-                            {' · '}{PAY_LABELS[order.payment_method] ?? order.payment_method}
-                          </Text>
-                        </View>
-                        <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                          <Text style={[d.orderTotal, isVoided && d.orderTotalVoided]}>
-                            ₱{order.total_amount.toFixed(2)}
-                          </Text>
-                          {isVoided && (
-                            <View style={d.voidedBadge}>
-                              <Text style={d.voidedBadgeText}>Voided</Text>
-                            </View>
-                          )}
-                        </View>
+                    <View key={order.id} style={[d.orderRow, isVoided && d.orderRowVoided]}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[d.orderNum, isVoided && d.orderNumVoided]}>
+                          #{order.order_number}
+                        </Text>
+                        <Text style={d.orderMeta}>
+                          {fmtTime(order.created_at)}
+                          {' · '}{TYPE_LABELS[order.order_type] ?? order.order_type}
+                          {' · '}{PAY_LABELS[order.payment_method] ?? order.payment_method}
+                          {hadSwitches && order.cashier_name ? ` · ${order.cashier_name}` : ''}
+                        </Text>
+                      </View>
+                      <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                        <Text style={[d.orderTotal, isVoided && d.orderTotalVoided]}>
+                          ₱{order.total_amount.toFixed(2)}
+                        </Text>
+                        {isVoided && (
+                          <View style={d.voidedBadge}>
+                            <Text style={d.voidedBadgeText}>Voided</Text>
+                          </View>
+                        )}
                       </View>
                     </View>
                   );
@@ -711,13 +698,4 @@ const d = StyleSheet.create({
   },
   voidedBadgeText: { fontSize: FontSize.xs, color: Colors.danger, fontWeight: FontWeight.bold },
 
-  switchBanner: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: Spacing.lg, paddingVertical: Spacing.xs,
-    backgroundColor: Colors.warningBg,
-    borderBottomWidth: 1, borderColor: Colors.warning + '44',
-  },
-  switchBannerText: {
-    fontSize: FontSize.xs, fontWeight: FontWeight.bold, color: Colors.warning,
-  },
 });
