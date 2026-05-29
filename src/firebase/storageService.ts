@@ -1,5 +1,5 @@
 import { deleteObject, getDownloadURL, ref, uploadString } from 'firebase/storage';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { storage } from './config';
 
 export async function uploadProductImage(localUri: string, productKey: string): Promise<string> {
