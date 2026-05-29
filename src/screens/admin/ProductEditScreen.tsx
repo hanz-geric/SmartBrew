@@ -181,9 +181,12 @@ export default function ProductEditScreen() {
 
       navigation.goBack();
     } catch (e: unknown) {
-      const msg = (e as { code?: string }).code === 'permission-denied'
-        ? 'Permission denied.'
-        : 'Failed to save. Check your connection.';
+      const code = (e as { code?: string }).code ?? '';
+      const msg  = code === 'permission-denied' || code === 'storage/unauthorized'
+        ? 'Permission denied. Check Firebase Storage rules.'
+        : (e as Error).message
+          ? `Save failed: ${(e as Error).message}`
+          : 'Failed to save. Check your connection.';
       setError(msg);
     } finally {
       setSaving(false);
