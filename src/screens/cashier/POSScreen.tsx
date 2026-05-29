@@ -1002,6 +1002,9 @@ const s = StyleSheet.create({
     paddingVertical: Spacing.sm,
     borderRadius: Radius.full,
     backgroundColor: Colors.gray100,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 32,
   },
   catTabSel: {
     backgroundColor: Colors.green600,
@@ -1078,8 +1081,8 @@ const s = StyleSheet.create({
   // Right panel
   right: {
     flex: 1,
-    minWidth: isTablet ? 320 : 260,
-    maxWidth: isTablet ? 420 : 320,
+    minWidth: isTablet ? 260 : 220,
+    maxWidth: isTablet ? 340 : 280,
     backgroundColor: Colors.surface,
     flexDirection: 'column',
   },
@@ -1364,13 +1367,13 @@ const mm = StyleSheet.create({
     backgroundColor: Colors.surface,
     borderRadius: Radius.xl,
     overflow: 'hidden',
-    maxHeight: '85%',
+    maxHeight: '90%',
     ...Shadow.lg,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    padding: Spacing.xl,
+    padding: isTablet ? Spacing.xl : Spacing.md,
     borderBottomWidth: 1,
     borderColor: Colors.border,
     backgroundColor: Colors.green700,
@@ -1475,8 +1478,8 @@ const mm = StyleSheet.create({
   footer: {
     borderTopWidth: 1,
     borderColor: Colors.border,
-    padding: Spacing.xl,
-    gap: Spacing.md,
+    padding: isTablet ? Spacing.xl : Spacing.md,
+    gap: Spacing.sm,
   },
   qtyRow: {
     flexDirection: 'row',
@@ -1543,7 +1546,7 @@ const da = StyleSheet.create({
   },
   header: {
     backgroundColor: Colors.green700,
-    padding: Spacing.xl,
+    padding: isTablet ? Spacing.xl : Spacing.md,
     gap: Spacing.xs,
   },
   title: {
@@ -1598,7 +1601,7 @@ const da = StyleSheet.create({
   footer: {
     flexDirection: 'row',
     gap: Spacing.md,
-    padding: Spacing.xl,
+    padding: isTablet ? Spacing.xl : Spacing.md,
     paddingTop: 0,
   },
   cancelBtn: {

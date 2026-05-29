@@ -31,6 +31,7 @@ export default function CloseSessionScreen({ route, navigation }: Props) {
   const [actualCash, setActualCash] = useState('');
   const [closing,    setClosing]    = useState(false);
   const [closed,     setClosed]     = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const [error,      setError]      = useState('');
 
   // Fetch live session so cash_collected reflects orders placed during the shift
@@ -67,8 +68,15 @@ export default function CloseSessionScreen({ route, navigation }: Props) {
   }
 
   async function handleDone() {
-    clearCart();
-    await logout();
+    setLoggingOut(true);
+    setError('');
+    try {
+      clearCart();
+      await logout();
+    } catch {
+      setError('Failed to log out. Try again.');
+      setLoggingOut(false);
+    }
   }
 
   return (
@@ -179,12 +187,17 @@ export default function CloseSessionScreen({ route, navigation }: Props) {
               </View>
             </View>
 
+            {!!error && <Text style={s.error}>{error}</Text>}
             <TouchableOpacity
-              style={s.closeBtn}
+              style={[s.closeBtn, loggingOut && s.closeBtnOff]}
               onPress={handleDone}
+              disabled={loggingOut}
               activeOpacity={0.8}
             >
-              <Text style={s.closeBtnText}>Done — Go to Login</Text>
+              {loggingOut
+                ? <ActivityIndicator color={Colors.white} />
+                : <Text style={s.closeBtnText}>Done — Go to Login</Text>
+              }
             </TouchableOpacity>
           </>
         )}
