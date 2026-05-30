@@ -118,8 +118,8 @@ function ModifierModal({ product, onClose, onAdd }: ModModalProps) {
                 <View style={mm.groupHeader}>
                   <Text style={mm.groupName}>{group.name}</Text>
                   <View style={[mm.badge, errors[group.id] && mm.badgeErr]}>
-                    <Text style={mm.badgeText}>
-                      {group.is_required ? 'Required' : 'Optional'}
+                    <Text style={[mm.badgeText, errors[group.id] && mm.badgeTextErr]}>
+                      {errors[group.id] ? '⚠ Required' : group.is_required ? 'Required' : 'Optional'}
                     </Text>
                   </View>
                 </View>
@@ -1522,14 +1522,21 @@ const mm = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: Radius.full,
     backgroundColor: Colors.gray100,
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
   badgeErr: {
     backgroundColor: Colors.dangerBg,
+    borderColor: Colors.danger,
   },
   badgeText: {
     fontSize: FontSize.xs,
     color: Colors.gray600,
     fontWeight: FontWeight.medium,
+  },
+  badgeTextErr: {
+    color: Colors.danger,
+    fontWeight: FontWeight.bold,
   },
   optionRow: {
     flexDirection: 'row',

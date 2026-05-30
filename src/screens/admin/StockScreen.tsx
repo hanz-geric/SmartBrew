@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import {
-  ActivityIndicator, Alert, FlatList, Modal, ScrollView,
+  ActivityIndicator, Alert, FlatList, KeyboardAvoidingView,
+  Modal, Platform, ScrollView,
   StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -280,7 +281,10 @@ export default function StockScreen() {
         onRequestClose={closeAdjust}
       >
         <View style={m.overlay}>
-          <View style={m.sheet}>
+          <KeyboardAvoidingView
+            style={m.sheet}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          >
             {/* Fixed header */}
             <View style={m.modalHeader}>
               <View style={m.modalHeaderTop}>
@@ -345,8 +349,13 @@ export default function StockScreen() {
                 onChangeText={setAdjustNotes}
               />
 
-              {!!adjustError && <Text style={m.error}>{adjustError}</Text>}
             </ScrollView>
+
+            {!!adjustError && (
+              <View style={m.errorBanner}>
+                <Text style={m.errorBannerText}>{adjustError}</Text>
+              </View>
+            )}
 
             {/* Fixed footer */}
             <View style={m.actions}>
@@ -365,7 +374,7 @@ export default function StockScreen() {
                 }
               </TouchableOpacity>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
     </AdminLayout>
@@ -538,7 +547,18 @@ const m = StyleSheet.create({
   reasonText:    { fontSize: FontSize.sm, color: Colors.gray700 },
   reasonTextSel: { color: Colors.green700, fontWeight: FontWeight.semibold },
 
-  error:  { fontSize: FontSize.sm, color: Colors.danger },
+  errorBanner: {
+    backgroundColor: Colors.dangerBg,
+    borderTopWidth: 1,
+    borderColor: Colors.danger + '44',
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.sm,
+  },
+  errorBannerText: {
+    fontSize: FontSize.sm,
+    color: Colors.danger,
+    fontWeight: FontWeight.medium,
+  },
   actions: {
     flexDirection: 'row', gap: Spacing.sm,
     padding: Spacing.xl, paddingTop: Spacing.md,
