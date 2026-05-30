@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator, Image, KeyboardAvoidingView, Platform,
+  ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform,
   ScrollView, StyleSheet, Switch, Text, TextInput,
   TouchableOpacity, View,
 } from 'react-native';
@@ -10,7 +10,8 @@ import * as ImagePicker from 'expo-image-picker';
 import AdminLayout from './AdminLayout';
 import { AdminStackParamList } from '../../navigation/AdminStack';
 import {
-  getAllCategories, getAllModifierGroups, getAllProducts, listStockItems, upsertProduct,
+  getAllCategories, getAllModifierGroups, getAllProducts, listStockItems,
+  upsertProduct, deleteProduct,
 } from '../../firebase/firestoreService';
 import { uploadProductImage } from '../../firebase/storageService';
 import { Category, ModifierGroup, RecipeLine, StockItem, TrackingMode } from '../../types';
@@ -27,9 +28,10 @@ export default function ProductEditScreen() {
   const { productId } = route.params;
   const isNew = !productId;
 
-  const [loading,  setLoading]  = useState(true);
-  const [saving,   setSaving]   = useState(false);
-  const [error,    setError]    = useState('');
+  const [loading,   setLoading]  = useState(true);
+  const [saving,    setSaving]   = useState(false);
+  const [deleting,  setDeleting] = useState(false);
+  const [error,     setError]    = useState('');
 
   // Form state
   const [name,          setName]          = useState('');
@@ -196,6 +198,56 @@ export default function ProductEditScreen() {
   function toggleGroup(id: string) {
     setSelectedGroups((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+
+  function confirmDeactivate() {
+    const action = isActive ? 'Deactivate' : 'Activate';
+    Alert.alert(
+      `${action} Product`,
+      isActive
+        ? `"${name}" will be hidden from the POS. Existing orders are unaffected.`
+        : `"${name}" will appear in the POS again.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: action,
+          style: isActive ? 'destructive' : 'default',
+          onPress: () => {
+            setIsActive((v) => !v);
+          },
+        },
+      ],
+    );
+  }
+
+  function confirmDelete() {
+    Alert.alert(
+      'Delete Product',
+      `Permanently delete "${name}"? This cannot be undone.\n\nAll past orders that included this product are preserved — only the product itself is removed from the menu.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            if (!productId) return;
+            setDeleting(true);
+            try {
+              await deleteProduct(productId);
+              navigation.goBack();
+            } catch (e: unknown) {
+              const code = (e as { code?: string }).code ?? '';
+              setError(
+                code === 'permission-denied'
+                  ? 'Permission denied.'
+                  : 'Failed to delete. Check your connection.',
+              );
+              setDeleting(false);
+            }
+          },
+        },
+      ],
     );
   }
 
@@ -516,6 +568,53 @@ export default function ProductEditScreen() {
               })
             )}
           </Section>
+
+          {/* Danger Zone — existing products only */}
+          {!isNew && (
+            <Section title="Danger Zone">
+              {/* Deactivate / Activate */}
+              <View style={s.dangerRow}>
+                <View style={s.dangerInfo}>
+                  <Text style={s.dangerLabel}>
+                    {isActive ? 'Product is Active' : 'Product is Inactive'}
+                  </Text>
+                  <Text style={s.dangerHint}>
+                    {isActive
+                      ? 'Deactivating hides it from the POS. Orders are unaffected.'
+                      : 'Activating makes it visible in the POS again.'}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[s.deactivateBtn, !isActive && s.activateBtn]}
+                  onPress={confirmDeactivate}
+                  disabled={saving || deleting}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[s.deactivateBtnText, !isActive && s.activateBtnText]}>
+                    {isActive ? 'Deactivate' : 'Activate'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Delete */}
+              <View style={s.divider} />
+              <Text style={s.deleteHint}>
+                Deleting permanently removes this product from the menu.
+                All past orders that included it are preserved.
+              </Text>
+              <TouchableOpacity
+                style={[s.deleteBtn, (saving || deleting) && s.saveBtnOff]}
+                onPress={confirmDelete}
+                disabled={saving || deleting}
+                activeOpacity={0.8}
+              >
+                {deleting
+                  ? <ActivityIndicator color={Colors.danger} size="small" />
+                  : <Text style={s.deleteBtnText}>Delete Product</Text>
+                }
+              </TouchableOpacity>
+            </Section>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </AdminLayout>
@@ -710,6 +809,51 @@ const s = StyleSheet.create({
   modName:      { fontSize: FontSize.base, fontWeight: FontWeight.medium, color: Colors.gray700 },
   modNameSel:   { color: Colors.green700, fontWeight: FontWeight.semibold },
   modHint:      { fontSize: FontSize.xs, color: Colors.gray400 },
+
+  // Danger zone
+  dangerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.md,
+  },
+  dangerInfo:  { flex: 1, gap: 2 },
+  dangerLabel: { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: Colors.gray900 },
+  dangerHint:  { fontSize: FontSize.xs, color: Colors.gray500 },
+  deactivateBtn: {
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.md,
+    borderWidth: 1.5,
+    borderColor: Colors.danger,
+    backgroundColor: Colors.dangerBg,
+  },
+  activateBtn: {
+    borderColor: Colors.green600,
+    backgroundColor: Colors.green50,
+  },
+  deactivateBtnText: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.bold,
+    color: Colors.danger,
+  },
+  activateBtnText: {
+    color: Colors.green700,
+  },
+  divider: { height: 1, backgroundColor: Colors.border },
+  deleteHint: { fontSize: FontSize.sm, color: Colors.gray500 },
+  deleteBtn: {
+    borderWidth: 1.5,
+    borderColor: Colors.danger,
+    borderRadius: Radius.md,
+    paddingVertical: Spacing.md,
+    alignItems: 'center',
+  },
+  deleteBtnText: {
+    fontSize: FontSize.base,
+    fontWeight: FontWeight.semibold,
+    color: Colors.danger,
+  },
 });
 
 const rb = StyleSheet.create({

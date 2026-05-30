@@ -402,6 +402,11 @@ export async function upsertProduct(
   return ref.id;
 }
 
+export async function deleteProduct(id: string): Promise<void> {
+  const { deleteDoc } = await import('firebase/firestore');
+  await deleteDoc(productDoc(id));
+}
+
 export async function upsertCategory(
   data: Omit<Category, 'id'>,
   id?: string,
