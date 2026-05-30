@@ -8,9 +8,29 @@ import {
 } from 'firebase/auth';
 import { deleteApp, initializeApp } from 'firebase/app';
 import { getDoc, setDoc } from 'firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth, firebaseConfig } from './config';
 import { userDoc } from './collections';
 import { AuthUser, UserRole } from '../types';
+
+const AUTH_CACHE_KEY = '@smartbrew:auth_user';
+
+async function saveAuthCache(user: AuthUser): Promise<void> {
+  await AsyncStorage.setItem(AUTH_CACHE_KEY, JSON.stringify(user));
+}
+
+export async function loadAuthCache(): Promise<AuthUser | null> {
+  try {
+    const raw = await AsyncStorage.getItem(AUTH_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as AuthUser) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function clearAuthCache(): Promise<void> {
+  await AsyncStorage.removeItem(AUTH_CACHE_KEY);
+}
 
 const DOMAIN = '@smartbrew.app';
 
@@ -59,12 +79,14 @@ export async function buildAuthUser(firebaseUser: User): Promise<AuthUser> {
   const data = snap.data();
   if (!data.is_active) throw new Error('This account has been disabled.');
 
-  return {
+  const user: AuthUser = {
     uid:       firebaseUser.uid,
     role:      data.role,
     full_name: data.full_name ?? '',
     username:  data.username ?? '',
   };
+  saveAuthCache(user).catch(() => {});
+  return user;
 }
 
 // Creates a new Firebase Auth + Firestore user without signing out the current admin.
@@ -144,6 +166,9 @@ export async function switchCashierAuth(
 }
 
 export async function logout(): Promise<void> {
+  // Clear cache BEFORE signOut so the onAuthStateChanged(null) handler
+  // doesn't find a stale cache entry and re-authenticate the user.
+  await clearAuthCache();
   await signOut(auth);
 }
 
@@ -152,14 +177,20 @@ export function onAuthChanged(
 ): () => void {
   return onAuthStateChanged(auth, async (firebaseUser) => {
     if (!firebaseUser) {
-      callback(null);
+      // No Firebase token (in-memory cleared, app restarted, etc.).
+      // Check the profile cache — it's populated on every successful login
+      // and cleared on explicit logout, so it's safe to trust when non-null.
+      const cached = await loadAuthCache();
+      callback(cached);
       return;
     }
     try {
       const user = await buildAuthUser(firebaseUser);
       callback(user);
     } catch {
-      callback(null);
+      // Firebase token exists but Firestore is unreachable — serve cached profile.
+      const cached = await loadAuthCache();
+      callback(cached);
     }
   });
 }

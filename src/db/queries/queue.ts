@@ -44,6 +44,40 @@ export async function incrementRetry(local_id: string): Promise<void> {
   );
 }
 
+export async function patchPendingOrdersSessionId(
+  oldSessionId: string,
+  newSessionId: string,
+): Promise<void> {
+  const db     = await getDb();
+  const orders = await getPendingOrders();
+  for (const order of orders) {
+    if (order.payload.session_id === oldSessionId) {
+      const patched = { ...order.payload, session_id: newSessionId };
+      await db.runAsync(
+        'UPDATE pending_orders SET payload = ? WHERE local_id = ?',
+        [JSON.stringify(patched), order.local_id],
+      );
+    }
+  }
+}
+
+export async function getPendingOrderById(local_id: string): Promise<PendingOrder | null> {
+  const db  = await getDb();
+  const row = await db.getFirstAsync<{
+    local_id: string;
+    payload: string;
+    created_at: string;
+    retry_count: number;
+  }>('SELECT * FROM pending_orders WHERE local_id = ?', [local_id]);
+  if (!row) return null;
+  return {
+    local_id:    row.local_id,
+    payload:     JSON.parse(row.payload),
+    created_at:  row.created_at,
+    retry_count: row.retry_count,
+  };
+}
+
 export async function pendingCount(): Promise<number> {
   const db = await getDb();
   const row = await db.getFirstAsync<{ count: number }>(

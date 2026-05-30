@@ -8,6 +8,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AdminLayout from './AdminLayout';
 import { AdminStackParamList } from '../../navigation/AdminStack';
 import { getRecentSessions, getSessionsInRange } from '../../firebase/firestoreService';
+import { useSyncEvents } from '../../context/SyncContext';
 import { CashSession } from '../../types';
 import { exportCsv } from '../../utils/csvExport';
 import {
@@ -108,8 +109,12 @@ export default function SessionsScreen() {
   const [statusFilter,   setStatusFilter]   = useState<'all' | 'open' | 'closed'>('all');
   const [cashierSearch,  setCashierSearch]  = useState('');
   const [exporting,      setExporting]      = useState(false);
+  const [syncVersion,    setSyncVersion]    = useState(0);
 
-  useEffect(() => { load(); }, [period]);
+  const { subscribe } = useSyncEvents();
+  useEffect(() => { return subscribe(() => setSyncVersion((v) => v + 1)); }, []);
+
+  useEffect(() => { load(); }, [period, syncVersion]);
 
   async function load() {
     setLoading(true);

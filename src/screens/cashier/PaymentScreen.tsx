@@ -11,6 +11,10 @@ import { useCartStore } from '../../store/cartStore';
 import { createOrder, getSettings } from '../../firebase/firestoreService';
 import { enqueueOrder } from '../../db/queries/queue';
 import { syncPendingOrders } from '../../services/syncService';
+import { useSyncEvents } from '../../context/SyncContext';
+import { useNetwork } from '../../context/NetworkContext';
+import { deductStock } from '../../db/queries/stockCache';
+import { buildStockDeductions } from '../../utils/stockUtils';
 import { buildKitchenTicket } from '../../utils/printerTemplates';
 import { printBytes } from '../../services/printerService';
 import {
@@ -105,6 +109,8 @@ export default function PaymentScreen({ route, navigation }: Props) {
   const [submitting,   setSubmitting]  = useState(false);
   const [error,        setError]       = useState('');
   const [settings,     setSettings]    = useState<Settings>({});
+  const { notifySynced } = useSyncEvents();
+  const { isOnline }     = useNetwork();
 
   useEffect(() => {
     getSettings().then(setSettings).catch(() => {});
@@ -129,6 +135,7 @@ export default function PaymentScreen({ route, navigation }: Props) {
     setError('');
 
     const payload: CheckoutPayload = {
+      session_id:          session.id,
       payment_method:      payMethod,
       order_type:          orderType,
       table_number:        orderType === 'dine_in' ? tableNumber || undefined : undefined,
@@ -142,31 +149,54 @@ export default function PaymentScreen({ route, navigation }: Props) {
     let order: Order;
     let warnings: string[] = [];
 
-    try {
-      order = await createOrder(payload, session, user);
-      syncPendingOrders(session, user).catch(() => {});
+    // Shared helper — prints kitchen ticket from local printer (no cloud needed)
+    function printKitchenIfNeeded(o: Order) {
+      if (!cartItems.some((i) => i.needs_kitchen)) return;
+      const bytes = buildKitchenTicket(o, settings);
+      printBytes(bytes, {
+        type:     (settings.kitchen_printer_type ?? 'wifi') as 'wifi' | 'bluetooth',
+        ip:       settings.kitchen_printer_ip,
+        port:     settings.kitchen_printer_port,
+        btDevice: settings.kitchen_printer_bt,
+      }).catch(() => {});
+    }
 
-      // Fire kitchen ticket if any item needs it — non-blocking, failures are silent
-      const needsKitchen = cartItems.some((i) => i.needs_kitchen);
-      if (needsKitchen) {
-        const kitchenBytes = buildKitchenTicket(order, settings);
-        printBytes(kitchenBytes, {
-          type:     (settings.kitchen_printer_type ?? 'wifi') as 'wifi' | 'bluetooth',
-          ip:       settings.kitchen_printer_ip,
-          port:     settings.kitchen_printer_port,
-          btDevice: settings.kitchen_printer_bt,
-        }).catch(() => {});
-      }
-    } catch {
-      // Network unavailable — queue locally
+    // Shared helper — save to local queue + optimistic stock deduction
+    async function saveOffline(): Promise<Order> {
+      const localId = await enqueueOrder(payload);
+      deductStock(buildStockDeductions(cartItems)).catch(() => {});
+      return buildOfflineOrder(localId, payload, session, user);
+    }
+
+    if (!isOnline) {
+      // Known offline — skip Firestore entirely to avoid timeout delay
       try {
-        const localId = await enqueueOrder(payload);
-        order    = buildOfflineOrder(localId, payload, session, user);
+        order    = await saveOffline();
         warnings = ['Order saved offline — will sync when connected.'];
-      } catch (queueErr) {
+        printKitchenIfNeeded(order);
+      } catch {
         setError('Failed to save order. Try again.');
         setSubmitting(false);
         return;
+      }
+    } else {
+      try {
+        order = await createOrder(payload, session, user);
+        syncPendingOrders(session, user)
+          .then(({ synced }) => { if (synced > 0) notifySynced(); })
+          .catch(() => {});
+        printKitchenIfNeeded(order);
+      } catch {
+        // Network dropped mid-session — fall back to local queue
+        try {
+          order    = await saveOffline();
+          warnings = ['Order saved offline — will sync when connected.'];
+          printKitchenIfNeeded(order);
+        } catch {
+          setError('Failed to save order. Try again.');
+          setSubmitting(false);
+          return;
+        }
       }
     }
 
@@ -404,7 +434,6 @@ const s = StyleSheet.create({
   // Left panel
   left: {
     flex: 1,
-    maxWidth: isTablet ? 600 : undefined,
     borderRightWidth: 1,
     borderColor: Colors.border,
     backgroundColor: Colors.surface,
@@ -501,7 +530,6 @@ const s = StyleSheet.create({
   // Right panel
   right: {
     flex: 1,
-    maxWidth: isTablet ? 600 : undefined,
     backgroundColor: Colors.surface,
   },
   rightContent: {

@@ -7,8 +7,10 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { CashierStackParamList } from '../../navigation/CashierStack';
 import { closeSession, getSession } from '../../firebase/firestoreService';
 import { logout } from '../../firebase/auth';
+import { useAuthStore } from '../../store/authStore';
 import { useCartStore } from '../../store/cartStore';
-import { CashSession } from '../../types';
+import { getPendingOrders } from '../../db/queries/queue';
+import { CheckoutPayload, CashSession } from '../../types';
 import {
   Colors, FontSize, FontWeight, Radius, Shadow, Spacing,
 } from '../../constants/theme';
@@ -22,31 +24,58 @@ function formatDateTime(iso: string): string {
   });
 }
 
+function offlineOrderTotal(payload: CheckoutPayload): number {
+  const subtotal = payload.cart_snapshot.reduce(
+    (s, i) => s + i.unit_price * i.quantity, 0,
+  );
+  return Math.max(0, subtotal - (payload.discount_amount ?? 0));
+}
+
 export default function CloseSessionScreen({ route, navigation }: Props) {
   const { session: initialSession } = route.params;
   const clearCart = useCartStore((s) => s.clearCart);
+  const user      = useAuthStore((s) => s.user)!;
 
-  const [session,    setSession]    = useState<CashSession>(initialSession);
-  const [fetching,   setFetching]   = useState(true);
-  const [actualCash, setActualCash] = useState('');
-  const [closing,    setClosing]    = useState(false);
-  const [closed,     setClosed]     = useState(false);
-  const [loggingOut, setLoggingOut] = useState(false);
-  const [error,      setError]      = useState('');
+  const [session,           setSession]           = useState<CashSession>(initialSession);
+  const [fetching,          setFetching]          = useState(true);
+  const [actualCash,        setActualCash]        = useState('');
+  const [closing,           setClosing]           = useState(false);
+  const [closed,            setClosed]            = useState(false);
+  const [loggingOut,        setLoggingOut]        = useState(false);
+  const [error,             setError]             = useState('');
+  const [offlineCashCount,  setOfflineCashCount]  = useState(0);
+  const [offlineCashAmount, setOfflineCashAmount] = useState(0);
+  const [forceClose,        setForceClose]        = useState(false);
 
-  // Fetch live session so cash_collected reflects orders placed during the shift
   useEffect(() => {
-    getSession(initialSession.id)
-      .then((live) => { if (live) setSession(live); })
-      .finally(() => setFetching(false));
+    Promise.all([
+      getSession(initialSession.id).catch(() => null),
+      getPendingOrders(),
+    ]).then(([live, pending]) => {
+      if (live) setSession(live);
+
+      // Sum unsynced cash orders for this session
+      const cashOrders = pending.filter(
+        (o) => o.payload.session_id === initialSession.id
+          && o.payload.payment_method === 'cash',
+      );
+      setOfflineCashCount(cashOrders.length);
+      setOfflineCashAmount(cashOrders.reduce((s, o) => s + offlineOrderTotal(o.payload), 0));
+    }).finally(() => setFetching(false));
   }, []);
 
-  const expectedCash = session.starting_cash + (session.cash_collected ?? 0);
-  const actualNum    = parseFloat(actualCash) || 0;
-  const hasActual    = actualCash.trim().length > 0 && !isNaN(parseFloat(actualCash));
+  // Firestore-only expected cash (safe to persist without double-counting)
+  const firestoreExpected = session.starting_cash + (session.cash_collected ?? 0);
+  // Full expected including unsynced cash (for display reference only)
+  const fullExpected      = firestoreExpected + offlineCashAmount;
+
+  const actualNum  = parseFloat(actualCash) || 0;
+  const hasActual  = actualCash.trim().length > 0 && !isNaN(parseFloat(actualCash));
+
+  // Always reconcile against fullExpected (offline cash is physically in the drawer)
+  const expectedCash = fullExpected;
   const difference   = actualNum - expectedCash;
 
-  // Shift duration string (computed once session is loaded)
   const durationStr = (() => {
     const ms = Date.now() - new Date(session.start_time).getTime();
     const h  = Math.floor(ms / 3_600_000);
@@ -54,13 +83,19 @@ export default function CloseSessionScreen({ route, navigation }: Props) {
     return h > 0 ? `${h}h ${m}m` : `${m}m`;
   })();
 
+  const hasPendingCash  = offlineCashCount > 0;
+  const canClose        = forceClose || !hasPendingCash;
+
   async function handleClose() {
     if (!hasActual) { setError('Enter the actual cash in drawer.'); return; }
     setClosing(true);
     setError('');
     try {
-      await closeSession(session.id, actualNum, expectedCash);
-      setClosed(true);   // reveal results panel — do NOT logout yet
+      // Pass fullExpected so the recorded difference reflects all cash including offline.
+      // When offline orders eventually sync, they increment expected_cash further —
+      // acceptable trade-off vs. showing a wrong variance at close time.
+      await closeSession(session.id, actualNum, fullExpected, user.uid);
+      setClosed(true);
     } catch {
       setError('Failed to close session. Check your connection.');
       setClosing(false);
@@ -91,7 +126,6 @@ export default function CloseSessionScreen({ route, navigation }: Props) {
             <ActivityIndicator size="large" color={Colors.green600} />
           </View>
         ) : !closed ? (
-          /* ── Step 1: Blind count ── */
           <>
             <View style={s.header}>
               <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={8}>
@@ -107,41 +141,101 @@ export default function CloseSessionScreen({ route, navigation }: Props) {
                 <InfoRow label="Duration"    value={durationStr} />
               </View>
 
-              <View style={s.divider} />
-              <Text style={s.sectionLabel}>Count Your Drawer</Text>
-              <Text style={s.inputHint}>
-                Count your cash physically, then enter the total below.
-              </Text>
-              <Text style={s.inputLabel}>Cash in Drawer (₱)</Text>
-              <TextInput
-                style={s.input}
-                placeholder="0.00"
-                placeholderTextColor={Colors.gray400}
-                keyboardType="numeric"
-                value={actualCash}
-                onChangeText={(t) => { setActualCash(t); setError(''); }}
-                returnKeyType="done"
-                onSubmitEditing={handleClose}
-              />
-
-              {!!error && (
-                <View style={s.errorContainer}>
-                  <Text style={s.error}>{error}</Text>
+              {/* Unsynced cash orders warning */}
+              {hasPendingCash && !forceClose && (
+                <View style={s.offlineWarn}>
+                  <Text style={s.offlineWarnTitle}>
+                    ⚠ {offlineCashCount} unsynced cash order{offlineCashCount !== 1 ? 's' : ''} (₱{offlineCashAmount.toFixed(2)})
+                  </Text>
+                  <Text style={s.offlineWarnBody}>
+                    These orders are saved offline and haven't reached the server yet.
+                    For accurate reconciliation, go back, reconnect, and let them sync before closing.
+                  </Text>
+                  <View style={s.offlineWarnActions}>
+                    <TouchableOpacity
+                      style={s.syncFirstBtn}
+                      onPress={() => navigation.goBack()}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={s.syncFirstBtnText}>Go Back & Sync</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={s.forceCloseLink}
+                      onPress={() => setForceClose(true)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={s.forceCloseLinkText}>Close anyway</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
+              )}
+
+              {canClose && (
+                <>
+                  <View style={s.divider} />
+
+                  {/* Expected cash breakdown */}
+                  <Text style={s.sectionLabel}>Expected Cash</Text>
+                  <View style={s.infoGrid}>
+                    <InfoRow label="Starting Cash" value={`₱${session.starting_cash.toFixed(2)}`} />
+                    <InfoRow label="Synced Orders" value={`+₱${(session.cash_collected ?? 0).toFixed(2)}`} />
+                    {offlineCashAmount > 0 && (
+                      <InfoRow
+                        label={`Offline Orders (${offlineCashCount})`}
+                        value={`+₱${offlineCashAmount.toFixed(2)}`}
+                        note
+                      />
+                    )}
+                    <InfoRow label="Expected Total" value={`₱${expectedCash.toFixed(2)}`} highlight />
+                  </View>
+
+                  {offlineCashAmount > 0 && (
+                    <View style={s.offlineNote}>
+                      <Text style={s.offlineNoteText}>
+                        ℹ Offline orders are included above. They will sync automatically when connected.
+                      </Text>
+                    </View>
+                  )}
+
+                  <View style={s.divider} />
+                  <Text style={s.sectionLabel}>Count Your Drawer</Text>
+                  <Text style={s.inputHint}>
+                    Count your cash physically, then enter the total below.
+                  </Text>
+                  <Text style={s.inputLabel}>Cash in Drawer (₱)</Text>
+                  <TextInput
+                    style={s.input}
+                    placeholder="0.00"
+                    placeholderTextColor={Colors.gray400}
+                    keyboardType="numeric"
+                    value={actualCash}
+                    onChangeText={(t) => { setActualCash(t); setError(''); }}
+                    returnKeyType="done"
+                    onSubmitEditing={handleClose}
+                  />
+
+                  {!!error && (
+                    <View style={s.errorContainer}>
+                      <Text style={s.error}>{error}</Text>
+                    </View>
+                  )}
+                </>
               )}
             </View>
 
-            <TouchableOpacity
-              style={[s.closeBtn, (!hasActual || closing) && s.closeBtnOff]}
-              onPress={handleClose}
-              disabled={!hasActual || closing}
-              activeOpacity={0.8}
-            >
-              {closing
-                ? <ActivityIndicator color={Colors.white} />
-                : <Text style={s.closeBtnText}>Close Session</Text>
-              }
-            </TouchableOpacity>
+            {canClose && (
+              <TouchableOpacity
+                style={[s.closeBtn, (!hasActual || closing) && s.closeBtnOff]}
+                onPress={handleClose}
+                disabled={!hasActual || closing}
+                activeOpacity={0.8}
+              >
+                {closing
+                  ? <ActivityIndicator color={Colors.white} />
+                  : <Text style={s.closeBtnText}>Close Session</Text>
+                }
+              </TouchableOpacity>
+            )}
 
             <TouchableOpacity
               style={s.cancelBtn}
@@ -153,7 +247,6 @@ export default function CloseSessionScreen({ route, navigation }: Props) {
             </TouchableOpacity>
           </>
         ) : (
-          /* ── Step 2: Results panel (shown only after POST succeeds) ── */
           <>
             <View style={s.header}>
               <Text style={s.headerTitle}>Shift Closed</Text>
@@ -171,6 +264,14 @@ export default function CloseSessionScreen({ route, navigation }: Props) {
                 />
               </View>
 
+              {offlineCashAmount > 0 && (
+                <View style={s.offlineNote}>
+                  <Text style={s.offlineNoteText}>
+                    ℹ ₱{offlineCashAmount.toFixed(2)} from {offlineCashCount} offline order{offlineCashCount !== 1 ? 's' : ''} included. These will sync automatically when connected.
+                  </Text>
+                </View>
+              )}
+
               <View style={[
                 s.diffBox,
                 difference > 0  && s.diffOver,
@@ -178,11 +279,7 @@ export default function CloseSessionScreen({ route, navigation }: Props) {
                 difference === 0 && s.diffExact,
               ]}>
                 <Text style={s.diffLabel}>
-                  {difference > 0
-                    ? 'ℹ️ Overage'
-                    : difference < 0
-                    ? '⚠️ Shortage'
-                    : '✅ Balanced'}
+                  {difference > 0 ? 'ℹ️ Overage' : difference < 0 ? '⚠️ Shortage' : '✅ Balanced'}
                 </Text>
                 <Text style={s.diffAmount}>
                   {difference === 0
@@ -216,185 +313,104 @@ export default function CloseSessionScreen({ route, navigation }: Props) {
 }
 
 function InfoRow({
-  label, value, highlight,
-}: { label: string; value: string; highlight?: boolean }) {
+  label, value, highlight, note,
+}: { label: string; value: string; highlight?: boolean; note?: boolean }) {
   return (
     <View style={s.infoRow}>
       <Text style={s.infoLabel}>{label}</Text>
-      <Text style={[s.infoValue, highlight && s.infoValueHighlight]}>{value}</Text>
+      <Text style={[
+        s.infoValue,
+        highlight && s.infoValueHighlight,
+        note && s.infoValueNote,
+      ]}>{value}</Text>
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
+  root:   { flex: 1, backgroundColor: Colors.background },
   scroll: {
-    padding: Spacing.xl,
-    paddingBottom: Spacing.xxxl,
-    maxWidth: 520,
-    alignSelf: 'center',
-    width: '100%',
-    gap: Spacing.lg,
+    padding: Spacing.xl, paddingBottom: Spacing.xxxl,
+    maxWidth: 520, alignSelf: 'center', width: '100%', gap: Spacing.lg,
   },
 
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-    paddingVertical: Spacing.sm,
-  },
-  backBtn: {},
-  backText: {
-    fontSize: FontSize.base,
-    color: Colors.green700,
-    fontWeight: FontWeight.medium,
-  },
-  headerTitle: {
-    fontSize: FontSize.display,
-    fontWeight: FontWeight.bold,
-    color: Colors.gray900,
-  },
+  header: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingVertical: Spacing.sm },
+  backText:    { fontSize: FontSize.base, color: Colors.green700, fontWeight: FontWeight.medium },
+  headerTitle: { fontSize: FontSize.display, fontWeight: FontWeight.bold, color: Colors.gray900 },
 
-  center: {
-    paddingTop: Spacing.xxxl,
-    alignItems: 'center',
-  },
+  center: { paddingTop: Spacing.xxxl, alignItems: 'center' },
 
   card: {
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.xl,
-    padding: Spacing.xl,
-    gap: Spacing.md,
-    ...Shadow.md,
+    backgroundColor: Colors.surface, borderRadius: Radius.xl,
+    padding: Spacing.xl, gap: Spacing.md, ...Shadow.md,
   },
   sectionLabel: {
-    fontSize: FontSize.xs,
-    fontWeight: FontWeight.semibold,
-    color: Colors.gray500,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    fontSize: FontSize.xs, fontWeight: FontWeight.semibold, color: Colors.gray500,
+    textTransform: 'uppercase', letterSpacing: 0.5,
   },
   infoGrid: { gap: Spacing.xs },
-  infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: Spacing.xs,
-  },
-  infoLabel: {
-    fontSize: FontSize.base,
-    color: Colors.gray600,
-  },
-  infoValue: {
-    fontSize: FontSize.base,
-    fontWeight: FontWeight.semibold,
-    color: Colors.gray800,
-  },
-  infoValueHighlight: {
-    fontSize: FontSize.lg,
-    fontWeight: FontWeight.bold,
-    color: Colors.green700,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.border,
-  },
+  infoRow:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: Spacing.xs },
+  infoLabel: { fontSize: FontSize.base, color: Colors.gray600 },
+  infoValue: { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: Colors.gray800 },
+  infoValueHighlight: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.green700 },
+  infoValueNote:      { color: Colors.warning, fontWeight: FontWeight.semibold },
+  divider: { height: 1, backgroundColor: Colors.border },
 
-  inputHint: {
-    fontSize: FontSize.sm,
-    color: Colors.gray500,
-    marginBottom: Spacing.xs,
+  offlineWarn: {
+    backgroundColor: Colors.warningBg, borderRadius: Radius.md,
+    borderWidth: 1, borderColor: Colors.warning + '55',
+    padding: Spacing.md, gap: Spacing.sm,
   },
-  inputLabel: {
-    fontSize: FontSize.sm,
-    fontWeight: FontWeight.semibold,
-    color: Colors.gray700,
-    marginBottom: Spacing.xs,
+  offlineWarnTitle: { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: Colors.warning },
+  offlineWarnBody:  { fontSize: FontSize.sm, color: Colors.gray600, lineHeight: 18 },
+  offlineWarnActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginTop: Spacing.xs },
+  syncFirstBtn: {
+    backgroundColor: Colors.green600, borderRadius: Radius.md,
+    paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm,
   },
+  syncFirstBtnText: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: Colors.white },
+  forceCloseLink:    { paddingVertical: Spacing.sm },
+  forceCloseLinkText:{ fontSize: FontSize.sm, color: Colors.danger, fontWeight: FontWeight.medium },
+
+  offlineNote: {
+    backgroundColor: Colors.infoBg ?? Colors.gray50,
+    borderRadius: Radius.sm, padding: Spacing.sm,
+    borderWidth: 1, borderColor: Colors.info + '33',
+  },
+  offlineNoteText: { fontSize: FontSize.xs, color: Colors.info },
+
+  inputHint:  { fontSize: FontSize.sm, color: Colors.gray500, marginBottom: Spacing.xs },
+  inputLabel: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.gray700, marginBottom: Spacing.xs },
   input: {
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-    borderRadius: Radius.md,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    fontSize: FontSize.xxxl,
-    fontWeight: FontWeight.bold,
-    color: Colors.gray900,
-    backgroundColor: Colors.gray50,
+    borderWidth: 1.5, borderColor: Colors.border, borderRadius: Radius.md,
+    paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md,
+    fontSize: FontSize.xxxl, fontWeight: FontWeight.bold,
+    color: Colors.gray900, backgroundColor: Colors.gray50,
   },
 
   diffBox: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderRadius: Radius.md,
-    padding: Spacing.lg,
-    borderWidth: 1,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    borderRadius: Radius.md, padding: Spacing.lg, borderWidth: 1,
   },
-  diffOver: {
-    backgroundColor: Colors.infoBg,
-    borderColor: '#93c5fd',
-  },
-  diffShort: {
-    backgroundColor: Colors.dangerBg,
-    borderColor: '#fca5a5',
-  },
-  diffExact: {
-    backgroundColor: Colors.green50,
-    borderColor: Colors.green200,
-  },
-  diffLabel: {
-    fontSize: FontSize.base,
-    fontWeight: FontWeight.semibold,
-    color: Colors.gray700,
-  },
-  diffAmount: {
-    fontSize: FontSize.xxl,
-    fontWeight: FontWeight.extrabold,
-    color: Colors.gray900,
-  },
+  diffOver:  { backgroundColor: Colors.infoBg,   borderColor: '#93c5fd' },
+  diffShort: { backgroundColor: Colors.dangerBg,  borderColor: '#fca5a5' },
+  diffExact: { backgroundColor: Colors.green50,   borderColor: Colors.green200 },
+  diffLabel:  { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: Colors.gray700 },
+  diffAmount: { fontSize: FontSize.xxl,  fontWeight: FontWeight.extrabold, color: Colors.gray900 },
 
   errorContainer: {
-    backgroundColor: Colors.dangerBg,
-    borderWidth: 1,
-    borderColor: Colors.danger + '44',
-    borderRadius: Radius.md,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
+    backgroundColor: Colors.dangerBg, borderWidth: 1,
+    borderColor: Colors.danger + '44', borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
   },
-  error: {
-    fontSize: FontSize.sm,
-    color: Colors.danger,
-    fontWeight: FontWeight.medium,
-  },
+  error: { fontSize: FontSize.sm, color: Colors.danger, fontWeight: FontWeight.medium },
 
   closeBtn: {
-    backgroundColor: Colors.danger,
-    borderRadius: Radius.md,
-    paddingVertical: Spacing.lg,
-    alignItems: 'center',
-    ...Shadow.md,
+    backgroundColor: Colors.danger, borderRadius: Radius.md,
+    paddingVertical: Spacing.lg, alignItems: 'center', ...Shadow.md,
   },
-  closeBtnOff: {
-    backgroundColor: Colors.gray300,
-    ...Shadow.sm,
-  },
-  closeBtnText: {
-    fontSize: FontSize.lg,
-    fontWeight: FontWeight.bold,
-    color: Colors.white,
-  },
-  cancelBtn: {
-    borderRadius: Radius.md,
-    paddingVertical: Spacing.md,
-    alignItems: 'center',
-  },
-  cancelBtnText: {
-    fontSize: FontSize.base,
-    color: Colors.gray500,
-    fontWeight: FontWeight.medium,
-  },
+  closeBtnOff:  { backgroundColor: Colors.gray300, ...Shadow.sm },
+  closeBtnText: { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.white },
+  cancelBtn:    { borderRadius: Radius.md, paddingVertical: Spacing.md, alignItems: 'center' },
+  cancelBtnText:{ fontSize: FontSize.base, color: Colors.gray500, fontWeight: FontWeight.medium },
 });

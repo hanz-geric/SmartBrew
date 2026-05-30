@@ -12,6 +12,7 @@
       "bundleIdentifier": "com.smartbrew.pos"
     },
     "android": {
+      "softwareKeyboardLayoutMode": "pan",
       "statusBar": {
         "hidden": true
       },

@@ -182,7 +182,15 @@ export interface PendingOrder {
   retry_count: number;
 }
 
+export interface FailedOrder {
+  local_id:   string;
+  payload:    CheckoutPayload;
+  created_at: string;
+  failed_at:  string;
+}
+
 export interface CheckoutPayload {
+  session_id?:         string;
   payment_method:      PaymentMethod;
   order_type:          OrderType;
   table_number?:       string;

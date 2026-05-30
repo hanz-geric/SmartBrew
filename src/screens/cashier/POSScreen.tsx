@@ -4,6 +4,7 @@ import {
   Image, KeyboardAvoidingView, Modal, Platform, ScrollView,
   StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useShallow } from 'zustand/react/shallow';
 import { CashierStackParamList } from '../../navigation/CashierStack';
@@ -12,7 +13,10 @@ import { useCartStore } from '../../store/cartStore';
 import { getProducts, getCategories } from '../../firebase/firestoreService';
 import { logout, switchCashierAuth, verifyManagerAuth } from '../../firebase/auth';
 import { pendingCount } from '../../db/queries/queue';
-import { syncPendingOrders } from '../../services/syncService';
+import { syncPendingOrders, reconcileDraftSession } from '../../services/syncService';
+import { useSyncEvents } from '../../context/SyncContext';
+import { useNetwork } from '../../context/NetworkContext';
+import { getCatalogAge } from '../../db/queries/catalog';
 import {
   Category, ModifierGroup, Product, SelectedModifier,
 } from '../../types';
@@ -21,6 +25,14 @@ import {
 } from '../../constants/theme';
 
 type Props = NativeStackScreenProps<CashierStackParamList, 'POS'>;
+
+// Fixed at module load — never reacts to keyboard/window changes, preventing
+// the bounce that occurs when useWindowDimensions updates inside a Modal.
+const MODAL_SCROLL_MAX_H = isTablet ? 420 : 320;
+
+const GRID_COLS_KEY     = 'pos_grid_cols';
+const GRID_COLS_OPTIONS = [2, 3, 4, 5] as const;
+type GridCols = typeof GRID_COLS_OPTIONS[number];
 
 // ─── Modifier Modal ───────────────────────────────────────────────────────────
 
@@ -92,10 +104,7 @@ function ModifierModal({ product, onClose, onAdd }: ModModalProps) {
 
   return (
     <Modal transparent animationType="fade" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={mm.overlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
+      <View style={mm.overlay}>
         <View style={mm.sheet}>
           {/* Header */}
           <View style={mm.header}>
@@ -110,7 +119,7 @@ function ModifierModal({ product, onClose, onAdd }: ModModalProps) {
 
           {/* Groups */}
           <ScrollView
-            style={mm.scrollArea}
+            style={[mm.scrollArea, { maxHeight: MODAL_SCROLL_MAX_H }]}
             contentContainerStyle={mm.scrollContent}
             keyboardShouldPersistTaps="handled"
           >
@@ -153,21 +162,21 @@ function ModifierModal({ product, onClose, onAdd }: ModModalProps) {
                 </View>
               </View>
             ))}
-
-            {/* Notes */}
-            <View style={mm.groupBlock}>
-              <Text style={mm.groupName}>Notes (optional)</Text>
-              <TextInput
-                style={mm.notesInput}
-                placeholder="Special instructions…"
-                placeholderTextColor={Colors.gray400}
-                value={notes}
-                onChangeText={setNotes}
-                multiline
-                numberOfLines={2}
-              />
-            </View>
           </ScrollView>
+
+          {/* Notes — outside ScrollView to prevent multiline-TextInput/ScrollView conflict on Android */}
+          <View style={mm.notesSection}>
+            <Text style={mm.groupName}>Notes (optional)</Text>
+            <TextInput
+              style={mm.notesInput}
+              placeholder="Special instructions…"
+              placeholderTextColor={Colors.gray400}
+              value={notes}
+              onChangeText={setNotes}
+              multiline
+              numberOfLines={2}
+            />
+          </View>
 
           {/* Footer */}
           <View style={mm.footer}>
@@ -192,7 +201,7 @@ function ModifierModal({ product, onClose, onAdd }: ModModalProps) {
             </TouchableOpacity>
           </View>
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }
@@ -422,11 +431,19 @@ function CashierSwitchModal({ onClose, onSuccess }: CashierSwitchProps) {
 interface ProductCardProps {
   product: Product;
   onPress: (p: Product) => void;
+  cols: GridCols;
 }
 
-function ProductCard({ product, onPress }: ProductCardProps) {
+function ProductCard({ product, onPress, cols }: ProductCardProps) {
   const isOut = product.stock_status === 'out';
   const isLow = product.stock_status === 'low';
+
+  const imageRatio  = cols === 2 ? 1.4 : cols === 5 ? 0.8 : 1;
+  const nameLines   = cols === 2 ? 3 : cols === 5 ? 1 : 2;
+  const nameFontSz  = cols <= 2 ? FontSize.base : cols === 5 ? FontSize.xs : FontSize.sm;
+  const priceFontSz = cols <= 2 ? FontSize.md   : cols === 5 ? FontSize.xs : FontSize.sm;
+  const emojiSz     = cols <= 2 ? 36 : cols === 5 ? 20 : 28;
+  const infoPad     = cols === 5 ? Spacing.xs : Spacing.sm;
 
   return (
     <TouchableOpacity
@@ -435,17 +452,19 @@ function ProductCard({ product, onPress }: ProductCardProps) {
       disabled={isOut}
       activeOpacity={0.75}
     >
-      <View style={pc.imageBox}>
+      <View style={[pc.imageBox, { aspectRatio: imageRatio }]}>
         {product.image
           ? <Image source={{ uri: product.image }} style={pc.image} resizeMode="cover" />
-          : <Text style={pc.imagePlaceholder}>☕</Text>
+          : <Text style={[pc.imagePlaceholder, { fontSize: emojiSz }]}>☕</Text>
         }
       </View>
-      <View style={pc.info}>
-        <Text style={[pc.name, isOut && pc.nameOut]} numberOfLines={2}>{product.name}</Text>
-        <Text style={pc.price}>₱{product.price.toFixed(2)}</Text>
-        {isLow && <Text style={pc.low}>Low stock</Text>}
-        {isOut && <Text style={pc.out}>Out of stock</Text>}
+      <View style={[pc.info, { padding: infoPad }]}>
+        <Text style={[pc.name, isOut && pc.nameOut, { fontSize: nameFontSz }]} numberOfLines={nameLines}>
+          {product.name}
+        </Text>
+        <Text style={[pc.price, { fontSize: priceFontSz }]}>₱{product.price.toFixed(2)}</Text>
+        {cols <= 4 && isLow && <Text style={pc.low}>Low stock</Text>}
+        {cols <= 4 && isOut && <Text style={pc.out}>Out of stock</Text>}
       </View>
     </TouchableOpacity>
   );
@@ -454,8 +473,10 @@ function ProductCard({ product, onPress }: ProductCardProps) {
 // ─── POS Screen ───────────────────────────────────────────────────────────────
 
 export default function POSScreen({ route, navigation }: Props) {
-  const { session } = route.params;
   const user    = useAuthStore((s) => s.user)!;
+  // session is mutable — draft sessions get replaced with real ones after reconciliation
+  const [currentSession, setCurrentSession] = useState(route.params.session);
+  const [isDraft,        setIsDraft]        = useState(route.params.isDraft ?? false);
   const setUser = useAuthStore((s) => s.setUser);
 
   const cartItems    = useCartStore(useShallow((s) => Object.values(s.items)));
@@ -464,6 +485,12 @@ export default function POSScreen({ route, navigation }: Props) {
   const updateQty    = useCartStore((s) => s.updateQuantity);
   const clearCart    = useCartStore((s) => s.clearCart);
 
+  const { width: windowWidth } = useWindowDimensions();
+
+  const defaultCols: GridCols = windowWidth >= BREAKPOINTS.tabletLarge ? 4
+    : windowWidth >= BREAKPOINTS.tablet ? 3 : 2;
+  const [gridCols, setGridCols] = useState<GridCols>(defaultCols);
+
   const [products,    setProducts]   = useState<Product[]>([]);
   const [categories,  setCategories] = useState<Category[]>([]);
   const [loading,     setLoading]    = useState(true);
@@ -471,8 +498,12 @@ export default function POSScreen({ route, navigation }: Props) {
   const [selCat,      setSelCat]     = useState<string | null>(null);
   const [search,      setSearch]     = useState('');
   const [modProduct,  setModProduct] = useState<Product | null>(null);
-  const [queueCount,  setQueueCount] = useState(0);
-  const [syncing,     setSyncing]    = useState(false);
+  const [queueCount,    setQueueCount]    = useState(0);
+  const [syncing,       setSyncing]       = useState(false);
+  const [catalogStale,  setCatalogStale]  = useState(false);
+  const { notifySynced, subscribe } = useSyncEvents();
+  const { isOnline }                = useNetwork();
+  const wasOnline                   = useRef<boolean | null>(null);
 
   // Admin/manager can discount without approval; cashier needs a manager nonce
   const canDiscountFreely = user.role === 'admin' || user.role === 'manager';
@@ -487,13 +518,44 @@ export default function POSScreen({ route, navigation }: Props) {
   const appState = useRef(AppState.currentState);
 
   useEffect(() => {
+    AsyncStorage.getItem(GRID_COLS_KEY).then((v) => {
+      const n = parseInt(v ?? '', 10) as GridCols;
+      if (GRID_COLS_OPTIONS.includes(n)) setGridCols(n);
+    });
+  }, []);
+
+  function changeGridCols(n: GridCols) {
+    setGridCols(n);
+    AsyncStorage.setItem(GRID_COLS_KEY, String(n));
+  }
+
+  // Auto-sync (+ reconcile draft) when connectivity is restored
+  useEffect(() => {
+    if (wasOnline.current === false && isOnline) {
+      if (isDraft) {
+        reconcileAndSync();
+      } else {
+        triggerSync();
+      }
+    }
+    wasOnline.current = isOnline;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOnline, isDraft]);
+
+  // Refresh catalog after sync so stock_status reflects the authoritative server values
+  useEffect(() => {
+    return subscribe(() => { loadData(); refreshQueueCount(); });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
     loadData();
     refreshQueueCount();
 
+    // Retain AppState listener for re-check when app returns to foreground
     const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
       if (appState.current !== 'active' && next === 'active') {
         refreshQueueCount();
-        triggerSync();
       }
       appState.current = next;
     });
@@ -508,8 +570,12 @@ export default function POSScreen({ route, navigation }: Props) {
       const [prods, cats] = await Promise.all([getProducts(), getCategories()]);
       setProducts(prods);
       setCategories(cats);
+      setCatalogStale(false);
     } catch {
       setLoadError(true);
+      // Check if stale cache was used (getProducts falls back silently; flag here)
+      const age = await getCatalogAge();
+      setCatalogStale(age !== null);
     } finally {
       setLoading(false);
     }
@@ -519,15 +585,44 @@ export default function POSScreen({ route, navigation }: Props) {
     setQueueCount(await pendingCount());
   }
 
-  async function triggerSync() {
+  async function reconcileAndSync() {
     if (syncing) return;
     setSyncing(true);
     try {
-      await syncPendingOrders(session, user);
+      const realSession = await reconcileDraftSession(currentSession, user);
+      setCurrentSession(realSession);
+      setIsDraft(false);
+      const result = await syncPendingOrders(realSession, user);
+      if (result.synced > 0) notifySynced();
+      alertDeadLettered(result.deadLettered);
+    } catch {
+      // Reconciliation failed (still offline?) — will retry next time isOnline fires
     } finally {
       await refreshQueueCount();
       setSyncing(false);
     }
+  }
+
+  async function triggerSync() {
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      const result = await syncPendingOrders(currentSession, user);
+      if (result.synced > 0) notifySynced();
+      alertDeadLettered(result.deadLettered);
+    } finally {
+      await refreshQueueCount();
+      setSyncing(false);
+    }
+  }
+
+  function alertDeadLettered(count: number) {
+    if (count <= 0) return;
+    Alert.alert(
+      'Orders Could Not Be Synced',
+      `${count} order${count !== 1 ? 's' : ''} failed too many times and have been moved to Failed. Review them in Pending Orders.`,
+      [{ text: 'OK' }],
+    );
   }
 
   const filtered = useMemo(() => {
@@ -566,14 +661,28 @@ export default function POSScreen({ route, navigation }: Props) {
   }
 
   async function handleLogout() {
-    if (session.status === 'open') {
+    if (currentSession.status === 'open') {
+      if (isDraft) {
+        Alert.alert(
+          'Draft Session Active',
+          'You have unsynced offline orders. Logging out will discard this draft session. Connect first to save your orders.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Discard & Logout', style: 'destructive',
+              onPress: async () => { clearCart(); clearDiscount(); await logout(); },
+            },
+          ],
+        );
+        return;
+      }
       Alert.alert(
         'Session Still Open',
         'You have an open cash session. End your shift first to reconcile your cash.',
         [
           {
             text: 'End Shift',
-            onPress: () => navigation.navigate('CloseSession', { session }),
+            onPress: () => navigation.navigate('CloseSession', { session: currentSession }),
           },
           { text: 'Cancel', style: 'cancel' },
         ],
@@ -596,17 +705,13 @@ export default function POSScreen({ route, navigation }: Props) {
     if (cartItems.length === 0) return;
     const discountAmount = computedDiscount;
     navigation.navigate('Payment', {
-      session,
-      total: Math.max(0, total - discountAmount),
+      session:        currentSession,
+      total:          Math.max(0, total - discountAmount),
       discountAmount: discountAmount > 0 ? discountAmount : undefined,
       discountNonce:  discountAmount > 0 && discountNonce ? discountNonce : undefined,
     });
-    // Nonce is single-use — clear immediately so it cannot be reused if user backs out
     clearDiscount();
   }
-
-  const { width: windowWidth } = useWindowDimensions();
-  const numCols = windowWidth >= BREAKPOINTS.tabletLarge ? 4 : windowWidth >= BREAKPOINTS.tablet ? 3 : 2;
 
   const totalQty = cartItems.reduce((s, i) => s + i.quantity, 0);
 
@@ -617,20 +722,23 @@ export default function POSScreen({ route, navigation }: Props) {
         {/* Top bar */}
         <View style={s.topBar}>
           <View style={s.topBarLeft}>
-            <Text style={s.shopName}>☕ SmartBrew POS</Text>
+            <Text style={s.shopName}>
+              ☕ SmartBrew POS{isDraft ? ' · DRAFT' : ''}
+            </Text>
             <Text style={s.sessionInfo}>
               {user.full_name} · Started{' '}
-              {new Date(session.start_time).toLocaleTimeString('en-PH', {
+              {new Date(currentSession.start_time).toLocaleTimeString('en-PH', {
                 hour: 'numeric', minute: '2-digit', hour12: true,
               })}
-              {' '}· ₱{session.starting_cash.toFixed(2)} opening cash
+              {' '}· ₱{currentSession.starting_cash.toFixed(2)} opening cash
+              {isDraft ? ' · reconnect to sync' : ''}
             </Text>
           </View>
           <View style={s.topBarActions}>
             {queueCount > 0 && (
               <TouchableOpacity
                 style={[s.syncBadge, syncing && s.syncBadgeSyncing]}
-                onPress={triggerSync}
+                onPress={() => navigation.navigate('PendingOrders', { session: currentSession })}
                 disabled={syncing}
               >
                 {syncing
@@ -647,8 +755,18 @@ export default function POSScreen({ route, navigation }: Props) {
               <Text style={s.switchText}>Switch Cashier</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={s.endShiftBtn}
-              onPress={() => navigation.navigate('CloseSession', { session })}
+              style={[s.endShiftBtn, isDraft && s.endShiftBtnDisabled]}
+              onPress={() => {
+                if (isDraft) {
+                  Alert.alert(
+                    'Reconnect First',
+                    'Your session is offline. Reconnect to sync your orders before ending the shift.',
+                    [{ text: 'OK' }],
+                  );
+                  return;
+                }
+                navigation.navigate('CloseSession', { session: currentSession });
+              }}
               activeOpacity={0.7}
             >
               <Text style={s.endShiftText}>End Shift</Text>
@@ -658,6 +776,25 @@ export default function POSScreen({ route, navigation }: Props) {
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* Offline banner */}
+        {!isOnline && (
+          <View style={s.offlineBanner}>
+            <Text style={s.offlineBannerText}>
+              ⚠ Offline — orders are being saved locally and will sync when connection returns
+            </Text>
+          </View>
+        )}
+
+        {/* Stale catalog notice */}
+        {catalogStale && isOnline && (
+          <View style={s.staleBanner}>
+            <Text style={s.staleBannerText}>Using cached product list</Text>
+            <TouchableOpacity onPress={loadData} activeOpacity={0.7}>
+              <Text style={s.staleBannerRefresh}>Refresh</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Category tabs */}
         <ScrollView
@@ -685,7 +822,7 @@ export default function POSScreen({ route, navigation }: Props) {
           ))}
         </ScrollView>
 
-        {/* Search */}
+        {/* Search + column picker */}
         <View style={s.searchRow}>
           <TextInput
             style={s.searchInput}
@@ -700,6 +837,18 @@ export default function POSScreen({ route, navigation }: Props) {
               <Text style={s.searchClearText}>✕</Text>
             </TouchableOpacity>
           )}
+          <View style={s.colPicker}>
+            {GRID_COLS_OPTIONS.map((n) => (
+              <TouchableOpacity
+                key={n}
+                style={[s.colBtn, gridCols === n && s.colBtnSel]}
+                onPress={() => changeGridCols(n)}
+                activeOpacity={0.7}
+              >
+                <Text style={[s.colBtnText, gridCols === n && s.colBtnTextSel]}>{n}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
         {/* Product grid */}
@@ -720,11 +869,11 @@ export default function POSScreen({ route, navigation }: Props) {
           <FlatList
             data={filtered}
             keyExtractor={(p) => p.id}
-            numColumns={numCols}
-            key={numCols}
+            numColumns={gridCols}
+            key={gridCols}
             contentContainerStyle={s.gridContent}
             renderItem={({ item }) => (
-              <ProductCard product={item} onPress={handleProductPress} />
+              <ProductCard product={item} onPress={handleProductPress} cols={gridCols} />
             )}
             ListEmptyComponent={
               <View style={s.emptyBox}>
@@ -1037,6 +1186,9 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.3)',
   },
+  endShiftBtnDisabled: {
+    opacity: 0.4,
+  },
   endShiftText: {
     fontSize: FontSize.sm,
     color: Colors.white,
@@ -1054,6 +1206,39 @@ const s = StyleSheet.create({
     fontWeight: FontWeight.medium,
   },
 
+  offlineBanner: {
+    backgroundColor: Colors.warningBg,
+    borderBottomWidth: 1,
+    borderColor: Colors.warning + '44',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.xs,
+  },
+  offlineBannerText: {
+    fontSize: FontSize.xs,
+    color: Colors.warning,
+    fontWeight: FontWeight.semibold,
+    textAlign: 'center',
+  },
+  staleBanner: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    backgroundColor: Colors.gray50,
+    borderBottomWidth: 1,
+    borderColor: Colors.border,
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.lg,
+  },
+  staleBannerText: {
+    fontSize: FontSize.xs,
+    color: Colors.gray500,
+  },
+  staleBannerRefresh: {
+    fontSize: FontSize.xs,
+    color: Colors.green700,
+    fontWeight: FontWeight.bold,
+  },
   catScroll: {
     backgroundColor: Colors.surface,
     borderBottomWidth: 1,
@@ -1107,11 +1292,42 @@ const s = StyleSheet.create({
     color: Colors.gray800,
   },
   searchClear: {
-    paddingHorizontal: Spacing.md,
+    paddingHorizontal: Spacing.sm,
   },
   searchClearText: {
     fontSize: FontSize.sm,
     color: Colors.gray400,
+  },
+
+  colPicker: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: Spacing.sm,
+    borderLeftWidth: 1,
+    borderColor: Colors.border,
+  },
+  colBtn: {
+    width: isTablet ? 30 : 26,
+    height: isTablet ? 30 : 26,
+    borderRadius: Radius.sm,
+    backgroundColor: Colors.gray100,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  colBtnSel: {
+    backgroundColor: Colors.green50,
+    borderColor: Colors.green600,
+  },
+  colBtnText: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.bold,
+    color: Colors.gray500,
+  },
+  colBtnTextSel: {
+    color: Colors.green700,
   },
 
   gridContent: {
@@ -1480,7 +1696,6 @@ const mm = StyleSheet.create({
     backgroundColor: Colors.surface,
     borderRadius: Radius.xl,
     overflow: 'hidden',
-    maxHeight: isTablet ? '85%' : '78%',
     ...Shadow.lg,
   },
   header: {
@@ -1511,13 +1726,21 @@ const mm = StyleSheet.create({
     fontWeight: FontWeight.bold,
   },
   scrollArea: {
-    flex: 1,
+    flexShrink: 1,
   },
   scrollContent: {
     padding: Spacing.lg,
     gap: Spacing.lg,
   },
   groupBlock: {
+    gap: Spacing.sm,
+  },
+  notesSection: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.sm,
+    borderTopWidth: 1,
+    borderColor: Colors.border,
     gap: Spacing.sm,
   },
   groupHeader: {

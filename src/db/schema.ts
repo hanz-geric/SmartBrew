@@ -34,12 +34,37 @@ export async function initDb(): Promise<void> {
       synced_at       TEXT    NOT NULL
     );
 
+    -- Cached categories
+    CREATE TABLE IF NOT EXISTS categories (
+      id         TEXT    PRIMARY KEY,
+      name       TEXT    NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      is_active  INTEGER NOT NULL DEFAULT 1,
+      synced_at  TEXT    NOT NULL
+    );
+
+    -- Local stock ledger for optimistic deductions during offline orders
+    CREATE TABLE IF NOT EXISTS stock_cache (
+      id               TEXT  PRIMARY KEY,
+      quantity_on_hand REAL  NOT NULL,
+      reorder_level    REAL  NOT NULL DEFAULT 0,
+      updated_at       TEXT  NOT NULL
+    );
+
     -- Offline order queue (orders waiting to sync to server)
     CREATE TABLE IF NOT EXISTS pending_orders (
       local_id    TEXT PRIMARY KEY,
       payload     TEXT NOT NULL,
       created_at  TEXT NOT NULL,
       retry_count INTEGER NOT NULL DEFAULT 0
+    );
+
+    -- Orders that permanently failed after max retries
+    CREATE TABLE IF NOT EXISTS failed_orders (
+      local_id   TEXT PRIMARY KEY,
+      payload    TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      failed_at  TEXT NOT NULL
     );
 
     -- Completed orders (local receipt cache)
@@ -51,10 +76,12 @@ export async function initDb(): Promise<void> {
     );
   `);
 
-  // Migrate existing databases that predate the recipe_lines column
-  try {
-    await database.runAsync(`ALTER TABLE products ADD COLUMN recipe_lines TEXT NOT NULL DEFAULT '[]'`);
-  } catch {
-    // column already exists — safe to ignore
+  // Migration: add recipe_lines if missing (pre-existing databases)
+  const migrations = [
+    `ALTER TABLE products ADD COLUMN recipe_lines TEXT NOT NULL DEFAULT '[]'`,
+    `ALTER TABLE products ADD COLUMN category_ids TEXT NOT NULL DEFAULT '[]'`,
+  ];
+  for (const sql of migrations) {
+    try { await database.runAsync(sql); } catch { /* column already exists */ }
   }
 }

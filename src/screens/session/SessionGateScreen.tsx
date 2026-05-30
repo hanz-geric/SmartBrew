@@ -7,23 +7,27 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { CashierStackParamList } from '../../navigation/CashierStack';
 import { useAuthStore } from '../../store/authStore';
 import { getOpenSession, openSession } from '../../firebase/firestoreService';
+import { saveSessionCache, loadSessionCache, openSessionOffline } from '../../db/queries/sessionCache';
+import { useNetwork } from '../../context/NetworkContext';
 import { CashSession } from '../../types';
 import {
   Colors, FontSize, FontWeight, Radius, Shadow, Spacing, isTablet,
 } from '../../constants/theme';
 
 type Props = NativeStackScreenProps<CashierStackParamList, 'SessionGate'>;
-
 type GateState = 'checking' | 'resume' | 'open';
 
 export default function SessionGateScreen({ navigation }: Props) {
-  const user = useAuthStore((s) => s.user)!;
+  const user       = useAuthStore((s) => s.user)!;
+  const { isOnline } = useNetwork();
 
   const [gateState,    setGateState]    = useState<GateState>('checking');
   const [openSess,     setOpenSess]     = useState<CashSession | null>(null);
   const [startingCash, setStartingCash] = useState('');
   const [submitting,   setSubmitting]   = useState(false);
   const [error,        setError]        = useState('');
+  const [fromCache,    setFromCache]    = useState(false);
+  const [resumeIsDraft, setResumeIsDraft] = useState(false);
 
   useEffect(() => { checkSession(); }, []);
 
@@ -33,33 +37,53 @@ export default function SessionGateScreen({ navigation }: Props) {
       if (session) {
         setOpenSess(session);
         setGateState('resume');
+        saveSessionCache(session, user.uid, false).catch(() => {});
       } else {
         setGateState('open');
       }
     } catch {
-      setError('Could not check session status. Check your connection.');
-      setGateState('open');
+      // Network unavailable — try local cache
+      const cached = await loadSessionCache(user.uid);
+      if (cached && cached.session.status === 'open') {
+        setOpenSess(cached.session);
+        setResumeIsDraft(cached.isDraft);
+        setFromCache(true);
+        setGateState('resume');
+      } else {
+        setGateState('open');
+      }
     }
   }
 
   async function handleOpenSession() {
     const amount = parseFloat(startingCash);
-    if (isNaN(amount) || amount < 0) {
-      setError('Enter a valid starting cash amount.');
-      return;
-    }
+    if (isNaN(amount) || amount < 0) { setError('Enter a valid starting cash amount.'); return; }
     setSubmitting(true);
     setError('');
     try {
       const session = await openSession(user.uid, user.full_name, amount);
-      navigation.replace('POS', { session });
+      navigation.replace('POS', { session, isDraft: false });
     } catch {
       setError('Failed to open session. Try again.');
       setSubmitting(false);
     }
   }
 
-  // ── Checking ──────────────────────────────────────────────────────────────
+  async function handleOpenSessionOffline() {
+    const amount = parseFloat(startingCash);
+    if (isNaN(amount) || amount < 0) { setError('Enter a valid starting cash amount.'); return; }
+    setSubmitting(true);
+    setError('');
+    try {
+      const session = await openSessionOffline(user.uid, user.full_name, amount);
+      navigation.replace('POS', { session, isDraft: true });
+    } catch {
+      setError('Failed to create offline session. Try again.');
+      setSubmitting(false);
+    }
+  }
+
+  // ── Checking ─────────────────────────────────────────────────────────────────
 
   if (gateState === 'checking') {
     return (
@@ -70,7 +94,7 @@ export default function SessionGateScreen({ navigation }: Props) {
     );
   }
 
-  // ── Resume or Close existing session ──────────────────────────────────────
+  // ── Resume existing session ───────────────────────────────────────────────────
 
   if (gateState === 'resume' && openSess) {
     const started = new Date(openSess.start_time).toLocaleString('en-PH', {
@@ -85,27 +109,40 @@ export default function SessionGateScreen({ navigation }: Props) {
           <Text style={s.subtitle}>{openSess.cashier_name}</Text>
           <Text style={s.sessionInfo}>Started {started}</Text>
 
+          {fromCache && (
+            <View style={s.offlineBanner}>
+              <Text style={s.offlineBannerText}>
+                {resumeIsDraft
+                  ? '⚠ Offline — draft session. Orders will sync when connected.'
+                  : '⚠ Offline — resuming from cached session. Orders will sync when connected.'}
+              </Text>
+            </View>
+          )}
+
           <TouchableOpacity
             style={s.btn}
-            onPress={() => navigation.replace('POS', { session: openSess })}
+            onPress={() => navigation.replace('POS', { session: openSess, isDraft: resumeIsDraft })}
             activeOpacity={0.8}
           >
             <Text style={s.btnText}>Continue Shift</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={s.btnSecondary}
-            onPress={() => navigation.navigate('CloseSession', { session: openSess })}
-            activeOpacity={0.8}
-          >
-            <Text style={s.btnSecondaryText}>End Shift</Text>
-          </TouchableOpacity>
+          {/* Only show End Shift if the session is real (not a draft) and we're online */}
+          {!fromCache && !resumeIsDraft && (
+            <TouchableOpacity
+              style={s.btnSecondary}
+              onPress={() => navigation.navigate('CloseSession', { session: openSess })}
+              activeOpacity={0.8}
+            >
+              <Text style={s.btnSecondaryText}>End Shift</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     );
   }
 
-  // ── Open new session ──────────────────────────────────────────────────────
+  // ── Open new session ──────────────────────────────────────────────────────────
 
   return (
     <KeyboardAvoidingView
@@ -126,10 +163,9 @@ export default function SessionGateScreen({ navigation }: Props) {
           value={startingCash}
           onChangeText={(t) => { setStartingCash(t); setError(''); }}
           returnKeyType="done"
-          onSubmitEditing={handleOpenSession}
+          onSubmitEditing={isOnline ? handleOpenSession : handleOpenSessionOffline}
         />
 
-        {/* Quick-fill denominations */}
         <View style={s.quickRow}>
           {[500, 1000, 2000, 5000].map((amt) => (
             <TouchableOpacity
@@ -138,9 +174,7 @@ export default function SessionGateScreen({ navigation }: Props) {
               onPress={() => { setStartingCash(String(amt)); setError(''); }}
               activeOpacity={0.7}
             >
-              <Text style={s.quickBtnText}>
-                ₱{amt.toLocaleString()}
-              </Text>
+              <Text style={s.quickBtnText}>₱{amt.toLocaleString()}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -151,17 +185,38 @@ export default function SessionGateScreen({ navigation }: Props) {
           </View>
         )}
 
-        <TouchableOpacity
-          style={[s.btn, submitting && s.btnDisabled]}
-          onPress={handleOpenSession}
-          disabled={submitting}
-          activeOpacity={0.8}
-        >
-          {submitting
-            ? <ActivityIndicator color={Colors.white} />
-            : <Text style={s.btnText}>Open Session</Text>
-          }
-        </TouchableOpacity>
+        {isOnline ? (
+          <TouchableOpacity
+            style={[s.btn, submitting && s.btnDisabled]}
+            onPress={handleOpenSession}
+            disabled={submitting}
+            activeOpacity={0.8}
+          >
+            {submitting
+              ? <ActivityIndicator color={Colors.white} />
+              : <Text style={s.btnText}>Open Session</Text>
+            }
+          </TouchableOpacity>
+        ) : (
+          <>
+            <View style={s.offlineBanner}>
+              <Text style={s.offlineBannerText}>
+                ⚠ No connection — you can start a draft session. It will sync to the server when you reconnect.
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[s.btn, submitting && s.btnDisabled]}
+              onPress={handleOpenSessionOffline}
+              disabled={submitting}
+              activeOpacity={0.8}
+            >
+              {submitting
+                ? <ActivityIndicator color={Colors.white} />
+                : <Text style={s.btnText}>Start Offline Session</Text>
+              }
+            </TouchableOpacity>
+          </>
+        )}
       </View>
     </KeyboardAvoidingView>
   );
@@ -169,121 +224,61 @@ export default function SessionGateScreen({ navigation }: Props) {
 
 const s = StyleSheet.create({
   center: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: Colors.background,
-    padding: Spacing.xl,
+    flex: 1, justifyContent: 'center', alignItems: 'center',
+    backgroundColor: Colors.background, padding: Spacing.xl,
   },
   card: {
-    width: '100%',
-    maxWidth: isTablet ? 480 : 400,
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.xl,
-    padding: Spacing.xxl,
-    gap: Spacing.md,
-    ...Shadow.lg,
+    width: '100%', maxWidth: isTablet ? 480 : 400,
+    backgroundColor: Colors.surface, borderRadius: Radius.xl,
+    padding: Spacing.xxl, gap: Spacing.md, ...Shadow.lg,
   },
-  logo: {
-    fontSize: FontSize.xl,
-    fontWeight: FontWeight.bold,
-    color: Colors.green700,
-    textAlign: 'center',
-  },
-  title: {
-    fontSize: FontSize.xxl,
-    fontWeight: FontWeight.bold,
-    color: Colors.gray800,
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontSize: FontSize.base,
-    color: Colors.gray500,
-    textAlign: 'center',
-  },
-  sessionInfo: {
-    fontSize: FontSize.sm,
-    color: Colors.green700,
-    textAlign: 'center',
-    fontWeight: FontWeight.medium,
-  },
-  quickRow: {
-    flexDirection: 'row',
-    gap: Spacing.xs,
-    flexWrap: 'wrap',
-  },
+  logo:        { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: Colors.green700, textAlign: 'center' },
+  title:       { fontSize: FontSize.xxl, fontWeight: FontWeight.bold, color: Colors.gray800, textAlign: 'center' },
+  subtitle:    { fontSize: FontSize.base, color: Colors.gray500, textAlign: 'center' },
+  sessionInfo: { fontSize: FontSize.sm, color: Colors.green700, textAlign: 'center', fontWeight: FontWeight.medium },
+
+  quickRow: { flexDirection: 'row', gap: Spacing.xs, flexWrap: 'wrap' },
   quickBtn: {
-    flex: 1,
-    paddingVertical: Spacing.sm,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.gray100,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    alignItems: 'center',
+    flex: 1, paddingVertical: Spacing.sm, borderRadius: Radius.md,
+    backgroundColor: Colors.gray100, borderWidth: 1, borderColor: Colors.border, alignItems: 'center',
   },
-  quickBtnText: {
-    fontSize: FontSize.sm,
-    fontWeight: FontWeight.semibold,
-    color: Colors.gray700,
-  },
-  label: {
-    fontSize: FontSize.sm,
-    fontWeight: FontWeight.semibold,
-    color: Colors.gray700,
-    marginTop: Spacing.xs,
-  },
+  quickBtnText: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.gray700 },
+
+  label: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.gray700, marginTop: Spacing.xs },
   input: {
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: Radius.md,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    fontSize: FontSize.xl,
-    fontWeight: FontWeight.semibold,
-    color: Colors.gray900,
-    backgroundColor: Colors.gray50,
+    borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.md,
+    paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md,
+    fontSize: FontSize.xl, fontWeight: FontWeight.semibold,
+    color: Colors.gray900, backgroundColor: Colors.gray50,
   },
+
   errorContainer: {
-    backgroundColor: Colors.dangerBg,
-    borderWidth: 1,
-    borderColor: Colors.danger + '44',
-    borderRadius: Radius.md,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
+    backgroundColor: Colors.dangerBg, borderWidth: 1,
+    borderColor: Colors.danger + '44', borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
   },
-  error: {
-    fontSize: FontSize.sm,
-    color: Colors.danger,
-    fontWeight: FontWeight.medium,
+  error: { fontSize: FontSize.sm, color: Colors.danger, fontWeight: FontWeight.medium },
+
+  offlineBanner: {
+    backgroundColor: Colors.warningBg, borderWidth: 1,
+    borderColor: Colors.warning + '66', borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
   },
+  offlineBannerText: {
+    fontSize: FontSize.sm, color: Colors.warning,
+    fontWeight: FontWeight.medium, textAlign: 'center',
+  },
+
   btn: {
-    backgroundColor: Colors.green600,
-    borderRadius: Radius.md,
-    paddingVertical: Spacing.lg,
-    alignItems: 'center',
-    marginTop: Spacing.xs,
+    backgroundColor: Colors.green600, borderRadius: Radius.md,
+    paddingVertical: Spacing.lg, alignItems: 'center', marginTop: Spacing.xs,
   },
-  btnDisabled: { opacity: 0.6 },
-  btnText: {
-    fontSize: FontSize.lg,
-    fontWeight: FontWeight.bold,
-    color: Colors.white,
-  },
+  btnDisabled:      { opacity: 0.6 },
+  btnText:          { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.white },
   btnSecondary: {
-    borderRadius: Radius.md,
-    paddingVertical: Spacing.md,
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: Colors.gray300,
+    borderRadius: Radius.md, paddingVertical: Spacing.md, alignItems: 'center',
+    borderWidth: 1.5, borderColor: Colors.gray300,
   },
-  btnSecondaryText: {
-    fontSize: FontSize.base,
-    fontWeight: FontWeight.semibold,
-    color: Colors.gray600,
-  },
-  checkingText: {
-    marginTop: Spacing.md,
-    fontSize: FontSize.base,
-    color: Colors.gray500,
-  },
+  btnSecondaryText: { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: Colors.gray600 },
+  checkingText:     { marginTop: Spacing.md, fontSize: FontSize.base, color: Colors.gray500 },
 });

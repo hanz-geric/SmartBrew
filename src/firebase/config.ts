@@ -1,8 +1,9 @@
 import { FirebaseApp, getApps, initializeApp } from 'firebase/app';
 import {
   Auth, getAuth, initializeAuth,
-  browserLocalPersistence, inMemoryPersistence,
+  browserLocalPersistence, getReactNativePersistence,
 } from 'firebase/auth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Firestore, getFirestore, initializeFirestore } from 'firebase/firestore';
 import { FirebaseStorage, getStorage } from 'firebase/storage';
 import { Platform } from 'react-native';
@@ -16,12 +17,11 @@ export const firebaseConfig = {
   appId:             '1:346008013930:web:059f839b3698c304918e13',
 };
 
-// Web (browser testing): use localStorage so the session survives refresh.
-// Native device: use in-memory for now (session lasts as long as the app is open).
-// Full AsyncStorage persistence will be added when switching to expo-dev-client.
+// Web: localStorage so the session survives browser refresh.
+// Native: AsyncStorage so the session survives app restarts and works offline.
 const persistence = Platform.OS === 'web'
   ? browserLocalPersistence
-  : inMemoryPersistence;
+  : getReactNativePersistence(AsyncStorage);
 
 // Singleton — safe across React Native hot reloads
 const existingApps = getApps();

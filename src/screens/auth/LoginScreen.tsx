@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, KeyboardAvoidingView, Platform,
@@ -6,24 +6,59 @@ import {
 } from 'react-native';
 import { loginWithUsername } from '../../firebase/auth';
 import { useAuthStore } from '../../store/authStore';
+import { useNetwork } from '../../context/NetworkContext';
+import { saveCredentials, verifyOfflineCredentials } from '../../db/queries/credentialsCache';
+import { loadAuthCache } from '../../firebase/auth';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '../../constants/theme';
 
 export default function LoginScreen() {
-  const { setUser }               = useAuthStore();
-  const [username, setUsername]   = useState('');
-  const [password, setPassword]   = useState('');
-  const [loading, setLoading]     = useState(false);
-  const [error, setError]         = useState('');
+  const { setUser }             = useAuthStore();
+  const { isOnline }            = useNetwork();
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading,  setLoading]  = useState(false);
+  const [error,    setError]    = useState('');
+
+  // When offline and a cached profile exists, auto-authenticate without showing the form.
+  useEffect(() => {
+    if (!isOnline) {
+      loadAuthCache().then((cached) => {
+        if (cached) setUser(cached);
+      });
+    }
+  }, [isOnline]);
 
   async function handleLogin() {
     if (!username.trim() || !password) {
       setError('Enter username and password.');
       return;
     }
+
     setLoading(true);
     setError('');
+
+    if (!isOnline) {
+      // Offline — verify against locally stored credentials
+      try {
+        const user = await verifyOfflineCredentials(username.trim().toLowerCase(), password);
+        if (user) {
+          setUser(user);
+        } else {
+          setError('Incorrect credentials, or this account has not been used on this device while online.');
+        }
+      } catch {
+        setError('Offline sign-in failed. Try again.');
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    // Online — normal Firebase login
     try {
       const user = await loginWithUsername(username.trim(), password);
+      // Save credentials to device for future offline logins
+      saveCredentials(username.trim().toLowerCase(), password, user).catch(() => {});
       setUser(user);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Login failed.');
@@ -50,6 +85,14 @@ export default function LoginScreen() {
           <Text style={styles.appName}>SmartBrew POS</Text>
           <Text style={styles.tagline}>Sign in to continue</Text>
         </View>
+
+        {!isOnline && (
+          <View style={styles.offlineBanner}>
+            <Text style={styles.offlineText}>
+              ⚠ Offline — you can still sign in if you've logged in on this device before.
+            </Text>
+          </View>
+        )}
 
         {!!error && (
           <View style={styles.errorBanner}>
@@ -150,6 +193,21 @@ const styles = StyleSheet.create({
   tagline: {
     fontSize: FontSize.sm,
     color: Colors.gray400,
+  },
+  offlineBanner: {
+    backgroundColor: Colors.warningBg,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Colors.warning + '55',
+  },
+  offlineText: {
+    color: Colors.warning,
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.medium,
+    textAlign: 'center',
+    lineHeight: 20,
   },
   errorBanner: {
     backgroundColor: Colors.dangerBg,

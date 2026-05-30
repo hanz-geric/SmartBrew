@@ -14,6 +14,9 @@ import {
   ModifierGroup, Order, OrderItem, Product, Settings, StockItem, StockStatus,
   UserProfile, UserRole,
 } from '../types';
+import { writeProductsCache, writeCategoriesCache, getCachedProducts, getCachedCategories } from '../db/queries/catalog';
+import { replaceStockCache } from '../db/queries/stockCache';
+import { clearSessionCache, saveSessionCache } from '../db/queries/sessionCache';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -57,8 +60,9 @@ export async function openSession(
   userId:       string,
   cashierName:  string,
   startingCash: number,
+  startTime?:   string,
 ): Promise<CashSession> {
-  const now  = new Date().toISOString();
+  const now  = startTime ?? new Date().toISOString();
   const data = {
     user_id:        userId,
     cashier_name:   cashierName,
@@ -71,14 +75,17 @@ export async function openSession(
     status:         'open',
     cash_collected: 0,
   };
-  const ref = await addDoc(sessionsCol(), data);
-  return { id: ref.id, ...data } as CashSession;
+  const ref     = await addDoc(sessionsCol(), data);
+  const session = { id: ref.id, ...data } as CashSession;
+  saveSessionCache(session, userId).catch(() => {});
+  return session;
 }
 
 export async function closeSession(
   sessionId:    string,
   actualCash:   number,
   expectedCash: number,
+  userId:       string,
 ): Promise<void> {
   await updateDoc(sessionDoc(sessionId), {
     end_time:      new Date().toISOString(),
@@ -87,6 +94,7 @@ export async function closeSession(
     difference:    actualCash - expectedCash,
     status:        'closed',
   });
+  clearSessionCache(userId).catch(() => {});
 }
 
 // ─── Orders ──────────────────────────────────────────────────────────────────
@@ -313,52 +321,79 @@ export async function saveSettings(settings: Settings): Promise<void> {
 // ─── Products & Categories (POS — active only) ────────────────────────────────
 
 export async function getProducts(): Promise<Product[]> {
-  const [prodSnap, stockSnap] = await Promise.all([
-    getDocs(query(productsCol(), where('is_active', '==', true))),
-    getDocs(stockCol()),
-  ]);
+  try {
+    const [prodSnap, stockSnap] = await Promise.all([
+      getDocs(query(productsCol(), where('is_active', '==', true))),
+      getDocs(stockCol()),
+    ]);
 
-  // Build a map of stock item id → { qty, reorder } for O(1) lookup
-  const stockMap = new Map<string, { qty: number; reorder: number }>();
-  for (const d of stockSnap.docs) {
-    const data = d.data() as DocumentData;
-    stockMap.set(d.id, {
-      qty:     (data.quantity_on_hand as number) ?? 0,
-      reorder: (data.reorder_level    as number) ?? 0,
-    });
-  }
-
-  return prodSnap.docs.map((d) => {
-    const data          = d.data() as DocumentData;
-    const trackingMode  = data.tracking_mode as Product['tracking_mode'];
-    const stockItemId   = data.stock_item_id as string | null;
-
-    let stock_status: Product['stock_status'] = 'ok';
-    if (trackingMode === 'direct' && stockItemId) {
-      const si = stockMap.get(stockItemId);
-      if (si) {
-        stock_status = si.qty <= 0 ? 'out'
-          : (si.reorder > 0 && si.qty <= si.reorder) ? 'low'
-          : 'ok';
-      }
+    const stockMap = new Map<string, { qty: number; reorder: number }>();
+    const stockItems: StockItem[] = [];
+    for (const d of stockSnap.docs) {
+      const data    = d.data() as DocumentData;
+      const qty     = (data.quantity_on_hand as number) ?? 0;
+      const reorder = (data.reorder_level    as number) ?? 0;
+      stockMap.set(d.id, { qty, reorder });
+      stockItems.push({
+        id:               d.id,
+        name:             (data.name          as string) ?? '',
+        unit:             (data.unit          as string) ?? '',
+        quantity_on_hand: qty,
+        reorder_level:    reorder,
+        cost_per_unit:    (data.cost_per_unit as number) ?? 0,
+        is_active:        data.is_active !== false,
+        stock_status:     qty <= 0 ? 'out' : reorder > 0 && qty <= reorder ? 'low' : 'ok',
+      });
     }
 
-    return {
-      id:              d.id,
-      ...(data        as Omit<Product, 'id'>),
-      stock_status,
-      modifier_groups: (data.modifier_groups as Product['modifier_groups']) ?? [],
-      recipe_lines:    (data.recipe_lines    as Product['recipe_lines'])   ?? [],
-    };
-  });
+    const products = prodSnap.docs.map((d) => {
+      const data         = d.data() as DocumentData;
+      const trackingMode = data.tracking_mode as Product['tracking_mode'];
+      const stockItemId  = data.stock_item_id as string | null;
+
+      let stock_status: Product['stock_status'] = 'ok';
+      if (trackingMode === 'direct' && stockItemId) {
+        const si = stockMap.get(stockItemId);
+        if (si) {
+          stock_status = si.qty <= 0 ? 'out'
+            : (si.reorder > 0 && si.qty <= si.reorder) ? 'low'
+            : 'ok';
+        }
+      }
+
+      return {
+        id:              d.id,
+        ...(data        as Omit<Product, 'id'>),
+        stock_status,
+        modifier_groups: (data.modifier_groups as Product['modifier_groups']) ?? [],
+        recipe_lines:    (data.recipe_lines    as Product['recipe_lines'])   ?? [],
+      };
+    });
+
+    // Persist to local cache (non-blocking)
+    writeProductsCache(products).catch(() => {});
+    replaceStockCache(stockItems).catch(() => {});
+
+    return products;
+  } catch {
+    // Network unavailable — serve from local cache
+    return getCachedProducts();
+  }
 }
 
 export async function getCategories(): Promise<Category[]> {
-  const q    = query(categoriesCol(), where('is_active', '==', true));
-  const snap = await getDocs(q);
-  return snap.docs
-    .map((d) => ({ id: d.id, ...(d.data() as Omit<Category, 'id'>) }))
-    .sort((a, b) => a.sort_order - b.sort_order);
+  try {
+    const q    = query(categoriesCol(), where('is_active', '==', true));
+    const snap = await getDocs(q);
+    const categories = snap.docs
+      .map((d) => ({ id: d.id, ...(d.data() as Omit<Category, 'id'>) }))
+      .sort((a, b) => a.sort_order - b.sort_order);
+
+    writeCategoriesCache(categories).catch(() => {});
+    return categories;
+  } catch {
+    return getCachedCategories();
+  }
 }
 
 // ─── Products & Categories (Admin — all records) ──────────────────────────────

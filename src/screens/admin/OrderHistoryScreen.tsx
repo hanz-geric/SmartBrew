@@ -6,6 +6,7 @@ import {
 import AdminLayout from './AdminLayout';
 import { getOrdersInRange, voidOrder } from '../../firebase/firestoreService';
 import { useAuthStore } from '../../store/authStore';
+import { useSyncEvents } from '../../context/SyncContext';
 import { Order, OrderType, PaymentMethod } from '../../types';
 import { exportCsv } from '../../utils/csvExport';
 import {
@@ -106,8 +107,12 @@ export default function OrderHistoryScreen() {
   const [search,        setSearch]        = useState('');
   const [exporting,     setExporting]     = useState(false);
   const [displayLimit,  setDisplayLimit]  = useState(50);
+  const [syncVersion,   setSyncVersion]   = useState(0);
 
-  useEffect(() => { loadOrders(); }, [period]);
+  const { subscribe } = useSyncEvents();
+  useEffect(() => { return subscribe(() => setSyncVersion((v) => v + 1)); }, []);
+
+  useEffect(() => { loadOrders(); }, [period, syncVersion]);
   useEffect(() => { setDisplayLimit(50); }, [orders, payFilter, typeFilter, search]);
 
   async function loadOrders() {
