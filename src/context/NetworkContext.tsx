@@ -15,14 +15,17 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
     // One-shot fetch for immediate initial state
     NetInfo.fetch().then((state) => {
       if (!resolvedRef.current) {
-        setIsOnline(!!(state.isConnected && state.isInternetReachable !== false));
+        setIsOnline(state.isConnected !== false);
         resolvedRef.current = true;
       }
     });
 
     const unsubscribe = NetInfo.addEventListener((state) => {
       resolvedRef.current = true;
-      setIsOnline(!!(state.isConnected && state.isInternetReachable !== false));
+      // Use isConnected only — isInternetReachable uses a remote probe that
+      // can return false/null during startup or on restricted networks, causing
+      // false offline detection even when the device has a valid connection.
+      setIsOnline(state.isConnected !== false);
     });
 
     return unsubscribe;
