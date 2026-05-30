@@ -12,7 +12,7 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <StatusBar style="light" />
+      <StatusBar style="light" hidden={true} />
       <RootNavigator />
     </SafeAreaProvider>
   );

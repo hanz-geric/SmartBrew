@@ -12,6 +12,9 @@
       "bundleIdentifier": "com.smartbrew.pos"
     },
     "android": {
+      "statusBar": {
+        "hidden": true
+      },
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
