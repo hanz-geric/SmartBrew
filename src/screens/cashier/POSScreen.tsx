@@ -251,7 +251,7 @@ function DiscountAuthModal({ onClose, onSuccess }: DiscountAuthProps) {
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={da.body} contentContainerStyle={da.bodyContent} keyboardShouldPersistTaps="handled">
+          <View style={da.body}>
             <Text style={da.fieldLabel}>Username</Text>
             <TextInput
               style={da.input}
@@ -279,7 +279,7 @@ function DiscountAuthModal({ onClose, onSuccess }: DiscountAuthProps) {
             {attempts > 0 && attemptsLeft > 0 && (
               <Text style={da.attemptsLeft}>{attemptsLeft} attempt{attemptsLeft !== 1 ? 's' : ''} remaining</Text>
             )}
-          </ScrollView>
+          </View>
 
           <View style={da.footer}>
             <TouchableOpacity style={da.cancelBtn} onPress={onClose} activeOpacity={0.7}>
@@ -358,7 +358,7 @@ function CashierSwitchModal({ onClose, onSuccess }: CashierSwitchProps) {
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={da.body} contentContainerStyle={da.bodyContent} keyboardShouldPersistTaps="handled">
+          <View style={da.body}>
             <Text style={da.fieldLabel}>Username</Text>
             <TextInput
               style={da.input}
@@ -386,7 +386,7 @@ function CashierSwitchModal({ onClose, onSuccess }: CashierSwitchProps) {
             {attempts > 0 && attemptsLeft > 0 && (
               <Text style={da.attemptsLeft}>{attemptsLeft} attempt{attemptsLeft !== 1 ? 's' : ''} remaining</Text>
             )}
-          </ScrollView>
+          </View>
 
           <View style={da.footer}>
             <TouchableOpacity style={da.cancelBtn} onPress={onClose} activeOpacity={0.7}>
@@ -1601,9 +1601,6 @@ const da = StyleSheet.create({
     fontWeight: FontWeight.bold,
   },
   body: {
-    flex: 1,
-  },
-  bodyContent: {
     padding: Spacing.xl,
     gap: Spacing.sm,
   },
