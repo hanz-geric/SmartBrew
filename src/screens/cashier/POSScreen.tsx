@@ -472,7 +472,8 @@ export default function POSScreen({ route, navigation }: Props) {
 
   // Discount state — nonce is set after manager approves (cashier only); cleared on cart clear
   const [discountNonce,  setDiscountNonce]  = useState<string | null>(null);
-  const [discountInput,  setDiscountInput]  = useState('');
+  const [discountType,   setDiscountType]   = useState<'percent' | 'amount'>('percent');
+  const [discountInput,  setDiscountInput]  = useState('20');
   const [showDiscountModal, setShowDiscountModal] = useState(false);
   const [showSwitchModal,   setShowSwitchModal]   = useState(false);
 
@@ -549,7 +550,8 @@ export default function POSScreen({ route, navigation }: Props) {
 
   function clearDiscount() {
     setDiscountNonce(null);
-    setDiscountInput('');
+    setDiscountInput('20');
+    setDiscountType('percent');
   }
 
   async function handleLogout() {
@@ -572,12 +574,16 @@ export default function POSScreen({ route, navigation }: Props) {
     await logout();
   }
 
+  const rawDiscountNum   = parseFloat(discountInput) || 0;
+  const computedDiscount = (canDiscountFreely || !!discountNonce)
+    ? discountType === 'percent'
+      ? Math.min((rawDiscountNum / 100) * total, total)
+      : Math.min(rawDiscountNum, total)
+    : 0;
+
   function handleCheckout() {
     if (cartItems.length === 0) return;
-    const discountUnlocked = canDiscountFreely || !!discountNonce;
-    const discountAmount   = discountUnlocked
-      ? Math.min(parseFloat(discountInput) || 0, total)
-      : 0;
+    const discountAmount = computedDiscount;
     navigation.navigate('Payment', {
       session,
       total: Math.max(0, total - discountAmount),
@@ -599,7 +605,7 @@ export default function POSScreen({ route, navigation }: Props) {
       <View style={s.left}>
         {/* Top bar */}
         <View style={s.topBar}>
-          <View>
+          <View style={s.topBarLeft}>
             <Text style={s.shopName}>☕ SmartBrew POS</Text>
             <Text style={s.sessionInfo}>
               {user.full_name} · Started{' '}
@@ -797,15 +803,34 @@ export default function POSScreen({ route, navigation }: Props) {
           {cartItems.length > 0 && (
             (canDiscountFreely || discountNonce) ? (
               <View style={s.discountUnlocked}>
+                {/* % / ₱ toggle */}
+                <View style={s.discountTypeRow}>
+                  <TouchableOpacity
+                    style={[s.discountTypeBtn, discountType === 'percent' && s.discountTypeBtnSel]}
+                    onPress={() => setDiscountType('percent')}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[s.discountTypeBtnText, discountType === 'percent' && s.discountTypeBtnTextSel]}>%</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[s.discountTypeBtn, discountType === 'amount' && s.discountTypeBtnSel]}
+                    onPress={() => setDiscountType('amount')}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[s.discountTypeBtnText, discountType === 'amount' && s.discountTypeBtnTextSel]}>₱</Text>
+                  </TouchableOpacity>
+                </View>
+                {/* Input row */}
                 <View style={s.discountInputRow}>
                   <Text style={s.discountPrefix}>
-                    {canDiscountFreely ? '🔓 −₱' : '−₱'}
+                    {canDiscountFreely ? '🔓 ' : ''}−
                   </Text>
                   <TextInput
                     style={s.discountInput}
                     value={discountInput}
                     onChangeText={(t) => {
-                      if (t === '' || (/^\d*\.?\d*$/.test(t) && parseFloat(t) >= 0)) {
+                      if (t === '' || /^\d*\.?\d*$/.test(t)) {
+                        if (discountType === 'percent' && parseFloat(t) > 100) return;
                         setDiscountInput(t);
                       }
                     }}
@@ -813,13 +838,17 @@ export default function POSScreen({ route, navigation }: Props) {
                     placeholderTextColor={Colors.gray400}
                     keyboardType="decimal-pad"
                   />
+                  <Text style={s.discountSuffix}>{discountType === 'percent' ? '%' : '₱'}</Text>
                   {!canDiscountFreely && (
                     <TouchableOpacity onPress={clearDiscount} hitSlop={8}>
                       <Text style={s.discountClear}>✕</Text>
                     </TouchableOpacity>
                   )}
                 </View>
-                {parseFloat(discountInput) > 0 && (
+                {rawDiscountNum > 0 && discountType === 'percent' && (
+                  <Text style={s.discountLabel}>= −₱{computedDiscount.toFixed(2)} off</Text>
+                )}
+                {rawDiscountNum > 0 && discountType === 'amount' && (
                   <Text style={s.discountLabel}>Discount applied</Text>
                 )}
               </View>
@@ -835,7 +864,7 @@ export default function POSScreen({ route, navigation }: Props) {
           )}
 
           {/* Total rows */}
-          {(discountNonce || canDiscountFreely) && parseFloat(discountInput) > 0 ? (
+          {(discountNonce || canDiscountFreely) && computedDiscount > 0 ? (
             <>
               <View style={s.totalRow}>
                 <Text style={s.totalSubLabel}>Subtotal</Text>
@@ -844,13 +873,13 @@ export default function POSScreen({ route, navigation }: Props) {
               <View style={s.totalRow}>
                 <Text style={s.discountRowLabel}>Discount</Text>
                 <Text style={s.discountRowAmount}>
-                  −₱{Math.min(parseFloat(discountInput) || 0, total).toFixed(2)}
+                  −₱{computedDiscount.toFixed(2)}
                 </Text>
               </View>
               <View style={[s.totalRow, s.totalRowFinal]}>
                 <Text style={s.totalLabel}>Total</Text>
                 <Text style={s.totalAmount}>
-                  ₱{Math.max(0, total - (parseFloat(discountInput) || 0)).toFixed(2)}
+                  ₱{Math.max(0, total - computedDiscount).toFixed(2)}
                 </Text>
               </View>
             </>
@@ -931,6 +960,11 @@ const s = StyleSheet.create({
     backgroundColor: Colors.green700,
     paddingHorizontal: Spacing.xl,
     paddingVertical: Spacing.md,
+    gap: Spacing.md,
+  },
+  topBarLeft: {
+    flex: 1,
+    minWidth: 0,
   },
   shopName: {
     fontSize: FontSize.xl,
@@ -941,11 +975,13 @@ const s = StyleSheet.create({
     fontSize: FontSize.xs,
     color: Colors.green200,
     marginTop: 2,
+    flexShrink: 1,
   },
   topBarActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
+    flexShrink: 0,
   },
   syncBadge: {
     flexDirection: 'row',
@@ -1236,7 +1272,32 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.danger + '44',
     padding: Spacing.sm,
-    gap: 2,
+    gap: Spacing.xs,
+  },
+  discountTypeRow: {
+    flexDirection: 'row',
+    gap: Spacing.xs,
+  },
+  discountTypeBtn: {
+    flex: 1,
+    paddingVertical: Spacing.xs,
+    borderRadius: Radius.sm,
+    borderWidth: 1,
+    borderColor: Colors.danger + '44',
+    backgroundColor: Colors.surface,
+    alignItems: 'center',
+  },
+  discountTypeBtnSel: {
+    backgroundColor: Colors.danger + '18',
+    borderColor: Colors.danger,
+  },
+  discountTypeBtnText: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.bold,
+    color: Colors.gray400,
+  },
+  discountTypeBtnTextSel: {
+    color: Colors.danger,
   },
   discountInputRow: {
     flexDirection: 'row',
@@ -1254,6 +1315,11 @@ const s = StyleSheet.create({
     fontWeight: FontWeight.bold,
     color: Colors.danger,
     paddingVertical: 2,
+  },
+  discountSuffix: {
+    fontSize: FontSize.lg,
+    fontWeight: FontWeight.bold,
+    color: Colors.danger,
   },
   discountClear: {
     fontSize: FontSize.sm,
