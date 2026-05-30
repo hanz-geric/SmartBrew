@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator, FlatList,
+  ActivityIndicator, FlatList, TextInput,
   StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -104,9 +104,10 @@ export default function SessionsScreen() {
   const [sessions,     setSessions]     = useState<CashSession[]>([]);
   const [loading,      setLoading]      = useState(true);
   const [error,        setError]        = useState('');
-  const [period,       setPeriod]       = useState<SessionPeriod>('week');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'closed'>('all');
-  const [exporting,    setExporting]    = useState(false);
+  const [period,         setPeriod]         = useState<SessionPeriod>('week');
+  const [statusFilter,   setStatusFilter]   = useState<'all' | 'open' | 'closed'>('all');
+  const [cashierSearch,  setCashierSearch]  = useState('');
+  const [exporting,      setExporting]      = useState(false);
 
   useEffect(() => { load(); }, [period]);
 
@@ -126,9 +127,13 @@ export default function SessionsScreen() {
     }
   }
 
-  const filteredSessions = statusFilter === 'all'
-    ? sessions
-    : sessions.filter((sess) => sess.status === statusFilter);
+  const filteredSessions = sessions.filter((sess) => {
+    if (statusFilter !== 'all' && sess.status !== statusFilter) return false;
+    if (cashierSearch.trim()) {
+      return sess.cashier_name.toLowerCase().includes(cashierSearch.trim().toLowerCase());
+    }
+    return true;
+  });
 
   const openCount    = filteredSessions.filter((s) => s.status === 'open').length;
   const closedCount  = filteredSessions.filter((s) => s.status === 'closed').length;
@@ -183,6 +188,23 @@ export default function SessionsScreen() {
           <TouchableOpacity style={s.refreshBtn} onPress={load} disabled={loading}>
             <Text style={s.refreshText}>{loading ? '…' : '↻ Refresh'}</Text>
           </TouchableOpacity>
+        </View>
+
+        {/* Cashier search */}
+        <View style={s.searchRow}>
+          <TextInput
+            style={s.searchInput}
+            placeholder="Search by cashier name…"
+            placeholderTextColor={Colors.gray400}
+            value={cashierSearch}
+            onChangeText={setCashierSearch}
+            returnKeyType="search"
+          />
+          {!!cashierSearch && (
+            <TouchableOpacity onPress={() => setCashierSearch('')} style={s.searchClear} hitSlop={8}>
+              <Text style={s.searchClearText}>✕</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Status filter chips */}
@@ -354,6 +376,19 @@ const s = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.border,
   },
   refreshText: { fontSize: FontSize.sm, color: Colors.green700, fontWeight: FontWeight.semibold },
+
+  searchRow: {
+    flexDirection: 'row', alignItems: 'center',
+    marginHorizontal: Spacing.xl, marginBottom: Spacing.sm,
+    backgroundColor: Colors.surface, borderRadius: Radius.md,
+    borderWidth: 1, borderColor: Colors.border, ...Shadow.sm,
+  },
+  searchInput: {
+    flex: 1, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm,
+    fontSize: FontSize.base, color: Colors.gray800,
+  },
+  searchClear: { paddingHorizontal: Spacing.md },
+  searchClearText: { fontSize: FontSize.sm, color: Colors.gray400 },
 
   statusFilterRow: {
     flexDirection: 'row', gap: Spacing.xs,

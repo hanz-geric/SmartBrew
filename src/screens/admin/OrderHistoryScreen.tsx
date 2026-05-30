@@ -95,18 +95,20 @@ export default function OrderHistoryScreen() {
   const canVoid     = currentUser.role === 'admin';
   const isAdmin     = currentUser.role === 'admin';
 
-  const [period,     setPeriod]     = useState<Period>('today');
-  const [orders,     setOrders]     = useState<Order[]>([]);
-  const [loading,    setLoading]    = useState(true);
-  const [error,      setError]      = useState('');
-  const [expanded,   setExpanded]   = useState<string | null>(null);
-  const [voiding,    setVoiding]    = useState<string | null>(null);
-  const [payFilter,  setPayFilter]  = useState<PaymentMethod | 'all'>('all');
-  const [typeFilter, setTypeFilter] = useState<OrderType | 'all'>('all');
-  const [search,     setSearch]     = useState('');
-  const [exporting,  setExporting]  = useState(false);
+  const [period,        setPeriod]        = useState<Period>('today');
+  const [orders,        setOrders]        = useState<Order[]>([]);
+  const [loading,       setLoading]       = useState(true);
+  const [error,         setError]         = useState('');
+  const [expanded,      setExpanded]      = useState<string | null>(null);
+  const [voiding,       setVoiding]       = useState<string | null>(null);
+  const [payFilter,     setPayFilter]     = useState<PaymentMethod | 'all'>('all');
+  const [typeFilter,    setTypeFilter]    = useState<OrderType | 'all'>('all');
+  const [search,        setSearch]        = useState('');
+  const [exporting,     setExporting]     = useState(false);
+  const [displayLimit,  setDisplayLimit]  = useState(50);
 
   useEffect(() => { loadOrders(); }, [period]);
+  useEffect(() => { setDisplayLimit(50); }, [orders, payFilter, typeFilter, search]);
 
   async function loadOrders() {
     setLoading(true);
@@ -288,11 +290,24 @@ export default function OrderHistoryScreen() {
           </View>
         ) : (
           <FlatList
-            data={filteredOrders}
+            data={filteredOrders.slice(0, displayLimit)}
             keyExtractor={(o) => o.id}
             contentContainerStyle={s.listContent}
             ListEmptyComponent={
               <Text style={s.emptyText}>No orders for this period.</Text>
+            }
+            ListFooterComponent={
+              filteredOrders.length > displayLimit ? (
+                <TouchableOpacity
+                  style={s.loadMoreBtn}
+                  onPress={() => setDisplayLimit((n) => n + 50)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={s.loadMoreText}>
+                    Load more ({filteredOrders.length - displayLimit} remaining)
+                  </Text>
+                </TouchableOpacity>
+              ) : null
             }
             renderItem={({ item: order }) => {
               const isOpen      = expanded === order.id;
@@ -558,6 +573,21 @@ const s = StyleSheet.create({
   listContent: {
     padding: Spacing.lg,
     gap: Spacing.sm,
+  },
+
+  loadMoreBtn: {
+    marginTop: Spacing.sm,
+    paddingVertical: Spacing.lg,
+    alignItems: 'center',
+    borderRadius: Radius.md,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+  },
+  loadMoreText: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
+    color: Colors.green700,
   },
 
   orderCard: {

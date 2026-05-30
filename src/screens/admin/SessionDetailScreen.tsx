@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator, ScrollView,
+  ActivityIndicator, FlatList, ScrollView,
   StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -228,45 +228,46 @@ export default function SessionDetailScreen() {
             </View>
           </ScrollView>
         ) : (
-          <ScrollView style={s.scroll} contentContainerStyle={s.scrollContent}>
-            {orders.length === 0 ? (
-              <Text style={s.empty}>No orders in this session.</Text>
-            ) : (
-              orders.map((order) => {
-                const isVoided  = order.status === 'cancelled';
-                const cashierTag = hadSwitches && order.cashier_name ? order.cashier_name : null;
-                return (
-                  <View key={order.id} style={[s.orderRow, isVoided && s.orderRowVoided]}>
-                    <View style={{ flex: 1 }}>
-                      <View style={s.orderTopRow}>
-                        <Text style={[s.orderNum, isVoided && s.orderNumVoided]}>
-                          #{order.order_number}
-                        </Text>
-                        {cashierTag && (
-                          <View style={s.cashierTag}>
-                            <Text style={s.cashierTagText}>{cashierTag}</Text>
-                          </View>
-                        )}
-                        {isVoided && (
-                          <View style={s.voidedBadge}>
-                            <Text style={s.voidedBadgeText}>Voided</Text>
-                          </View>
-                        )}
-                      </View>
-                      <Text style={s.orderMeta}>
-                        {fmtTime(order.created_at)}
-                        {' · '}{TYPE_LABELS[order.order_type] ?? order.order_type}
-                        {' · '}{PAY_LABELS[order.payment_method] ?? order.payment_method}
+          <FlatList
+            data={orders}
+            keyExtractor={(o) => o.id}
+            style={s.scroll}
+            contentContainerStyle={s.scrollContent}
+            ListEmptyComponent={<Text style={s.empty}>No orders in this session.</Text>}
+            renderItem={({ item: order }) => {
+              const isVoided   = order.status === 'cancelled';
+              const cashierTag = hadSwitches && order.cashier_name ? order.cashier_name : null;
+              return (
+                <View style={[s.orderRow, isVoided && s.orderRowVoided]}>
+                  <View style={{ flex: 1 }}>
+                    <View style={s.orderTopRow}>
+                      <Text style={[s.orderNum, isVoided && s.orderNumVoided]}>
+                        #{order.order_number}
                       </Text>
+                      {cashierTag && (
+                        <View style={s.cashierTag}>
+                          <Text style={s.cashierTagText}>{cashierTag}</Text>
+                        </View>
+                      )}
+                      {isVoided && (
+                        <View style={s.voidedBadge}>
+                          <Text style={s.voidedBadgeText}>Voided</Text>
+                        </View>
+                      )}
                     </View>
-                    <Text style={[s.orderTotal, isVoided && s.orderTotalVoided]}>
-                      ₱{order.total_amount.toFixed(2)}
+                    <Text style={s.orderMeta}>
+                      {fmtTime(order.created_at)}
+                      {' · '}{TYPE_LABELS[order.order_type] ?? order.order_type}
+                      {' · '}{PAY_LABELS[order.payment_method] ?? order.payment_method}
                     </Text>
                   </View>
-                );
-              })
-            )}
-          </ScrollView>
+                  <Text style={[s.orderTotal, isVoided && s.orderTotalVoided]}>
+                    ₱{order.total_amount.toFixed(2)}
+                  </Text>
+                </View>
+              );
+            }}
+          />
         )}
       </View>
     </AdminLayout>

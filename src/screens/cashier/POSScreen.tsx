@@ -996,6 +996,8 @@ const s = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     gap: Spacing.xs,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   catTab: {
     paddingHorizontal: Spacing.lg,
@@ -1004,7 +1006,7 @@ const s = StyleSheet.create({
     backgroundColor: Colors.gray100,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 32,
+    flexShrink: 0,
   },
   catTabSel: {
     backgroundColor: Colors.green600,
@@ -1309,8 +1311,8 @@ const pc = StyleSheet.create({
     opacity: 0.5,
   },
   imageBox: {
-    height: 72,
-    backgroundColor: Colors.green50,
+    aspectRatio: 1,
+    backgroundColor: Colors.white,
     justifyContent: 'center',
     alignItems: 'center',
   },

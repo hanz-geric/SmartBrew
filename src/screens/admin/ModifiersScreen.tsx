@@ -1,6 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import {
-  ActivityIndicator, ScrollView, StyleSheet,
+  ActivityIndicator, FlatList, StyleSheet,
   Text, TouchableOpacity, View,
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -64,15 +64,18 @@ export default function ModifiersScreen() {
             <Text style={s.emptyText}>No modifier groups yet. Tap "+ Add Group" to create one.</Text>
           </View>
         ) : (
-          <ScrollView style={s.scroll} contentContainerStyle={s.scrollContent}>
-            {groups.map((g) => (
+          <FlatList
+            data={groups}
+            keyExtractor={(g) => g.id}
+            style={s.scroll}
+            contentContainerStyle={s.scrollContent}
+            renderItem={({ item: g }) => (
               <GroupCard
-                key={g.id}
                 group={g}
                 onPress={() => navigation.navigate('ModifierGroupEdit', { groupId: g.id })}
               />
-            ))}
-          </ScrollView>
+            )}
+          />
         )}
       </View>
     </AdminLayout>

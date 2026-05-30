@@ -1,6 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import {
-  ActivityIndicator, ScrollView, StyleSheet,
+  ActivityIndicator, SectionList, StyleSheet,
   Text, TouchableOpacity, View,
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -87,23 +87,41 @@ export default function UsersScreen() {
             <Text style={s.errorMsg}>{error}</Text>
           </View>
         ) : (
-          <ScrollView style={s.scroll} contentContainerStyle={s.scrollContent}>
-            {active.length > 0 && (
-              <UserGroup title="Active" users={active} currentUid={currentUser.uid} isAdmin={isAdmin}
-                onPress={(u) => isAdmin && navigation.navigate('UserEdit', { userId: u.uid })}
-              />
+          <SectionList
+            style={s.scroll}
+            contentContainerStyle={s.scrollContent}
+            sections={[
+              ...(active.length > 0   ? [{ title: 'Active',   data: active   }] : []),
+              ...(inactive.length > 0 ? [{ title: 'Inactive', data: inactive }] : []),
+            ]}
+            keyExtractor={(u) => u.uid}
+            renderSectionHeader={({ section }) => (
+              <Text style={ug.title}>{section.title}</Text>
             )}
-            {inactive.length > 0 && (
-              <UserGroup title="Inactive" users={inactive} currentUid={currentUser.uid} isAdmin={isAdmin}
-                onPress={(u) => isAdmin && navigation.navigate('UserEdit', { userId: u.uid })}
-              />
-            )}
-            {users.length === 0 && (
-              <View style={s.empty}>
-                <Text style={s.emptyText}>No users found.</Text>
-              </View>
-            )}
-          </ScrollView>
+            renderItem={({ item: u, index, section }) => {
+              const isFirst = index === 0;
+              const isLast  = index === section.data.length - 1;
+              return (
+                <View style={[
+                  ug.itemWrap,
+                  isFirst && ug.itemFirst,
+                  isLast  && ug.itemLast,
+                ]}>
+                  {!isFirst && <View style={ug.divider} />}
+                  <UserRow
+                    user={u}
+                    isSelf={u.uid === currentUser.uid}
+                    isAdmin={isAdmin}
+                    onPress={() => isAdmin && navigation.navigate('UserEdit', { userId: u.uid })}
+                  />
+                </View>
+              );
+            }}
+            SectionSeparatorComponent={() => <View style={{ height: Spacing.xl }} />}
+            ListEmptyComponent={
+              <View style={s.empty}><Text style={s.emptyText}>No users found.</Text></View>
+            }
+          />
         )}
       </View>
     </AdminLayout>
@@ -111,35 +129,6 @@ export default function UsersScreen() {
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
-
-function UserGroup({
-  title, users, currentUid, isAdmin, onPress,
-}: {
-  title:      string;
-  users:      UserProfile[];
-  currentUid: string;
-  isAdmin:    boolean;
-  onPress:    (u: UserProfile) => void;
-}) {
-  return (
-    <View style={ug.root}>
-      <Text style={ug.title}>{title}</Text>
-      <View style={ug.card}>
-        {users.map((u, i) => (
-          <React.Fragment key={u.uid}>
-            {i > 0 && <View style={ug.divider} />}
-            <UserRow
-              user={u}
-              isSelf={u.uid === currentUid}
-              isAdmin={isAdmin}
-              onPress={() => onPress(u)}
-            />
-          </React.Fragment>
-        ))}
-      </View>
-    </View>
-  );
-}
 
 function UserRow({
   user, isSelf, isAdmin, onPress,
@@ -221,19 +210,27 @@ const s = StyleSheet.create({
 });
 
 const ug = StyleSheet.create({
-  root:    { gap: Spacing.sm },
   title: {
     fontSize: FontSize.sm,
     fontWeight: FontWeight.bold,
     color: Colors.gray500,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+    marginBottom: Spacing.sm,
   },
-  card: {
+  itemWrap: {
     backgroundColor: Colors.surface,
-    borderRadius: Radius.xl,
-    overflow: 'hidden',
     ...Shadow.sm,
+  },
+  itemFirst: {
+    borderTopLeftRadius: Radius.xl,
+    borderTopRightRadius: Radius.xl,
+    overflow: 'hidden',
+  },
+  itemLast: {
+    borderBottomLeftRadius: Radius.xl,
+    borderBottomRightRadius: Radius.xl,
+    overflow: 'hidden',
   },
   divider: { height: 1, backgroundColor: Colors.border, marginLeft: rs(60) },
 });

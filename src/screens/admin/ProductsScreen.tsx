@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet,
-  Switch, Text, TextInput, TouchableOpacity, View,
+  ActivityIndicator, KeyboardAvoidingView, Modal, Platform, ScrollView, SectionList,
+  StyleSheet, Switch, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -133,42 +133,37 @@ export default function ProductsScreen() {
             <ActivityIndicator size="large" color={Colors.green600} />
           </View>
         ) : tab === 'products' ? (
-          <ScrollView style={s.scroll} contentContainerStyle={s.scrollContent}>
-            {grouped.map(({ cat, items }) =>
-              items.length === 0 ? null : (
-                <View key={cat.id} style={s.group}>
-                  <View style={s.groupHeader}>
-                    <Text style={s.groupTitle}>{cat.name}</Text>
-                    {!cat.is_active && <Badge label="Inactive" color={Colors.gray400} />}
-                  </View>
-                  {items.map((p) => (
-                    <ProductRow
-                      key={p.id}
-                      product={p}
-                      onPress={() => navigation.navigate('ProductEdit', { productId: p.id })}
-                    />
-                  ))}
-                </View>
-              ),
-            )}
-            {uncategorised.length > 0 && (
-              <View style={s.group}>
-                <Text style={s.groupTitle}>Uncategorised</Text>
-                {uncategorised.map((p) => (
-                  <ProductRow
-                    key={p.id}
-                    product={p}
-                    onPress={() => navigation.navigate('ProductEdit', { productId: p.id })}
-                  />
-                ))}
+          <SectionList
+            style={s.scroll}
+            contentContainerStyle={s.scrollContent}
+            sections={[
+              ...grouped
+                .filter(({ items }) => items.length > 0)
+                .map(({ cat, items }) => ({ key: cat.id, title: cat.name, inactive: !cat.is_active, data: items })),
+              ...(uncategorised.length > 0
+                ? [{ key: 'uncategorised', title: 'Uncategorised', inactive: false, data: uncategorised }]
+                : []),
+            ]}
+            keyExtractor={(p) => p.id}
+            renderSectionHeader={({ section }) => (
+              <View style={s.groupHeader}>
+                <Text style={s.groupTitle}>{section.title}</Text>
+                {section.inactive && <Badge label="Inactive" color={Colors.gray400} />}
               </View>
             )}
-            {products.length === 0 && (
+            renderItem={({ item }) => (
+              <ProductRow
+                product={item}
+                onPress={() => navigation.navigate('ProductEdit', { productId: item.id })}
+              />
+            )}
+            SectionSeparatorComponent={() => <View style={{ height: Spacing.md }} />}
+            ListEmptyComponent={
               <View style={s.empty}>
                 <Text style={s.emptyText}>No products yet. Tap "+ Add Product" to create one.</Text>
               </View>
-            )}
-          </ScrollView>
+            }
+          />
         ) : (
           <ScrollView style={s.scroll} contentContainerStyle={s.scrollContent}>
             {categories.map((cat) => (
