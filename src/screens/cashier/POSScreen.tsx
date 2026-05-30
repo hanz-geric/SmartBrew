@@ -67,7 +67,8 @@ function ModifierModal({ product, onClose, onAdd }: ModModalProps) {
   function handleAdd() {
     const newErrors: Record<string, boolean> = {};
     for (const g of product.modifier_groups) {
-      if (g.is_required && !(selections[g.id]?.length)) newErrors[g.id] = true;
+      const hasActive = g.modifiers.some((m) => m.is_active);
+      if (g.is_required && hasActive && !(selections[g.id]?.length)) newErrors[g.id] = true;
     }
     if (Object.keys(newErrors).length) { setErrors(newErrors); return; }
 
@@ -113,7 +114,9 @@ function ModifierModal({ product, onClose, onAdd }: ModModalProps) {
             contentContainerStyle={mm.scrollContent}
             keyboardShouldPersistTaps="handled"
           >
-            {product.modifier_groups.map((group) => (
+            {product.modifier_groups.filter((group) =>
+              group.modifiers.some((m) => m.is_active)
+            ).map((group) => (
               <View key={group.id} style={mm.groupBlock}>
                 <View style={mm.groupHeader}>
                   <Text style={mm.groupName}>{group.name}</Text>
