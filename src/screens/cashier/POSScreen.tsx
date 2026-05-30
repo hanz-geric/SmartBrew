@@ -1312,10 +1312,12 @@ const pc = StyleSheet.create({
     opacity: 0.5,
   },
   imageBox: {
-    height: 72,
+    width: '100%',
+    aspectRatio: 1,
     backgroundColor: Colors.green50,
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
   },
   image: {
     width: '100%',
