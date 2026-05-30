@@ -94,7 +94,7 @@ function ModifierModal({ product, onClose, onAdd }: ModModalProps) {
       <View style={mm.overlay}>
         <KeyboardAvoidingView
           style={mm.sheet}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
           {/* Header */}
           <View style={mm.header}>
@@ -241,7 +241,7 @@ function DiscountAuthModal({ onClose, onSuccess }: DiscountAuthProps) {
       <View style={da.overlay}>
         <KeyboardAvoidingView
           style={da.sheet}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
           <View style={da.header}>
             <Text style={da.title}>Manager Authorisation</Text>
@@ -348,7 +348,7 @@ function CashierSwitchModal({ onClose, onSuccess }: CashierSwitchProps) {
       <View style={da.overlay}>
         <KeyboardAvoidingView
           style={da.sheet}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
           <View style={da.header}>
             <Text style={da.title}>Switch Cashier</Text>

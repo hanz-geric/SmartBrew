@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator, FlatList, ScrollView, StyleSheet,
-  Text, TextInput, TouchableOpacity, View,
+  ActivityIndicator, FlatList, KeyboardAvoidingView, Platform,
+  ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useShallow } from 'zustand/react/shallow';
@@ -242,7 +242,12 @@ export default function PaymentScreen({ route, navigation }: Props) {
       </View>
 
       {/* ── Right: Payment Form ── */}
-      <ScrollView style={s.right} contentContainerStyle={s.rightContent} keyboardShouldPersistTaps="handled">
+      <KeyboardAvoidingView
+        style={s.right}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
+      >
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={s.rightContent} keyboardShouldPersistTaps="handled">
         <Text style={s.sectionTitle}>Order Type</Text>
         <View style={s.radioGroup}>
           {ORDER_TYPES.map((t) => (
@@ -384,6 +389,7 @@ export default function PaymentScreen({ route, navigation }: Props) {
           </TouchableOpacity>
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
