@@ -1359,7 +1359,7 @@ const mm = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: Spacing.xxl,
+    padding: isTablet ? Spacing.xxl : Spacing.sm,
   },
   sheet: {
     width: '100%',
@@ -1398,7 +1398,7 @@ const mm = StyleSheet.create({
     fontWeight: FontWeight.bold,
   },
   scrollArea: {
-    flexShrink: 1,
+    flex: 1,
   },
   scrollContent: {
     padding: Spacing.xl,

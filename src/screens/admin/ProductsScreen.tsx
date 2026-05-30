@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator, ScrollView, StyleSheet,
-  Text, TouchableOpacity, View,
+  ActivityIndicator, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet,
+  Switch, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AdminLayout from './AdminLayout';
 import { AdminStackParamList } from '../../navigation/AdminStack';
-import { getAllCategories, getAllProducts } from '../../firebase/firestoreService';
+import { getAllCategories, getAllProducts, upsertCategory } from '../../firebase/firestoreService';
 import { useAuthStore } from '../../store/authStore';
 import { Category, Product } from '../../types';
 import {
@@ -26,6 +26,43 @@ export default function ProductsScreen() {
   const [products,   setProducts]   = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading,    setLoading]    = useState(true);
+
+  // Category edit modal state
+  const [catModal,      setCatModal]      = useState<{ id?: string } | null>(null);
+  const [catName,       setCatName]       = useState('');
+  const [catSortOrder,  setCatSortOrder]  = useState('0');
+  const [catIsActive,   setCatIsActive]   = useState(true);
+  const [catSaving,     setCatSaving]     = useState(false);
+  const [catError,      setCatError]      = useState('');
+
+  function openCatNew() {
+    setCatName(''); setCatSortOrder('0'); setCatIsActive(true); setCatError('');
+    setCatModal({});
+  }
+
+  function openCatEdit(cat: Category) {
+    setCatName(cat.name); setCatSortOrder(String(cat.sort_order));
+    setCatIsActive(cat.is_active); setCatError('');
+    setCatModal({ id: cat.id });
+  }
+
+  async function handleCatSave() {
+    const trimmed = catName.trim();
+    const sortNum = parseInt(catSortOrder, 10);
+    if (!trimmed) { setCatError('Name is required.'); return; }
+    if (isNaN(sortNum) || sortNum < 0) { setCatError('Sort order must be 0 or higher.'); return; }
+    setCatSaving(true);
+    setCatError('');
+    try {
+      await upsertCategory({ name: trimmed, sort_order: sortNum, is_active: catIsActive }, catModal?.id);
+      setCatModal(null);
+      load();
+    } catch (e: unknown) {
+      setCatError((e as { code?: string }).code === 'permission-denied' ? 'Permission denied.' : 'Failed to save.');
+    } finally {
+      setCatSaving(false);
+    }
+  }
 
   useFocusEffect(
     useCallback(() => {
@@ -64,7 +101,7 @@ export default function ProductsScreen() {
               onPress={() =>
                 tab === 'products'
                   ? navigation.navigate('ProductEdit', {})
-                  : navigation.navigate('CategoryEdit', {})
+                  : openCatNew()
               }
               activeOpacity={0.8}
             >
@@ -139,7 +176,7 @@ export default function ProductsScreen() {
                 key={cat.id}
                 category={cat}
                 count={products.filter((p) => p.category_id === cat.id).length}
-                onPress={isAdmin ? () => navigation.navigate('CategoryEdit', { categoryId: cat.id }) : undefined}
+                onPress={isAdmin ? () => openCatEdit(cat) : undefined}
               />
             ))}
             {categories.length === 0 && (
@@ -150,6 +187,89 @@ export default function ProductsScreen() {
           </ScrollView>
         )}
       </View>
+
+      {/* Category Edit Modal */}
+      <Modal
+        visible={catModal !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCatModal(null)}
+      >
+        <KeyboardAvoidingView
+          style={cm.overlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <View style={cm.sheet}>
+            {/* Header */}
+            <View style={cm.header}>
+              <Text style={cm.title}>{catModal?.id ? 'Edit Category' : 'New Category'}</Text>
+              <TouchableOpacity onPress={() => setCatModal(null)} hitSlop={12}>
+                <Text style={cm.closeX}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Body */}
+            <View style={cm.body}>
+              <View style={cm.field}>
+                <Text style={cm.label}>Category Name <Text style={cm.required}>*</Text></Text>
+                <TextInput
+                  style={cm.input}
+                  value={catName}
+                  onChangeText={setCatName}
+                  placeholder="e.g. Hot Drinks"
+                  placeholderTextColor={Colors.gray400}
+                />
+              </View>
+
+              <View style={cm.field}>
+                <Text style={cm.label}>Sort Order</Text>
+                <Text style={cm.hint}>Lower numbers appear first in the POS</Text>
+                <TextInput
+                  style={cm.input}
+                  value={catSortOrder}
+                  onChangeText={setCatSortOrder}
+                  keyboardType="numeric"
+                  placeholder="0"
+                  placeholderTextColor={Colors.gray400}
+                />
+              </View>
+
+              <View style={cm.switchRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={cm.label}>Active</Text>
+                  <Text style={cm.hint}>Inactive categories are hidden from the POS</Text>
+                </View>
+                <Switch
+                  value={catIsActive}
+                  onValueChange={setCatIsActive}
+                  trackColor={{ true: Colors.green600, false: Colors.gray300 }}
+                  thumbColor={Colors.white}
+                />
+              </View>
+
+              {!!catError && <Text style={cm.error}>{catError}</Text>}
+            </View>
+
+            {/* Footer */}
+            <View style={cm.footer}>
+              <TouchableOpacity style={cm.cancelBtn} onPress={() => setCatModal(null)} disabled={catSaving}>
+                <Text style={cm.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[cm.saveBtn, catSaving && cm.saveBtnOff]}
+                onPress={handleCatSave}
+                disabled={catSaving}
+                activeOpacity={0.8}
+              >
+                {catSaving
+                  ? <ActivityIndicator color={Colors.white} size="small" />
+                  : <Text style={cm.saveBtnText}>{catModal?.id ? 'Save' : 'Create'}</Text>
+                }
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </AdminLayout>
   );
 }
@@ -322,4 +442,53 @@ const bdg = StyleSheet.create({
     borderWidth: 1,
   },
   text: { fontSize: 10, fontWeight: FontWeight.bold },
+});
+
+const cm = StyleSheet.create({
+  overlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center', alignItems: 'center', padding: Spacing.xl,
+  },
+  sheet: {
+    width: '100%', maxWidth: 440,
+    backgroundColor: Colors.surface, borderRadius: Radius.xl,
+    overflow: 'hidden', ...Shadow.lg,
+  },
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: Colors.green700, paddingHorizontal: Spacing.xl, paddingVertical: Spacing.lg,
+  },
+  title:  { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: Colors.white },
+  closeX: { fontSize: FontSize.lg, color: Colors.white, fontWeight: FontWeight.bold },
+
+  body: { padding: Spacing.xl, gap: Spacing.lg },
+
+  field:    { gap: Spacing.xs },
+  label:    { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.gray700 },
+  hint:     { fontSize: FontSize.xs, color: Colors.gray400 },
+  required: { color: Colors.danger },
+  input: {
+    borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.md,
+    paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md,
+    fontSize: FontSize.base, color: Colors.gray800, backgroundColor: Colors.white,
+  },
+  switchRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  error:     { fontSize: FontSize.sm, color: Colors.danger },
+
+  footer: {
+    flexDirection: 'row', gap: Spacing.md,
+    paddingHorizontal: Spacing.xl, paddingBottom: Spacing.xl,
+    paddingTop: Spacing.sm,
+  },
+  cancelBtn: {
+    flex: 1, paddingVertical: Spacing.md, borderRadius: Radius.md,
+    borderWidth: 1.5, borderColor: Colors.border, alignItems: 'center',
+  },
+  cancelText:  { fontSize: FontSize.base, fontWeight: FontWeight.medium, color: Colors.gray600 },
+  saveBtn: {
+    flex: 2, paddingVertical: Spacing.md, borderRadius: Radius.md,
+    backgroundColor: Colors.green600, alignItems: 'center', ...Shadow.sm,
+  },
+  saveBtnOff:  { opacity: 0.6 },
+  saveBtnText: { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: Colors.white },
 });

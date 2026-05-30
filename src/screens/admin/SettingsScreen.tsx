@@ -65,6 +65,9 @@ export default function SettingsScreen() {
   // Print test
   const [testTarget, setTestTarget] = useState<'receipt' | 'kitchen' | null>(null);
 
+  // Tab
+  const [activeTab, setActiveTab] = useState<'general' | 'receipt' | 'kitchen'>('general');
+
   useEffect(() => { load(); }, []);
 
   async function load() {
@@ -254,51 +257,76 @@ export default function SettingsScreen() {
             </View>
           </View>
 
-          {/* Business Info */}
-          <Section title="Business Info">
-            <Field label="Business Name">
-              <TextInput style={s.input} value={bizName} onChangeText={setBizName}
-                placeholder="SmartBrew Café" placeholderTextColor={Colors.gray400} />
-            </Field>
-            <Field label="Address">
-              <TextInput style={s.input} value={bizAddress} onChangeText={setBizAddress}
-                placeholder="123 Main St, City" placeholderTextColor={Colors.gray400} />
-            </Field>
-            <Field label="Phone">
-              <TextInput style={s.input} value={bizPhone} onChangeText={setBizPhone}
-                placeholder="+63 900 000 0000" placeholderTextColor={Colors.gray400}
-                keyboardType="phone-pad" />
-            </Field>
-          </Section>
+          {/* Tab bar */}
+          <View style={s.tabBar}>
+            {([
+              { key: 'general', label: 'General' },
+              { key: 'receipt', label: 'Receipt Printer' },
+              { key: 'kitchen', label: 'Kitchen Printer' },
+            ] as { key: typeof activeTab; label: string }[]).map(({ key, label }) => (
+              <TouchableOpacity
+                key={key}
+                style={[s.tab, activeTab === key && s.tabActive]}
+                onPress={() => setActiveTab(key)}
+                activeOpacity={0.7}
+              >
+                <Text style={[s.tabText, activeTab === key && s.tabTextActive]}>{label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
 
-          {/* Receipt Footer */}
-          <Section title="Receipt">
-            <Field label="Footer Text" hint="Printed at the bottom of every receipt">
-              <TextInput style={[s.input, s.multiline]} value={footer} onChangeText={setFooter}
-                placeholder="Thank you for visiting!" placeholderTextColor={Colors.gray400}
-                multiline numberOfLines={3} />
-            </Field>
-          </Section>
+          {/* General tab — business info + receipt footer */}
+          {activeTab === 'general' && (
+            <>
+              <Section title="Business Info">
+                <Field label="Business Name">
+                  <TextInput style={s.input} value={bizName} onChangeText={setBizName}
+                    placeholder="SmartBrew Café" placeholderTextColor={Colors.gray400} />
+                </Field>
+                <Field label="Address">
+                  <TextInput style={s.input} value={bizAddress} onChangeText={setBizAddress}
+                    placeholder="123 Main St, City" placeholderTextColor={Colors.gray400} />
+                </Field>
+                <Field label="Phone">
+                  <TextInput style={s.input} value={bizPhone} onChangeText={setBizPhone}
+                    placeholder="+63 900 000 0000" placeholderTextColor={Colors.gray400}
+                    keyboardType="phone-pad" />
+                </Field>
+              </Section>
 
-          {/* Receipt Printer */}
-          <PrinterSection
-            title="Receipt Printer"
-            printer={rcpt}
-            onChange={setRcpt}
-            onScan={() => openScan('receipt')}
-            onTest={() => handlePrintTest('receipt')}
-            testing={testTarget === 'receipt'}
-          />
+              <Section title="Receipt">
+                <Field label="Footer Text" hint="Printed at the bottom of every receipt">
+                  <TextInput style={[s.input, s.multiline]} value={footer} onChangeText={setFooter}
+                    placeholder="Thank you for visiting!" placeholderTextColor={Colors.gray400}
+                    multiline numberOfLines={3} />
+                </Field>
+              </Section>
+            </>
+          )}
 
-          {/* Kitchen Printer */}
-          <PrinterSection
-            title="Kitchen Printer"
-            printer={kit}
-            onChange={setKit}
-            onScan={() => openScan('kitchen')}
-            onTest={() => handlePrintTest('kitchen')}
-            testing={testTarget === 'kitchen'}
-          />
+          {/* Receipt Printer tab */}
+          {activeTab === 'receipt' && (
+            <PrinterSection
+              title="Receipt Printer"
+              printer={rcpt}
+              onChange={setRcpt}
+              onScan={() => openScan('receipt')}
+              onTest={() => handlePrintTest('receipt')}
+              testing={testTarget === 'receipt'}
+            />
+          )}
+
+          {/* Kitchen Printer tab */}
+          {activeTab === 'kitchen' && (
+            <PrinterSection
+              title="Kitchen Printer"
+              printer={kit}
+              onChange={setKit}
+              onScan={() => openScan('kitchen')}
+              onTest={() => handlePrintTest('kitchen')}
+              testing={testTarget === 'kitchen'}
+            />
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -628,6 +656,24 @@ const s = StyleSheet.create({
     fontSize: FontSize.base, color: Colors.gray800, backgroundColor: Colors.white,
   },
   multiline: { minHeight: 80, textAlignVertical: 'top' },
+
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    padding: Spacing.xs,
+    gap: Spacing.xs,
+    ...Shadow.sm,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: Spacing.md,
+    borderRadius: Radius.md,
+    alignItems: 'center',
+  },
+  tabActive:     { backgroundColor: Colors.green600 },
+  tabText:       { fontSize: FontSize.sm, fontWeight: FontWeight.medium, color: Colors.gray600 },
+  tabTextActive: { color: Colors.white, fontWeight: FontWeight.bold },
 });
 
 const sec = StyleSheet.create({

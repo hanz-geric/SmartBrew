@@ -36,7 +36,7 @@ export default function ProductEditScreen() {
   const [price,         setPrice]         = useState('');
   const [cost,          setCost]          = useState('');
   const [categoryId,    setCategoryId]    = useState('');
-  const [trackingMode,  setTrackingMode]  = useState<TrackingMode>('none');
+  const [trackingMode,  setTrackingMode]  = useState<TrackingMode>('recipe');
   const [needsKitchen,  setNeedsKitchen]  = useState(false);
   const [isActive,      setIsActive]      = useState(true);
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
@@ -297,9 +297,23 @@ export default function ProductEditScreen() {
               </View>
               <View style={{ flex: 1 }}>
                 <Field
-                  label={trackingMode === 'recipe' ? 'Cost ₱ (auto from recipe)' : 'Cost (₱)'}
+                  label={trackingMode === 'recipe' ? 'Cost ₱ (auto)' : 'Cost (₱)'}
                   hint="Used for profit reporting"
                 >
+                  {trackingMode === 'recipe' && recipeLines.length > 0 && (
+                    <View style={s.costCalc}>
+                      {recipeLines.map((line, i) => {
+                        const si = stockItems.find((st) => st.id === line.stock_item_id);
+                        if (!si) return null;
+                        const lineTotal = (si.cost_per_unit ?? 0) * (line.quantity_required || 0);
+                        return (
+                          <Text key={i} style={s.costCalcLine}>
+                            {si.name}: {line.quantity_required} {si.unit} × ₱{(si.cost_per_unit ?? 0).toFixed(4)} = ₱{lineTotal.toFixed(4)}
+                          </Text>
+                        );
+                      })}
+                    </View>
+                  )}
                   <TextInput
                     style={[s.input, trackingMode === 'recipe' && s.inputReadonly]}
                     value={cost}
@@ -457,14 +471,6 @@ export default function ProductEditScreen() {
                     >
                       <Text style={rb.addBtnText}>+ Add Ingredient</Text>
                     </TouchableOpacity>
-                    {recipeLines.length > 0 && (
-                      <Text style={rb.costPreview}>
-                        Auto cost: ₱{recipeLines.reduce((sum, line) => {
-                          const si = stockItems.find((s) => s.id === line.stock_item_id);
-                          return sum + (si?.cost_per_unit ?? 0) * (line.quantity_required || 0);
-                        }, 0).toFixed(4)}
-                      </Text>
-                    )}
                   </View>
                 )}
               </Field>
@@ -646,6 +652,20 @@ const s = StyleSheet.create({
     color: Colors.green600,
   },
   noOptionText: { fontSize: FontSize.sm, color: Colors.gray400 },
+
+  costCalc: {
+    backgroundColor: Colors.green50,
+    borderRadius: Radius.sm,
+    padding: Spacing.sm,
+    gap: 2,
+    borderWidth: 1,
+    borderColor: Colors.green600,
+  },
+  costCalcLine: {
+    fontSize: FontSize.xs,
+    color: Colors.green700,
+    fontWeight: FontWeight.medium,
+  },
 
   modRow: {
     flexDirection: 'row',

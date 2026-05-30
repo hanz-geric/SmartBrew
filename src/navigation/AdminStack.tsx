@@ -1,22 +1,25 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import DashboardScreen       from '../screens/admin/DashboardScreen';
-import OrderHistoryScreen    from '../screens/admin/OrderHistoryScreen';
-import SessionsScreen        from '../screens/admin/SessionsScreen';
-import SettingsScreen        from '../screens/admin/SettingsScreen';
-import ProductsScreen        from '../screens/admin/ProductsScreen';
-import ProductEditScreen     from '../screens/admin/ProductEditScreen';
-import CategoryEditScreen    from '../screens/admin/CategoryEditScreen';
-import ModifiersScreen        from '../screens/admin/ModifiersScreen';
-import ModifierGroupEditScreen from '../screens/admin/ModifierGroupEditScreen';
-import UsersScreen             from '../screens/admin/UsersScreen';
-import UserEditScreen          from '../screens/admin/UserEditScreen';
-import StockScreen             from '../screens/admin/StockScreen';
-import StockEditScreen         from '../screens/admin/StockEditScreen';
+import DashboardScreen         from '../screens/admin/DashboardScreen';
+import OrderHistoryScreen      from '../screens/admin/OrderHistoryScreen';
+import SessionsScreen          from '../screens/admin/SessionsScreen';
+import SessionDetailScreen     from '../screens/admin/SessionDetailScreen';
+import SettingsScreen          from '../screens/admin/SettingsScreen';
+import ProductsScreen          from '../screens/admin/ProductsScreen';
+import ProductEditScreen       from '../screens/admin/ProductEditScreen';
+import CategoryEditScreen      from '../screens/admin/CategoryEditScreen';
+import ModifiersScreen          from '../screens/admin/ModifiersScreen';
+import ModifierGroupEditScreen  from '../screens/admin/ModifierGroupEditScreen';
+import UsersScreen              from '../screens/admin/UsersScreen';
+import UserEditScreen           from '../screens/admin/UserEditScreen';
+import StockScreen              from '../screens/admin/StockScreen';
+import StockEditScreen          from '../screens/admin/StockEditScreen';
+import { CashSession } from '../types';
 
 export type AdminStackParamList = {
   Dashboard:         undefined;
   Orders:            undefined;
   Sessions:          undefined;
+  SessionDetail:     { session: CashSession };
   Settings:          undefined;
   Products:          undefined;
   ProductEdit:       { productId?: string };
@@ -37,6 +40,7 @@ export default function AdminStack() {
       <Stack.Screen name="Dashboard"         component={DashboardScreen} />
       <Stack.Screen name="Orders"            component={OrderHistoryScreen} />
       <Stack.Screen name="Sessions"          component={SessionsScreen} />
+      <Stack.Screen name="SessionDetail"     component={SessionDetailScreen} />
       <Stack.Screen name="Settings"          component={SettingsScreen} />
       <Stack.Screen name="Products"          component={ProductsScreen} />
       <Stack.Screen name="ProductEdit"       component={ProductEditScreen} />

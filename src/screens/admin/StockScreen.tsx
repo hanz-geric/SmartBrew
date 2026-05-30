@@ -281,12 +281,9 @@ export default function StockScreen() {
       >
         <View style={m.overlay}>
           <View style={m.sheet}>
-            <Text style={m.title}>Adjust Stock</Text>
-            <ScrollView
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={m.scrollContent}
-            >
+            {/* Fixed header */}
+            <View style={m.modalHeader}>
+              <Text style={m.title}>Adjust Stock</Text>
               {adjustTarget && (
                 <View style={m.itemBox}>
                   <Text style={m.itemName}>{adjustTarget.name}</Text>
@@ -297,7 +294,15 @@ export default function StockScreen() {
                   </Text>
                 </View>
               )}
+            </View>
 
+            {/* Scrollable content */}
+            <ScrollView
+              style={m.scroll}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={m.scrollContent}
+            >
               <Text style={m.label}>Quantity Change</Text>
               <Text style={m.hint}>Positive to add · Negative to subtract</Text>
               <TextInput
@@ -338,6 +343,7 @@ export default function StockScreen() {
               {!!adjustError && <Text style={m.error}>{adjustError}</Text>}
             </ScrollView>
 
+            {/* Fixed footer */}
             <View style={m.actions}>
               <TouchableOpacity style={m.cancelBtn} onPress={closeAdjust} disabled={adjusting}>
                 <Text style={m.cancelText}>Cancel</Text>
@@ -461,14 +467,19 @@ const s = StyleSheet.create({
 const m = StyleSheet.create({
   overlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'center', alignItems: 'center', padding: Spacing.xl,
+    justifyContent: 'center', alignItems: 'center', padding: Spacing.lg,
   },
   sheet: {
     width: '100%', maxWidth: 420, maxHeight: '88%',
     backgroundColor: Colors.surface, borderRadius: Radius.xl,
-    padding: Spacing.xl, gap: Spacing.md, ...Shadow.lg,
+    overflow: 'hidden', ...Shadow.lg,
   },
-  scrollContent: { gap: Spacing.md },
+  modalHeader: {
+    padding: Spacing.xl, paddingBottom: Spacing.md,
+    borderBottomWidth: 1, borderColor: Colors.border, gap: Spacing.sm,
+  },
+  scroll: { flex: 1 },
+  scrollContent: { gap: Spacing.md, padding: Spacing.xl, paddingTop: Spacing.md },
   title:    { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: Colors.gray900 },
   itemBox:  {
     backgroundColor: Colors.green50, borderRadius: Radius.md,
@@ -505,7 +516,11 @@ const m = StyleSheet.create({
   reasonTextSel: { color: Colors.green700, fontWeight: FontWeight.semibold },
 
   error:  { fontSize: FontSize.sm, color: Colors.danger },
-  actions: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.xs },
+  actions: {
+    flexDirection: 'row', gap: Spacing.sm,
+    padding: Spacing.xl, paddingTop: Spacing.md,
+    borderTopWidth: 1, borderColor: Colors.border,
+  },
   cancelBtn: {
     flex: 1, paddingVertical: Spacing.md, borderRadius: Radius.md,
     borderWidth: 1, borderColor: Colors.border, alignItems: 'center',
