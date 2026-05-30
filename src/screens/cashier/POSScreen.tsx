@@ -422,7 +422,7 @@ function ProductCard({ product, onPress }: ProductCardProps) {
     >
       <View style={pc.imageBox}>
         {product.image
-          ? <Image source={{ uri: product.image }} style={pc.image} resizeMode="cover" />
+          ? <Image source={{ uri: product.image }} style={pc.image} resizeMode="contain" />
           : <Text style={pc.imagePlaceholder}>☕</Text>
         }
       </View>
