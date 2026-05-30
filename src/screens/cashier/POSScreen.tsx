@@ -991,6 +991,7 @@ const s = StyleSheet.create({
     borderBottomWidth: 1,
     borderColor: Colors.border,
     flexGrow: 0,
+    flexShrink: 0,
   },
   catContent: {
     paddingHorizontal: Spacing.md,
