@@ -145,7 +145,11 @@ export default function SessionGateScreen({ navigation }: Props) {
           ))}
         </View>
 
-        {!!error && <Text style={s.error}>{error}</Text>}
+        {!!error && (
+          <View style={s.errorContainer}>
+            <Text style={s.error}>{error}</Text>
+          </View>
+        )}
 
         <TouchableOpacity
           style={[s.btn, submitting && s.btnDisabled]}
@@ -239,9 +243,18 @@ const s = StyleSheet.create({
     color: Colors.gray900,
     backgroundColor: Colors.gray50,
   },
+  errorContainer: {
+    backgroundColor: Colors.dangerBg,
+    borderWidth: 1,
+    borderColor: Colors.danger + '44',
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+  },
   error: {
     fontSize: FontSize.sm,
     color: Colors.danger,
+    fontWeight: FontWeight.medium,
   },
   btn: {
     backgroundColor: Colors.green600,

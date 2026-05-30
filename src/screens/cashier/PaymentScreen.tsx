@@ -357,7 +357,11 @@ export default function PaymentScreen({ route, navigation }: Props) {
           </>
         )}
 
-        {!!error && <Text style={s.error}>{error}</Text>}
+        {!!error && (
+          <View style={s.errorContainer}>
+            <Text style={s.error}>{error}</Text>
+          </View>
+        )}
 
         {/* Total + Confirm */}
         <View style={s.confirmSection}>
@@ -654,9 +658,18 @@ const s = StyleSheet.create({
     color: Colors.danger,
   },
 
+  errorContainer: {
+    backgroundColor: Colors.dangerBg,
+    borderWidth: 1,
+    borderColor: Colors.danger + '44',
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+  },
   error: {
     fontSize: FontSize.sm,
     color: Colors.danger,
+    fontWeight: FontWeight.medium,
   },
 
   confirmSection: {
@@ -689,8 +702,7 @@ const s = StyleSheet.create({
     ...Shadow.md,
   },
   confirmBtnOff: {
-    backgroundColor: Colors.gray300,
-    ...Shadow.sm,
+    opacity: 0.55,
   },
   confirmBtnText: {
     fontSize: FontSize.xl,

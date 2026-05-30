@@ -208,7 +208,11 @@ export default function ModifierGroupEditScreen() {
               <Text style={s.pageTitle}>{isNew ? 'New Modifier Group' : 'Edit Modifier Group'}</Text>
             </View>
             <View style={s.headerRight}>
-              {!!error && <Text style={s.errorText}>{error}</Text>}
+              {!!error && (
+                <View style={s.errorInline}>
+                  <Text style={s.errorText}>{error}</Text>
+                </View>
+              )}
               <TouchableOpacity
                 style={[s.saveBtn, (saving || deleting) && s.saveBtnOff]}
                 onPress={handleSave}
@@ -394,7 +398,7 @@ function ModifierRow({
         </View>
 
         {showRemove && (
-          <TouchableOpacity style={mr.removeBtn} onPress={onRemove} activeOpacity={0.7}>
+          <TouchableOpacity style={mr.removeBtn} onPress={onRemove} activeOpacity={0.7} hitSlop={8}>
             <Text style={mr.removeText}>✕</Text>
           </TouchableOpacity>
         )}
@@ -457,7 +461,7 @@ function ModifierRow({
                         placeholderTextColor={Colors.gray400}
                       />
                       <Text style={mr.unitLabel}>{linked?.unit ?? '—'}</Text>
-                      <TouchableOpacity style={mr.removeLineBtn} onPress={() => removeLine(li)} activeOpacity={0.7}>
+                      <TouchableOpacity style={mr.removeLineBtn} onPress={() => removeLine(li)} activeOpacity={0.7} hitSlop={8}>
                         <Text style={mr.removeText}>✕</Text>
                       </TouchableOpacity>
                     </View>
@@ -538,7 +542,17 @@ const s = StyleSheet.create({
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, flexWrap: 'wrap' },
   backText:    { fontSize: FontSize.sm, color: Colors.green700, fontWeight: FontWeight.medium },
   pageTitle:   { fontSize: FontSize.display, fontWeight: FontWeight.bold, color: Colors.gray900 },
-  errorText:   { fontSize: FontSize.sm, color: Colors.danger, maxWidth: 280 },
+  errorInline: {
+    backgroundColor: Colors.dangerBg,
+    borderWidth: 1,
+    borderColor: Colors.danger + '44',
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    maxWidth: 280,
+    flexShrink: 1,
+  },
+  errorText:   { fontSize: FontSize.sm, color: Colors.danger, fontWeight: FontWeight.medium },
 
   saveBtn: {
     backgroundColor: Colors.green600,

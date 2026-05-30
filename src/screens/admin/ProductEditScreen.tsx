@@ -225,7 +225,11 @@ export default function ProductEditScreen() {
               <Text style={s.pageTitle}>{isNew ? 'New Product' : 'Edit Product'}</Text>
             </View>
             <View style={s.headerRight}>
-              {!!error && <Text style={s.errorText}>{error}</Text>}
+              {!!error && (
+                <View style={s.errorInline}>
+                  <Text style={s.errorText}>{error}</Text>
+                </View>
+              )}
               <TouchableOpacity
                 style={[s.saveBtn, saving && s.saveBtnOff]}
                 onPress={handleSave}
@@ -583,7 +587,17 @@ const s = StyleSheet.create({
   backText:    { fontSize: FontSize.sm, color: Colors.green700, fontWeight: FontWeight.medium },
   pageTitle:   { fontSize: FontSize.display, fontWeight: FontWeight.bold, color: Colors.gray900 },
 
-  errorText:  { fontSize: FontSize.sm, color: Colors.danger, maxWidth: 280 },
+  errorInline: {
+    backgroundColor: Colors.dangerBg,
+    borderWidth: 1,
+    borderColor: Colors.danger + '44',
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    maxWidth: 280,
+    flexShrink: 1,
+  },
+  errorText:  { fontSize: FontSize.sm, color: Colors.danger, fontWeight: FontWeight.medium },
 
   saveBtn: {
     backgroundColor: Colors.green600,
@@ -711,16 +725,16 @@ const rb = StyleSheet.create({
     gap: Spacing.sm,
   },
   pickerWrap: {
-    maxHeight: 40,
+    maxHeight: 48,
   },
   chip: {
     paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
+    paddingVertical: Spacing.sm,
     borderRadius: Radius.md,
     borderWidth: 1.5,
     borderColor: Colors.border,
     backgroundColor: Colors.white,
-    height: 32,
+    minHeight: 44,
     justifyContent: 'center',
   },
   chipSel: {

@@ -251,7 +251,7 @@ function DiscountAuthModal({ onClose, onSuccess }: DiscountAuthProps) {
             </TouchableOpacity>
           </View>
 
-          <View style={da.body}>
+          <ScrollView style={da.body} contentContainerStyle={da.bodyContent} keyboardShouldPersistTaps="handled">
             <Text style={da.fieldLabel}>Username</Text>
             <TextInput
               style={da.input}
@@ -271,11 +271,15 @@ function DiscountAuthModal({ onClose, onSuccess }: DiscountAuthProps) {
               placeholderTextColor={Colors.gray400}
               secureTextEntry
             />
-            {!!authError && <Text style={da.error}>{authError}</Text>}
+            {!!authError && (
+              <View style={da.errorContainer}>
+                <Text style={da.error}>{authError}</Text>
+              </View>
+            )}
             {attempts > 0 && attemptsLeft > 0 && (
               <Text style={da.attemptsLeft}>{attemptsLeft} attempt{attemptsLeft !== 1 ? 's' : ''} remaining</Text>
             )}
-          </View>
+          </ScrollView>
 
           <View style={da.footer}>
             <TouchableOpacity style={da.cancelBtn} onPress={onClose} activeOpacity={0.7}>
@@ -354,7 +358,7 @@ function CashierSwitchModal({ onClose, onSuccess }: CashierSwitchProps) {
             </TouchableOpacity>
           </View>
 
-          <View style={da.body}>
+          <ScrollView style={da.body} contentContainerStyle={da.bodyContent} keyboardShouldPersistTaps="handled">
             <Text style={da.fieldLabel}>Username</Text>
             <TextInput
               style={da.input}
@@ -374,11 +378,15 @@ function CashierSwitchModal({ onClose, onSuccess }: CashierSwitchProps) {
               placeholderTextColor={Colors.gray400}
               secureTextEntry
             />
-            {!!authError && <Text style={da.error}>{authError}</Text>}
+            {!!authError && (
+              <View style={da.errorContainer}>
+                <Text style={da.error}>{authError}</Text>
+              </View>
+            )}
             {attempts > 0 && attemptsLeft > 0 && (
               <Text style={da.attemptsLeft}>{attemptsLeft} attempt{attemptsLeft !== 1 ? 's' : ''} remaining</Text>
             )}
-          </View>
+          </ScrollView>
 
           <View style={da.footer}>
             <TouchableOpacity style={da.cancelBtn} onPress={onClose} activeOpacity={0.7}>
@@ -617,16 +625,18 @@ export default function POSScreen({ route, navigation }: Props) {
             <TouchableOpacity
               style={s.switchBtn}
               onPress={() => setShowSwitchModal(true)}
+              activeOpacity={0.7}
             >
               <Text style={s.switchText}>Switch Cashier</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={s.endShiftBtn}
               onPress={() => navigation.navigate('CloseSession', { session })}
+              activeOpacity={0.7}
             >
               <Text style={s.endShiftText}>End Shift</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={s.logoutBtn} onPress={handleLogout}>
+            <TouchableOpacity style={s.logoutBtn} onPress={handleLogout} activeOpacity={0.7}>
               <Text style={s.logoutText}>Log out</Text>
             </TouchableOpacity>
           </View>
@@ -682,8 +692,10 @@ export default function POSScreen({ route, navigation }: Props) {
           </View>
         ) : loadError ? (
           <View style={s.loadingBox}>
-            <Text style={s.loadErrorText}>Could not load products.</Text>
-            <TouchableOpacity style={s.retryBtn} onPress={loadData}>
+            <View style={s.loadErrorBox}>
+              <Text style={s.loadErrorText}>Could not load products.</Text>
+            </View>
+            <TouchableOpacity style={s.retryBtn} onPress={loadData} activeOpacity={0.8}>
               <Text style={s.retryBtnText}>Retry</Text>
             </TouchableOpacity>
           </View>
@@ -724,6 +736,7 @@ export default function POSScreen({ route, navigation }: Props) {
                 ],
               )}
               hitSlop={8}
+              activeOpacity={0.7}
             >
               <Text style={s.clearText}>Clear</Text>
             </TouchableOpacity>
@@ -756,6 +769,8 @@ export default function POSScreen({ route, navigation }: Props) {
                 <TouchableOpacity
                   style={s.qtyMini}
                   onPress={() => updateQty(item.cart_key, item.quantity - 1)}
+                  hitSlop={8}
+                  activeOpacity={0.7}
                 >
                   <Text style={s.qtyMiniText}>−</Text>
                 </TouchableOpacity>
@@ -763,6 +778,8 @@ export default function POSScreen({ route, navigation }: Props) {
                 <TouchableOpacity
                   style={s.qtyMini}
                   onPress={() => updateQty(item.cart_key, item.quantity + 1)}
+                  hitSlop={8}
+                  activeOpacity={0.7}
                 >
                   <Text style={s.qtyMiniText}>+</Text>
                 </TouchableOpacity>
@@ -938,7 +955,7 @@ const s = StyleSheet.create({
     borderRadius: Radius.full,
     backgroundColor: Colors.warningBg,
     borderWidth: 1,
-    borderColor: '#fde68a',
+    borderColor: Colors.warning + '66',
     minWidth: 40,
     justifyContent: 'center',
   },
@@ -1055,6 +1072,14 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     gap: Spacing.md,
+  },
+  loadErrorBox: {
+    backgroundColor: Colors.dangerBg,
+    borderWidth: 1,
+    borderColor: Colors.danger + '44',
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
   },
   loadErrorText: {
     fontSize: FontSize.base,
@@ -1372,7 +1397,7 @@ const mm = StyleSheet.create({
     backgroundColor: Colors.surface,
     borderRadius: Radius.xl,
     overflow: 'hidden',
-    maxHeight: '90%',
+    maxHeight: '88%',
     ...Shadow.lg,
   },
   header: {
@@ -1544,6 +1569,7 @@ const da = StyleSheet.create({
   sheet: {
     width: '100%',
     maxWidth: isTablet ? 480 : 400,
+    maxHeight: '88%',
     backgroundColor: Colors.surface,
     borderRadius: Radius.xl,
     overflow: 'hidden',
@@ -1575,6 +1601,9 @@ const da = StyleSheet.create({
     fontWeight: FontWeight.bold,
   },
   body: {
+    flex: 1,
+  },
+  bodyContent: {
     padding: Spacing.xl,
     gap: Spacing.sm,
   },
@@ -1593,10 +1622,19 @@ const da = StyleSheet.create({
     color: Colors.gray800,
     backgroundColor: Colors.gray50,
   },
+  errorContainer: {
+    backgroundColor: Colors.dangerBg,
+    borderWidth: 1,
+    borderColor: Colors.danger + '44',
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    marginTop: Spacing.xs,
+  },
   error: {
     fontSize: FontSize.sm,
     color: Colors.danger,
-    marginTop: Spacing.xs,
+    fontWeight: FontWeight.medium,
   },
   attemptsLeft: {
     fontSize: FontSize.xs,

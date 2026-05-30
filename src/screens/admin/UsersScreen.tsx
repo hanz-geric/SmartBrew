@@ -256,12 +256,12 @@ const ur = StyleSheet.create({
   name:       { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: Colors.gray900 },
   username:   { fontSize: FontSize.sm, color: Colors.gray400 },
   badge: {
-    paddingHorizontal: 6,
+    paddingHorizontal: Spacing.sm,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: Radius.sm,
     borderWidth: 1,
   },
-  badgeText: { fontSize: 10, fontWeight: FontWeight.bold },
+  badgeText: { fontSize: FontSize.xs, fontWeight: FontWeight.bold },
   roleBadge: {
     paddingHorizontal: 8,
     paddingVertical: 3,

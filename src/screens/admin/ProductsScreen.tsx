@@ -198,13 +198,13 @@ export default function ProductsScreen() {
             {/* Header */}
             <View style={cm.header}>
               <Text style={cm.title}>{catModal?.id ? 'Edit Category' : 'New Category'}</Text>
-              <TouchableOpacity onPress={() => setCatModal(null)} hitSlop={12}>
+              <TouchableOpacity onPress={() => setCatModal(null)} hitSlop={12} activeOpacity={0.7}>
                 <Text style={cm.closeX}>✕</Text>
               </TouchableOpacity>
             </View>
 
             {/* Body */}
-            <View style={cm.body}>
+            <ScrollView style={cm.body} contentContainerStyle={cm.bodyContent} keyboardShouldPersistTaps="handled">
               <View style={cm.field}>
                 <Text style={cm.label}>Category Name <Text style={cm.required}>*</Text></Text>
                 <TextInput
@@ -243,7 +243,7 @@ export default function ProductsScreen() {
               </View>
 
               {!!catError && <Text style={cm.error}>{catError}</Text>}
-            </View>
+            </ScrollView>
 
             {/* Footer */}
             <View style={cm.footer}>
@@ -431,12 +431,12 @@ const cr = StyleSheet.create({
 
 const bdg = StyleSheet.create({
   root: {
-    paddingHorizontal: 6,
+    paddingHorizontal: Spacing.sm,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: Radius.sm,
     borderWidth: 1,
   },
-  text: { fontSize: 10, fontWeight: FontWeight.bold },
+  text: { fontSize: FontSize.xs, fontWeight: FontWeight.bold },
 });
 
 const cm = StyleSheet.create({
@@ -456,7 +456,8 @@ const cm = StyleSheet.create({
   title:  { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: Colors.white },
   closeX: { fontSize: FontSize.lg, color: Colors.white, fontWeight: FontWeight.bold },
 
-  body: { padding: Spacing.xl, gap: Spacing.lg },
+  body: { flex: 1 },
+  bodyContent: { padding: Spacing.xl, gap: Spacing.lg },
 
   field:    { gap: Spacing.xs },
   label:    { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.gray700 },

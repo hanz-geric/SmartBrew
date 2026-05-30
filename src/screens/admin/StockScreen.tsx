@@ -197,7 +197,7 @@ export default function StockScreen() {
             <ActivityIndicator size="large" color={Colors.green600} />
           </View>
         ) : error ? (
-          <View style={s.center}><Text style={s.errorText}>{error}</Text></View>
+          <View style={s.errorBox}><Text style={s.errorText}>{error}</Text></View>
         ) : (
           <FlatList
             data={displayed}
@@ -283,7 +283,12 @@ export default function StockScreen() {
           <View style={m.sheet}>
             {/* Fixed header */}
             <View style={m.modalHeader}>
-              <Text style={m.title}>Adjust Stock</Text>
+              <View style={m.modalHeaderTop}>
+                <Text style={m.title}>Adjust Stock</Text>
+                <TouchableOpacity onPress={closeAdjust} hitSlop={12} activeOpacity={0.7}>
+                  <Text style={m.closeX}>✕</Text>
+                </TouchableOpacity>
+              </View>
               {adjustTarget && (
                 <View style={m.itemBox}>
                   <Text style={m.itemName}>{adjustTarget.name}</Text>
@@ -410,6 +415,14 @@ const s = StyleSheet.create({
   statusTabTextSel: { color: Colors.white, fontWeight: FontWeight.bold },
 
   center:    { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  errorBox: {
+    margin: Spacing.xl,
+    backgroundColor: Colors.dangerBg,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.danger + '44',
+    padding: Spacing.lg,
+  },
   errorText: { color: Colors.danger, fontSize: FontSize.base },
   emptyText: {
     textAlign: 'center', color: Colors.gray400,
@@ -477,6 +490,16 @@ const m = StyleSheet.create({
   modalHeader: {
     padding: Spacing.xl, paddingBottom: Spacing.md,
     borderBottomWidth: 1, borderColor: Colors.border, gap: Spacing.sm,
+  },
+  modalHeaderTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  closeX: {
+    fontSize: FontSize.xl,
+    color: Colors.gray500,
+    fontWeight: FontWeight.bold,
   },
   scroll: { flex: 1 },
   scrollContent: { gap: Spacing.md, padding: Spacing.xl, paddingTop: Spacing.md },

@@ -91,7 +91,7 @@ export default function LoginScreen() {
           style={[styles.loginBtn, loading && styles.loginBtnDisabled]}
           onPress={handleLogin}
           disabled={loading}
-          activeOpacity={0.85}
+          activeOpacity={0.8}
         >
           {loading
             ? <ActivityIndicator color={Colors.white} />
@@ -157,7 +157,7 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     marginBottom: Spacing.lg,
     borderWidth: 1,
-    borderColor: '#fecaca',
+    borderColor: Colors.danger + '44',
   },
   errorText: {
     color: Colors.danger,
@@ -186,7 +186,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.gray50,
   },
   loginBtn: {
-    backgroundColor: Colors.green700,
+    backgroundColor: Colors.green600,
     borderRadius: Radius.md,
     padding: Spacing.lg,
     alignItems: 'center',

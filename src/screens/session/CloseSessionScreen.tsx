@@ -124,7 +124,11 @@ export default function CloseSessionScreen({ route, navigation }: Props) {
                 onSubmitEditing={handleClose}
               />
 
-              {!!error && <Text style={s.error}>{error}</Text>}
+              {!!error && (
+                <View style={s.errorContainer}>
+                  <Text style={s.error}>{error}</Text>
+                </View>
+              )}
             </View>
 
             <TouchableOpacity
@@ -143,6 +147,7 @@ export default function CloseSessionScreen({ route, navigation }: Props) {
               style={s.cancelBtn}
               onPress={() => navigation.goBack()}
               disabled={closing}
+              activeOpacity={0.7}
             >
               <Text style={s.cancelBtnText}>Cancel — Keep Session Open</Text>
             </TouchableOpacity>
@@ -187,7 +192,11 @@ export default function CloseSessionScreen({ route, navigation }: Props) {
               </View>
             </View>
 
-            {!!error && <Text style={s.error}>{error}</Text>}
+            {!!error && (
+              <View style={s.errorContainer}>
+                <Text style={s.error}>{error}</Text>
+              </View>
+            )}
             <TouchableOpacity
               style={[s.closeBtn, loggingOut && s.closeBtnOff]}
               onPress={handleDone}
@@ -244,7 +253,7 @@ const s = StyleSheet.create({
     fontWeight: FontWeight.medium,
   },
   headerTitle: {
-    fontSize: FontSize.xxl,
+    fontSize: FontSize.display,
     fontWeight: FontWeight.bold,
     color: Colors.gray900,
   },
@@ -348,9 +357,18 @@ const s = StyleSheet.create({
     color: Colors.gray900,
   },
 
+  errorContainer: {
+    backgroundColor: Colors.dangerBg,
+    borderWidth: 1,
+    borderColor: Colors.danger + '44',
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+  },
   error: {
     fontSize: FontSize.sm,
     color: Colors.danger,
+    fontWeight: FontWeight.medium,
   },
 
   closeBtn: {

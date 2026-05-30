@@ -233,8 +233,12 @@ export default function SettingsScreen() {
           <View style={s.pageHeader}>
             <Text style={s.pageTitle}>Settings</Text>
             <View style={s.saveRow}>
-              {!!error  && <Text style={s.errorText}>{error}</Text>}
-              {saved    && <Text style={s.savedText}>✓ Saved</Text>}
+              {!!error && (
+                <View style={s.errorInline}>
+                  <Text style={s.errorText}>{error}</Text>
+                </View>
+              )}
+              {saved && <Text style={s.savedText}>✓ Saved</Text>}
               <TouchableOpacity
                 style={[s.discardBtn, saving && s.btnOff]}
                 onPress={load}
@@ -491,7 +495,7 @@ function ScanModal({
                   : 'No printers found automatically'}
               </Text>
             </View>
-            <TouchableOpacity onPress={onClose} hitSlop={12}>
+            <TouchableOpacity onPress={onClose} hitSlop={12} activeOpacity={0.7}>
               <Text style={sm.closeX}>✕</Text>
             </TouchableOpacity>
           </View>
@@ -632,7 +636,17 @@ const s = StyleSheet.create({
   pageTitle: { fontSize: FontSize.display, fontWeight: FontWeight.bold, color: Colors.gray900 },
   saveRow:   { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, flexWrap: 'wrap' },
 
-  errorText:      { fontSize: FontSize.sm, color: Colors.danger, maxWidth: 280 },
+  errorInline: {
+    backgroundColor: Colors.dangerBg,
+    borderWidth: 1,
+    borderColor: Colors.danger + '44',
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    maxWidth: 280,
+    flexShrink: 1,
+  },
+  errorText:      { fontSize: FontSize.sm, color: Colors.danger, fontWeight: FontWeight.medium },
   savedText:      { fontSize: FontSize.sm, color: Colors.green700, fontWeight: FontWeight.semibold },
 
   discardBtn: {
@@ -736,11 +750,15 @@ const ps = StyleSheet.create({
   modelDetailSel: { color: Colors.green600 },
 
   testBtn: {
-    backgroundColor: Colors.gray800, borderRadius: Radius.md,
-    paddingVertical: Spacing.md, alignItems: 'center', ...Shadow.sm,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    borderRadius: Radius.md,
+    paddingVertical: Spacing.md,
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
   },
   testBtnOff:  { opacity: 0.6 },
-  testBtnText: { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: Colors.white },
+  testBtnText: { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: Colors.gray700 },
 });
 
 const sm = StyleSheet.create({
@@ -749,7 +767,7 @@ const sm = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center', padding: Spacing.xl,
   },
   sheet: {
-    width: '100%', maxWidth: 520, maxHeight: '80%',
+    width: '100%', maxWidth: 520, maxHeight: '88%',
     backgroundColor: Colors.surface, borderRadius: Radius.xl,
     overflow: 'hidden', ...Shadow.lg,
   },

@@ -19,6 +19,7 @@ export default function ModifiersScreen() {
   const navigation = useNavigation<Nav>();
   const [groups,  setGroups]  = useState<ModifierGroup[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState('');
 
   useFocusEffect(
     useCallback(() => {
@@ -28,9 +29,12 @@ export default function ModifiersScreen() {
 
   async function load() {
     setLoading(true);
+    setError('');
     try {
       const data = await getAllModifierGroups();
       setGroups(data);
+    } catch {
+      setError('Failed to load modifier groups.');
     } finally {
       setLoading(false);
     }
@@ -58,6 +62,10 @@ export default function ModifiersScreen() {
         {loading ? (
           <View style={s.center}>
             <ActivityIndicator size="large" color={Colors.green600} />
+          </View>
+        ) : error ? (
+          <View style={s.errorBox}>
+            <Text style={s.errorText}>{error}</Text>
           </View>
         ) : groups.length === 0 ? (
           <View style={s.empty}>
@@ -174,6 +182,15 @@ const s = StyleSheet.create({
   center:        { flex: 1, justifyContent: 'center', alignItems: 'center' },
   empty:         { paddingTop: Spacing.xxxl, alignItems: 'center', paddingHorizontal: Spacing.xl },
   emptyText:     { fontSize: FontSize.base, color: Colors.gray400, textAlign: 'center' },
+  errorBox: {
+    margin: Spacing.xl,
+    backgroundColor: Colors.dangerBg,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.danger + '44',
+    padding: Spacing.lg,
+  },
+  errorText: { color: Colors.danger, fontSize: FontSize.base },
 });
 
 const gc = StyleSheet.create({
@@ -188,12 +205,12 @@ const gc = StyleSheet.create({
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, flexWrap: 'wrap' },
   name:     { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.gray900 },
   badge: {
-    paddingHorizontal: 6,
+    paddingHorizontal: Spacing.sm,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: Radius.sm,
     borderWidth: 1,
   },
-  badgeText: { fontSize: 10, fontWeight: FontWeight.bold },
+  badgeText: { fontSize: FontSize.xs, fontWeight: FontWeight.bold },
   meta:     {},
   metaText: { fontSize: FontSize.xs, color: Colors.gray400 },
   divider:  { height: 1, backgroundColor: Colors.border },

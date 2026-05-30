@@ -375,7 +375,9 @@ const s = StyleSheet.create({
 
   // Actions panel
   actions: {
-    width: isTablet ? 360 : 280,
+    width: isTablet ? 360 : undefined,
+    flex: isTablet ? 0 : 1,
+    maxWidth: isTablet ? 360 : '50%',
     backgroundColor: Colors.surface,
     padding: Spacing.xxl,
     justifyContent: 'center',

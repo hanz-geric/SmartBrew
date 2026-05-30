@@ -285,7 +285,7 @@ export default function OrderHistoryScreen() {
             <ActivityIndicator size="large" color={Colors.green600} />
           </View>
         ) : error ? (
-          <View style={s.center}>
+          <View style={s.errorBox}>
             <Text style={s.errorText}>{error}</Text>
           </View>
         ) : (
@@ -425,7 +425,7 @@ const s = StyleSheet.create({
     gap: Spacing.md,
   },
   title: {
-    fontSize: FontSize.xxl,
+    fontSize: FontSize.display,
     fontWeight: FontWeight.bold,
     color: Colors.gray900,
   },
@@ -561,6 +561,14 @@ const s = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  errorBox: {
+    margin: Spacing.xl,
+    backgroundColor: Colors.dangerBg,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.danger + '44',
+    padding: Spacing.lg,
   },
   errorText: { color: Colors.danger, fontSize: FontSize.base },
   emptyText: {

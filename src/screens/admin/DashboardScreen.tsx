@@ -422,6 +422,8 @@ const s = StyleSheet.create({
   errorBox: {
     backgroundColor: Colors.dangerBg,
     borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.danger + '44',
     padding: Spacing.lg,
   },
   errorText: { color: Colors.danger, fontSize: FontSize.base },
@@ -429,6 +431,7 @@ const s = StyleSheet.create({
   statsRow: {
     flexDirection: 'row',
     gap: Spacing.lg,
+    flexWrap: 'wrap',
   },
 
   section: { gap: Spacing.md },
@@ -588,6 +591,7 @@ const s = StyleSheet.create({
 const sc = StyleSheet.create({
   card: {
     flex: 1,
+    minWidth: rs(120),
     backgroundColor: Colors.surface,
     borderRadius: Radius.lg,
     padding: Spacing.lg,

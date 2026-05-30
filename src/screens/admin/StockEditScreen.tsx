@@ -4,6 +4,7 @@ import {
   ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import AdminLayout from './AdminLayout';
 import { AdminStackParamList } from '../../navigation/AdminStack';
 import { listStockItems, upsertStockItem, deleteStockItem } from '../../firebase/firestoreService';
 import { StockItem } from '../../types';
@@ -177,13 +178,16 @@ export default function StockEditScreen({ route, navigation }: Props) {
 
   if (loading) {
     return (
-      <View style={s.loadingRoot}>
-        <ActivityIndicator size="large" color={Colors.green600} />
-      </View>
+      <AdminLayout active="Stock">
+        <View style={s.loadingRoot}>
+          <ActivityIndicator size="large" color={Colors.green600} />
+        </View>
+      </AdminLayout>
     );
   }
 
   return (
+    <AdminLayout active="Stock">
     <KeyboardAvoidingView
       style={s.root}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -365,7 +369,11 @@ export default function StockEditScreen({ route, navigation }: Props) {
             </>
           )}
 
-          {!!error && <Text style={s.error}>{error}</Text>}
+          {!!error && (
+            <View style={s.errorContainer}>
+              <Text style={s.error}>{error}</Text>
+            </View>
+          )}
         </View>
 
         {/* Save */}
@@ -388,6 +396,7 @@ export default function StockEditScreen({ route, navigation }: Props) {
         )}
       </ScrollView>
     </KeyboardAvoidingView>
+    </AdminLayout>
   );
 }
 
@@ -401,7 +410,7 @@ const s = StyleSheet.create({
 
   header:     { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingVertical: Spacing.sm },
   backText:   { fontSize: FontSize.base, color: Colors.green700, fontWeight: FontWeight.medium },
-  headerTitle: { fontSize: FontSize.xxl, fontWeight: FontWeight.bold, color: Colors.gray900 },
+  headerTitle: { fontSize: FontSize.display, fontWeight: FontWeight.bold, color: Colors.gray900 },
 
   card: {
     backgroundColor: Colors.surface, borderRadius: Radius.xl,
@@ -441,7 +450,15 @@ const s = StyleSheet.create({
   switchLabel: { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: Colors.gray800 },
   switchHint:  { fontSize: FontSize.xs, color: Colors.gray400, marginTop: 2, maxWidth: 240 },
 
-  error: { fontSize: FontSize.sm, color: Colors.danger },
+  errorContainer: {
+    backgroundColor: Colors.dangerBg,
+    borderWidth: 1,
+    borderColor: Colors.danger + '44',
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+  },
+  error: { fontSize: FontSize.sm, color: Colors.danger, fontWeight: FontWeight.medium },
 
   saveBtn: {
     backgroundColor: Colors.green600, borderRadius: Radius.md,
