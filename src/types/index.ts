@@ -50,6 +50,7 @@ export interface Product {
   price:           number;
   cost:            number;
   category_id:     string;
+  category_ids?:   string[];
   category_name:   string;
   tracking_mode:   TrackingMode;
   stock_item_id:   string | null;

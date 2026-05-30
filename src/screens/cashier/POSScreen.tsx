@@ -67,7 +67,7 @@ function ModifierModal({ product, onClose, onAdd }: ModModalProps) {
   function handleAdd() {
     const newErrors: Record<string, boolean> = {};
     for (const g of product.modifier_groups) {
-      const hasActive = g.modifiers.some((m) => m.is_active);
+      const hasActive = g.modifiers.some((m) => m.is_active !== false);
       if (g.is_required && hasActive && !(selections[g.id]?.length)) newErrors[g.id] = true;
     }
     if (Object.keys(newErrors).length) { setErrors(newErrors); return; }
@@ -92,11 +92,11 @@ function ModifierModal({ product, onClose, onAdd }: ModModalProps) {
 
   return (
     <Modal transparent animationType="fade" onRequestClose={onClose}>
-      <View style={mm.overlay}>
-        <KeyboardAvoidingView
-          style={mm.sheet}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
+      <KeyboardAvoidingView
+        style={mm.overlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <View style={mm.sheet}>
           {/* Header */}
           <View style={mm.header}>
             <View style={{ flex: 1 }}>
@@ -115,7 +115,7 @@ function ModifierModal({ product, onClose, onAdd }: ModModalProps) {
             keyboardShouldPersistTaps="handled"
           >
             {product.modifier_groups.filter((group) =>
-              group.modifiers.some((m) => m.is_active)
+              group.modifiers.some((m) => m.is_active !== false)
             ).map((group) => (
               <View key={group.id} style={mm.groupBlock}>
                 <View style={mm.groupHeader}>
@@ -128,8 +128,8 @@ function ModifierModal({ product, onClose, onAdd }: ModModalProps) {
                 </View>
                 <View style={mm.optionRow}>
                   {[...group.modifiers]
-                    .filter((m) => m.is_active)
-                    .sort((a, b) => a.sort_order - b.sort_order)
+                    .filter((m) => m.is_active !== false)
+                    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
                     .map((mod) => {
                       const selected = (selections[group.id] ?? []).includes(mod.id);
                       return (
@@ -191,8 +191,8 @@ function ModifierModal({ product, onClose, onAdd }: ModModalProps) {
               <Text style={mm.addBtnText}>Add to Order</Text>
             </TouchableOpacity>
           </View>
-        </KeyboardAvoidingView>
-      </View>
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -241,11 +241,11 @@ function DiscountAuthModal({ onClose, onSuccess }: DiscountAuthProps) {
 
   return (
     <Modal transparent animationType="fade" onRequestClose={onClose}>
-      <View style={da.overlay}>
-        <KeyboardAvoidingView
-          style={da.sheet}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
+      <KeyboardAvoidingView
+        style={da.overlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <View style={da.sheet}>
           <View style={da.header}>
             <Text style={da.title}>Manager Authorisation</Text>
             <Text style={da.subtitle}>A manager or admin must approve this discount.</Text>
@@ -254,35 +254,37 @@ function DiscountAuthModal({ onClose, onSuccess }: DiscountAuthProps) {
             </TouchableOpacity>
           </View>
 
-          <View style={da.body}>
-            <Text style={da.fieldLabel}>Username</Text>
-            <TextInput
-              style={da.input}
-              value={username}
-              onChangeText={setUsername}
-              placeholder="manager username"
-              placeholderTextColor={Colors.gray400}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <Text style={da.fieldLabel}>Password</Text>
-            <TextInput
-              style={da.input}
-              value={password}
-              onChangeText={setPassword}
-              placeholder="••••••••"
-              placeholderTextColor={Colors.gray400}
-              secureTextEntry
-            />
-            {!!authError && (
-              <View style={da.errorContainer}>
-                <Text style={da.error}>{authError}</Text>
-              </View>
-            )}
-            {attempts > 0 && attemptsLeft > 0 && (
-              <Text style={da.attemptsLeft}>{attemptsLeft} attempt{attemptsLeft !== 1 ? 's' : ''} remaining</Text>
-            )}
-          </View>
+          <ScrollView keyboardShouldPersistTaps="handled" bounces={false}>
+            <View style={da.body}>
+              <Text style={da.fieldLabel}>Username</Text>
+              <TextInput
+                style={da.input}
+                value={username}
+                onChangeText={setUsername}
+                placeholder="manager username"
+                placeholderTextColor={Colors.gray400}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <Text style={da.fieldLabel}>Password</Text>
+              <TextInput
+                style={da.input}
+                value={password}
+                onChangeText={setPassword}
+                placeholder="••••••••"
+                placeholderTextColor={Colors.gray400}
+                secureTextEntry
+              />
+              {!!authError && (
+                <View style={da.errorContainer}>
+                  <Text style={da.error}>{authError}</Text>
+                </View>
+              )}
+              {attempts > 0 && attemptsLeft > 0 && (
+                <Text style={da.attemptsLeft}>{attemptsLeft} attempt{attemptsLeft !== 1 ? 's' : ''} remaining</Text>
+              )}
+            </View>
+          </ScrollView>
 
           <View style={da.footer}>
             <TouchableOpacity style={da.cancelBtn} onPress={onClose} activeOpacity={0.7}>
@@ -300,8 +302,8 @@ function DiscountAuthModal({ onClose, onSuccess }: DiscountAuthProps) {
               }
             </TouchableOpacity>
           </View>
-        </KeyboardAvoidingView>
-      </View>
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -348,11 +350,11 @@ function CashierSwitchModal({ onClose, onSuccess }: CashierSwitchProps) {
 
   return (
     <Modal transparent animationType="fade" onRequestClose={onClose}>
-      <View style={da.overlay}>
-        <KeyboardAvoidingView
-          style={da.sheet}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
+      <KeyboardAvoidingView
+        style={da.overlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <View style={da.sheet}>
           <View style={da.header}>
             <Text style={da.title}>Switch Cashier</Text>
             <Text style={da.subtitle}>Enter the credentials of the next cashier.</Text>
@@ -361,35 +363,37 @@ function CashierSwitchModal({ onClose, onSuccess }: CashierSwitchProps) {
             </TouchableOpacity>
           </View>
 
-          <View style={da.body}>
-            <Text style={da.fieldLabel}>Username</Text>
-            <TextInput
-              style={da.input}
-              value={username}
-              onChangeText={setUsername}
-              placeholder="cashier username"
-              placeholderTextColor={Colors.gray400}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <Text style={da.fieldLabel}>Password</Text>
-            <TextInput
-              style={da.input}
-              value={password}
-              onChangeText={setPassword}
-              placeholder="••••••••"
-              placeholderTextColor={Colors.gray400}
-              secureTextEntry
-            />
-            {!!authError && (
-              <View style={da.errorContainer}>
-                <Text style={da.error}>{authError}</Text>
-              </View>
-            )}
-            {attempts > 0 && attemptsLeft > 0 && (
-              <Text style={da.attemptsLeft}>{attemptsLeft} attempt{attemptsLeft !== 1 ? 's' : ''} remaining</Text>
-            )}
-          </View>
+          <ScrollView keyboardShouldPersistTaps="handled" bounces={false}>
+            <View style={da.body}>
+              <Text style={da.fieldLabel}>Username</Text>
+              <TextInput
+                style={da.input}
+                value={username}
+                onChangeText={setUsername}
+                placeholder="cashier username"
+                placeholderTextColor={Colors.gray400}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <Text style={da.fieldLabel}>Password</Text>
+              <TextInput
+                style={da.input}
+                value={password}
+                onChangeText={setPassword}
+                placeholder="••••••••"
+                placeholderTextColor={Colors.gray400}
+                secureTextEntry
+              />
+              {!!authError && (
+                <View style={da.errorContainer}>
+                  <Text style={da.error}>{authError}</Text>
+                </View>
+              )}
+              {attempts > 0 && attemptsLeft > 0 && (
+                <Text style={da.attemptsLeft}>{attemptsLeft} attempt{attemptsLeft !== 1 ? 's' : ''} remaining</Text>
+              )}
+            </View>
+          </ScrollView>
 
           <View style={da.footer}>
             <TouchableOpacity style={da.cancelBtn} onPress={onClose} activeOpacity={0.7}>
@@ -407,8 +411,8 @@ function CashierSwitchModal({ onClose, onSuccess }: CashierSwitchProps) {
               }
             </TouchableOpacity>
           </View>
-        </KeyboardAvoidingView>
-      </View>
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -528,7 +532,8 @@ export default function POSScreen({ route, navigation }: Props) {
 
   const filtered = useMemo(() => {
     return products.filter((p) => {
-      const matchCat  = selCat === null || p.category_id === selCat;
+      const matchCat = selCat === null ||
+        (p.category_ids ? p.category_ids.includes(selCat) : p.category_id === selCat);
       const matchSearch = !search.trim() || p.name.toLowerCase().includes(search.toLowerCase());
       return matchCat && matchSearch;
     });
@@ -536,7 +541,10 @@ export default function POSScreen({ route, navigation }: Props) {
 
   const handleProductPress = useCallback((product: Product) => {
     if (product.stock_status === 'out') return;
-    if (product.modifier_groups.length > 0) {
+    const hasActiveModifiers = product.modifier_groups.some(
+      (g) => g.modifiers.some((m) => m.is_active !== false),
+    );
+    if (product.modifier_groups.length > 0 && hasActiveModifiers) {
       setModProduct(product);
     } else {
       addItem(product.id, product.name, product.price, product.cost, [], '', product.tracking_mode, product.stock_item_id, product.recipe_lines, product.needs_kitchen);
@@ -1403,6 +1411,8 @@ const pc = StyleSheet.create({
     margin: Spacing.xs,
     backgroundColor: Colors.surface,
     borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
     overflow: 'hidden',
     ...Shadow.sm,
   },
@@ -1470,19 +1480,19 @@ const mm = StyleSheet.create({
     backgroundColor: Colors.surface,
     borderRadius: Radius.xl,
     overflow: 'hidden',
-    maxHeight: '88%',
+    maxHeight: isTablet ? '85%' : '78%',
     ...Shadow.lg,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    padding: isTablet ? Spacing.xl : Spacing.md,
+    padding: Spacing.md,
     borderBottomWidth: 1,
     borderColor: Colors.border,
     backgroundColor: Colors.green700,
   },
   productName: {
-    fontSize: FontSize.xl,
+    fontSize: isTablet ? FontSize.xl : FontSize.lg,
     fontWeight: FontWeight.bold,
     color: Colors.white,
   },
@@ -1504,8 +1514,8 @@ const mm = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: Spacing.xl,
-    gap: Spacing.xl,
+    padding: Spacing.lg,
+    gap: Spacing.lg,
   },
   groupBlock: {
     gap: Spacing.sm,
@@ -1588,17 +1598,18 @@ const mm = StyleSheet.create({
   footer: {
     borderTopWidth: 1,
     borderColor: Colors.border,
-    padding: isTablet ? Spacing.xl : Spacing.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
     gap: Spacing.sm,
   },
   qtyRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.md,
+    gap: Spacing.sm,
   },
   qtyBtn: {
-    width: 40,
-    height: 40,
+    width: isTablet ? 40 : 34,
+    height: isTablet ? 40 : 34,
     borderRadius: Radius.md,
     backgroundColor: Colors.gray100,
     justifyContent: 'center',
@@ -1626,11 +1637,11 @@ const mm = StyleSheet.create({
   addBtn: {
     backgroundColor: Colors.green600,
     borderRadius: Radius.md,
-    paddingVertical: Spacing.lg,
+    paddingVertical: Spacing.md,
     alignItems: 'center',
   },
   addBtnText: {
-    fontSize: FontSize.lg,
+    fontSize: isTablet ? FontSize.lg : FontSize.base,
     fontWeight: FontWeight.bold,
     color: Colors.white,
   },

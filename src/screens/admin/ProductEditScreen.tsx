@@ -34,11 +34,11 @@ export default function ProductEditScreen() {
   const [error,     setError]    = useState('');
 
   // Form state
-  const [name,          setName]          = useState('');
-  const [price,         setPrice]         = useState('');
-  const [cost,          setCost]          = useState('');
-  const [categoryId,    setCategoryId]    = useState('');
-  const [trackingMode,  setTrackingMode]  = useState<TrackingMode>('recipe');
+  const [name,                setName]                = useState('');
+  const [price,               setPrice]               = useState('');
+  const [cost,                setCost]                = useState('');
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
+  const [trackingMode,        setTrackingMode]        = useState<TrackingMode>('recipe');
   const [needsKitchen,  setNeedsKitchen]  = useState(false);
   const [isActive,      setIsActive]      = useState(true);
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
@@ -81,7 +81,7 @@ export default function ProductEditScreen() {
         setName(prod.name);
         setPrice(String(prod.price));
         setCost(String(prod.cost));
-        setCategoryId(prod.category_id);
+        setSelectedCategoryIds(prod.category_ids ?? [prod.category_id]);
         setTrackingMode(prod.tracking_mode);
         setStockItemId(prod.stock_item_id);
         setNeedsKitchen(prod.needs_kitchen);
@@ -90,7 +90,7 @@ export default function ProductEditScreen() {
         setImage(prod.image ?? null);
         setRecipeLines(prod.recipe_lines ?? []);
       } else if (cats.length > 0) {
-        setCategoryId(cats[0].id);
+        setSelectedCategoryIds([cats[0].id]);
       }
     } catch {
       setError('Failed to load data.');
@@ -134,7 +134,7 @@ export default function ProductEditScreen() {
     if (!trimmed)          { setError('Name is required.'); return; }
     if (isNaN(priceNum) || priceNum < 0) { setError('Enter a valid price.'); return; }
     if (costNum < 0)       { setError('Cost cannot be negative.'); return; }
-    if (!categoryId)       { setError('Select a category.'); return; }
+    if (selectedCategoryIds.length === 0) { setError('Select at least one category.'); return; }
     if (trackingMode === 'direct' && !stockItemId) { setError('Select a linked stock item for direct tracking.'); return; }
     if (trackingMode === 'recipe' && recipeLines.length === 0) { setError('Add at least one ingredient for recipe tracking.'); return; }
     if (trackingMode === 'recipe' && recipeLines.some((l) => !l.stock_item_id || l.quantity_required <= 0)) {
@@ -142,7 +142,8 @@ export default function ProductEditScreen() {
       return;
     }
 
-    const selectedCat   = categories.find((c) => c.id === categoryId);
+    const primaryCatId  = selectedCategoryIds[0];
+    const selectedCat   = categories.find((c) => c.id === primaryCatId);
     const builtGroups   = modifierGroups
       .filter((g) => selectedGroups.includes(g.id))
       .map((g) => ({
@@ -160,7 +161,8 @@ export default function ProductEditScreen() {
         name:            trimmed,
         price:           priceNum,
         cost:            costNum,
-        category_id:     categoryId,
+        category_id:     primaryCatId,
+        category_ids:    selectedCategoryIds,
         category_name:   selectedCat?.name ?? '',
         tracking_mode:   trackingMode,
         stock_item_id:   trackingMode === 'direct' ? (stockItemId ?? null) : null,
@@ -276,24 +278,6 @@ export default function ProductEditScreen() {
               </TouchableOpacity>
               <Text style={s.pageTitle}>{isNew ? 'New Product' : 'Edit Product'}</Text>
             </View>
-            <View style={s.headerRight}>
-              {!!error && (
-                <View style={s.errorInline}>
-                  <Text style={s.errorText}>{error}</Text>
-                </View>
-              )}
-              <TouchableOpacity
-                style={[s.saveBtn, saving && s.saveBtnOff]}
-                onPress={handleSave}
-                disabled={saving}
-                activeOpacity={0.8}
-              >
-                {saving
-                  ? <ActivityIndicator color={Colors.white} size="small" />
-                  : <Text style={s.saveBtnText}>{isNew ? 'Create' : 'Save Changes'}</Text>
-                }
-              </TouchableOpacity>
-            </View>
           </View>
 
           {/* Product image */}
@@ -383,20 +367,27 @@ export default function ProductEditScreen() {
               </View>
             </View>
 
-            <Field label="Category" required>
+            <Field label="Category" required hint="Select one or more (e.g. Hot & Cold)">
               <View style={s.optionGroup}>
-                {categories.map((cat) => (
-                  <TouchableOpacity
-                    key={cat.id}
-                    style={[s.optionBtn, categoryId === cat.id && s.optionBtnSel]}
-                    onPress={() => setCategoryId(cat.id)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[s.optionText, categoryId === cat.id && s.optionTextSel]}>
-                      {cat.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                {categories.map((cat) => {
+                  const selected = selectedCategoryIds.includes(cat.id);
+                  return (
+                    <TouchableOpacity
+                      key={cat.id}
+                      style={[s.optionBtn, selected && s.optionBtnSel]}
+                      onPress={() => setSelectedCategoryIds((prev) =>
+                        prev.includes(cat.id)
+                          ? prev.filter((id) => id !== cat.id)
+                          : [...prev, cat.id],
+                      )}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[s.optionText, selected && s.optionTextSel]}>
+                        {cat.name}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
                 {categories.length === 0 && (
                   <Text style={s.noOptionText}>No categories. Create one first.</Text>
                 )}
@@ -569,6 +560,24 @@ export default function ProductEditScreen() {
             )}
           </Section>
 
+          {/* Save / Create */}
+          {!!error && (
+            <View style={s.errorInline}>
+              <Text style={s.errorText}>{error}</Text>
+            </View>
+          )}
+          <TouchableOpacity
+            style={[s.saveBtn, saving && s.saveBtnOff]}
+            onPress={handleSave}
+            disabled={saving}
+            activeOpacity={0.8}
+          >
+            {saving
+              ? <ActivityIndicator color={Colors.white} size="small" />
+              : <Text style={s.saveBtnText}>{isNew ? 'Create' : 'Save Changes'}</Text>
+            }
+          </TouchableOpacity>
+
           {/* Danger Zone — existing products only */}
           {!isNew && (
             <Section title="Danger Zone">
@@ -691,19 +700,15 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.danger + '44',
     borderRadius: Radius.md,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.xs,
-    maxWidth: 280,
-    flexShrink: 1,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
   },
   errorText:  { fontSize: FontSize.sm, color: Colors.danger, fontWeight: FontWeight.medium },
 
   saveBtn: {
     backgroundColor: Colors.green600,
     borderRadius: Radius.md,
-    paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.md,
-    minWidth: 130,
+    paddingVertical: Spacing.lg,
     alignItems: 'center',
     ...Shadow.sm,
   },
@@ -1019,6 +1024,8 @@ const sec = StyleSheet.create({
   card: {
     backgroundColor: Colors.surface,
     borderRadius: Radius.xl,
+    borderWidth: 1,
+    borderColor: Colors.border,
     padding: Spacing.xl,
     gap: Spacing.lg,
     ...Shadow.sm,

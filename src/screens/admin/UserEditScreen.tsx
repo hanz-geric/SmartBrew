@@ -409,6 +409,8 @@ const sec = StyleSheet.create({
   card: {
     backgroundColor: Colors.surface,
     borderRadius: Radius.xl,
+    borderWidth: 1,
+    borderColor: Colors.border,
     padding: Spacing.xl,
     gap: Spacing.lg,
     ...Shadow.sm,

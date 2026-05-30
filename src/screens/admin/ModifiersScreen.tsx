@@ -197,6 +197,8 @@ const gc = StyleSheet.create({
   card: {
     backgroundColor: Colors.surface,
     borderRadius: Radius.xl,
+    borderWidth: 1,
+    borderColor: Colors.border,
     padding: Spacing.lg,
     gap: Spacing.sm,
     ...Shadow.sm,
