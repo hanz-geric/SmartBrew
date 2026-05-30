@@ -422,7 +422,7 @@ function ProductCard({ product, onPress }: ProductCardProps) {
     >
       <View style={pc.imageBox}>
         {product.image
-          ? <Image source={{ uri: product.image }} style={pc.image} resizeMode="contain" />
+          ? <Image source={{ uri: product.image }} style={pc.image} resizeMode="cover" />
           : <Text style={pc.imagePlaceholder}>☕</Text>
         }
       </View>
@@ -1312,8 +1312,8 @@ const pc = StyleSheet.create({
     opacity: 0.5,
   },
   imageBox: {
-    height: isTablet ? 110 : 80,
-    backgroundColor: Colors.white,
+    height: 72,
+    backgroundColor: Colors.green50,
     justifyContent: 'center',
     alignItems: 'center',
   },
