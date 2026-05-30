@@ -1311,7 +1311,7 @@ const pc = StyleSheet.create({
     opacity: 0.5,
   },
   imageBox: {
-    aspectRatio: 1,
+    height: isTablet ? 110 : 80,
     backgroundColor: Colors.white,
     justifyContent: 'center',
     alignItems: 'center',
