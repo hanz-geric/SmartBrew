@@ -1,6 +1,7 @@
 import { FirebaseApp, getApps, initializeApp } from 'firebase/app';
 import {
-  Auth, getAuth, initializeAuth,
+  Auth, User as FirebaseUser, getAuth, initializeAuth,
+  onAuthStateChanged,
   browserLocalPersistence, getReactNativePersistence,
 } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -42,3 +43,16 @@ export const db: Firestore = isFirstInit
   : getFirestore(app);
 
 export const storage: FirebaseStorage = getStorage(app);
+
+// Returns the currently signed-in Firebase user, waiting for auth state to
+// restore from AsyncStorage if it hasn't done so yet. Safe to call at any time
+// including immediately after app launch before onAuthStateChanged has fired.
+export function getFirebaseUser(): Promise<FirebaseUser | null> {
+  if (auth.currentUser) return Promise.resolve(auth.currentUser);
+  return new Promise((resolve) => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      unsub();
+      resolve(user);
+    });
+  });
+}

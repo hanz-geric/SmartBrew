@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator, FlatList, KeyboardAvoidingView, Platform,
   ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
@@ -8,11 +8,12 @@ import { useShallow } from 'zustand/react/shallow';
 import { CashierStackParamList } from '../../navigation/CashierStack';
 import { useAuthStore } from '../../store/authStore';
 import { useCartStore } from '../../store/cartStore';
+import { useNetwork } from '../../context/NetworkContext';
+import { logError } from '../../utils/logger';
 import { createOrder, getSettings } from '../../firebase/firestoreService';
 import { enqueueOrder } from '../../db/queries/queue';
 import { syncPendingOrders } from '../../services/syncService';
 import { useSyncEvents } from '../../context/SyncContext';
-import { useNetwork } from '../../context/NetworkContext';
 import { deductStock } from '../../db/queries/stockCache';
 import { buildStockDeductions } from '../../utils/stockUtils';
 import { buildKitchenTicket } from '../../utils/printerTemplates';
@@ -99,6 +100,7 @@ export default function PaymentScreen({ route, navigation }: Props) {
   const user      = useAuthStore((s) => s.user)!;
   const cartItems = useCartStore(useShallow((s) => Object.values(s.items)));
   const clearCart = useCartStore((s) => s.clearCart);
+  const { isOnline } = useNetwork();
   const subtotal  = total + (discountAmount ?? 0);
 
   const [orderType,    setOrderType]    = useState<OrderType>('dine_in');
@@ -110,7 +112,9 @@ export default function PaymentScreen({ route, navigation }: Props) {
   const [error,        setError]       = useState('');
   const [settings,     setSettings]    = useState<Settings>({});
   const { notifySynced } = useSyncEvents();
-  const { isOnline }     = useNetwork();
+  // Ref guard — prevents double-tap from enqueuing the same order twice before
+  // React re-renders the disabled state of the confirm button.
+  const submittingRef = useRef(false);
 
   useEffect(() => {
     getSettings().then(setSettings).catch(() => {});
@@ -127,10 +131,12 @@ export default function PaymentScreen({ route, navigation }: Props) {
       : cashNum >= ceilTotal;
 
   async function handleConfirm() {
+    if (submittingRef.current) return; // Block double-tap synchronously
     if (payMethod === 'cash' && cashNum < ceilTotal) {
       setError('Cash received is less than total.');
       return;
     }
+    submittingRef.current = true;
     setSubmitting(true);
     setError('');
 
@@ -169,13 +175,14 @@ export default function PaymentScreen({ route, navigation }: Props) {
     }
 
     if (!isOnline) {
-      // Known offline — skip Firestore entirely to avoid timeout delay
+      // Skip Firestore entirely — long-polling hangs indefinitely when offline
       try {
         order    = await saveOffline();
         warnings = ['Order saved offline — will sync when connected.'];
         printKitchenIfNeeded(order);
       } catch {
         setError('Failed to save order. Try again.');
+        submittingRef.current = false;
         setSubmitting(false);
         return;
       }
@@ -186,17 +193,12 @@ export default function PaymentScreen({ route, navigation }: Props) {
           .then(({ synced }) => { if (synced > 0) notifySynced(); })
           .catch(() => {});
         printKitchenIfNeeded(order);
-      } catch {
-        // Network dropped mid-session — fall back to local queue
-        try {
-          order    = await saveOffline();
-          warnings = ['Order saved offline — will sync when connected.'];
-          printKitchenIfNeeded(order);
-        } catch {
-          setError('Failed to save order. Try again.');
-          setSubmitting(false);
-          return;
-        }
+      } catch (firestoreErr) {
+        logError('PaymentScreen:createOrder', firestoreErr, 'createOrder failed while online');
+        setError('Network error. Please try again.');
+        submittingRef.current = false;
+        setSubmitting(false);
+        return;
       }
     }
 

@@ -6,8 +6,9 @@ import {
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { CashierStackParamList } from '../../navigation/CashierStack';
 import { useAuthStore } from '../../store/authStore';
-import { getOpenSession, openSession } from '../../firebase/firestoreService';
-import { saveSessionCache, loadSessionCache, openSessionOffline } from '../../db/queries/sessionCache';
+import { getOpenSession, getSession, openSession } from '../../firebase/firestoreService';
+import { saveSessionCache, loadSessionCache, clearSessionCache, openSessionOffline } from '../../db/queries/sessionCache';
+import { logError } from '../../utils/logger';
 import { useNetwork } from '../../context/NetworkContext';
 import { CashSession } from '../../types';
 import {
@@ -30,6 +31,34 @@ export default function SessionGateScreen({ navigation }: Props) {
   const [resumeIsDraft, setResumeIsDraft] = useState(false);
 
   useEffect(() => { checkSession(); }, []);
+
+  // When we showed a cache-loaded session and network becomes available,
+  // verify the session is still open in Firestore. If it was closed elsewhere
+  // (or the cache was stale from a previous logout), clear it and let the
+  // user open a fresh session instead of resuming a ghost one.
+  useEffect(() => {
+    if (!isOnline || !fromCache || !openSess) return;
+    getSession(openSess.id)
+      .then((live) => {
+        if (!live || live.status !== 'open') {
+          // Session no longer open in Firestore — clear stale cache
+          clearSessionCache(user.uid).catch((err) =>
+            logError('SessionGate:verifyCache', err, `Stale session cache for uid=${user.uid}`),
+          );
+          setOpenSess(null);
+          setFromCache(false);
+          setGateState('open');
+        } else {
+          // Session is genuinely open — update cache with live data
+          setOpenSess(live);
+          saveSessionCache(live, user.uid, resumeIsDraft).catch(() => {});
+        }
+      })
+      .catch(() => {
+        // Firestore unreachable — keep showing cache, user can retry
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOnline]);
 
   async function checkSession() {
     try {

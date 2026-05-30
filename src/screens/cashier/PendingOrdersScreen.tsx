@@ -7,9 +7,10 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { CashierStackParamList } from '../../navigation/CashierStack';
 import { useAuthStore } from '../../store/authStore';
 import { getPendingOrders, removePendingOrder } from '../../db/queries/queue';
-import { getFailedOrders, removeFailedOrder } from '../../db/queries/failedOrders';
+import { getFailedOrders, removeFailedOrder, recoverFailedOrder } from '../../db/queries/failedOrders';
 import { syncPendingOrders, syncSingleOrder } from '../../services/syncService';
 import { useSyncEvents } from '../../context/SyncContext';
+import { getLogs, LogEntry } from '../../utils/logger';
 import { CartItem, CheckoutPayload, FailedOrder, PaymentMethod, PendingOrder } from '../../types';
 import {
   Colors, FontSize, FontWeight, Radius, Shadow, Spacing,
@@ -161,6 +162,7 @@ export default function PendingOrdersScreen({ route, navigation }: Props) {
   const [syncing,  setSyncing]  = useState(false);
   const [retrying, setRetrying] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [lastError, setLastError] = useState<LogEntry | null>(null);
 
   const { subscribe, notifySynced } = useSyncEvents();
   const loadRef = useRef(loadAll);
@@ -174,9 +176,17 @@ export default function PendingOrdersScreen({ route, navigation }: Props) {
   async function loadAll() {
     setLoading(true);
     try {
-      const [p, f] = await Promise.all([getPendingOrders(), getFailedOrders()]);
+      const [p, f, logs] = await Promise.all([
+        getPendingOrders(),
+        getFailedOrders(),
+        getLogs(),
+      ]);
       setPending(p);
       setFailed(f);
+      const syncLog = logs.find((l) =>
+        l.tag.startsWith('syncService') || l.tag.startsWith('createOrder'),
+      );
+      setLastError(syncLog ?? null);
     } finally {
       setLoading(false);
     }
@@ -222,6 +232,11 @@ export default function PendingOrdersScreen({ route, navigation }: Props) {
         },
       ],
     );
+  }
+
+  async function handleRecover(order: FailedOrder) {
+    await recoverFailedOrder(order);
+    await loadAll();
   }
 
   function handleDiscardFailed(local_id: string) {
@@ -294,11 +309,13 @@ export default function PendingOrdersScreen({ route, navigation }: Props) {
         statusChip={{ label: 'Failed', bg: Colors.dangerBg, color: Colors.danger }}
         actions={
           <View style={s.actions}>
-            <View style={s.failedNote}>
-              <Text style={s.failedNoteText}>
-                This order could not be synced after multiple attempts. Contact your manager.
-              </Text>
-            </View>
+            <TouchableOpacity
+              style={s.retryBtn}
+              onPress={() => handleRecover(item)}
+              activeOpacity={0.7}
+            >
+              <Text style={s.retryBtnText}>Recover</Text>
+            </TouchableOpacity>
             <TouchableOpacity
               style={s.discardBtn}
               onPress={() => handleDiscardFailed(item.local_id)}
@@ -337,6 +354,19 @@ export default function PendingOrdersScreen({ route, navigation }: Props) {
           </TouchableOpacity>
         )}
       </View>
+
+      {/* Last sync error banner */}
+      {lastError && (
+        <View style={s.errorBanner}>
+          <Text style={s.errorBannerTitle}>Last sync error — share this with your manager:</Text>
+          <Text style={s.errorBannerText} selectable>
+            [{lastError.tag}] {lastError.message}
+          </Text>
+          <Text style={s.errorBannerTime}>
+            {new Date(lastError.timestamp).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+          </Text>
+        </View>
+      )}
 
       {/* Tab bar */}
       <View style={s.tabBar}>
@@ -508,6 +538,15 @@ const s = StyleSheet.create({
   },
   discardBtnText: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: Colors.danger },
   btnDisabled: { opacity: 0.45 },
+
+  errorBanner: {
+    backgroundColor: Colors.dangerBg,
+    borderBottomWidth: 1, borderBottomColor: Colors.danger + '44',
+    paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm, gap: 2,
+  },
+  errorBannerTitle: { fontSize: FontSize.xs, fontWeight: FontWeight.bold, color: Colors.danger },
+  errorBannerText:  { fontSize: FontSize.xs, color: Colors.gray800, fontFamily: 'monospace' },
+  errorBannerTime:  { fontSize: FontSize.xs, color: Colors.gray500 },
 
   failedNote: {
     flex: 1, backgroundColor: Colors.dangerBg,

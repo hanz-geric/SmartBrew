@@ -28,6 +28,15 @@ export async function removeFailedOrder(local_id: string): Promise<void> {
   await db.runAsync('DELETE FROM failed_orders WHERE local_id = ?', [local_id]);
 }
 
+export async function recoverFailedOrder(order: FailedOrder): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    'INSERT OR REPLACE INTO pending_orders (local_id, payload, created_at, retry_count) VALUES (?, ?, ?, 0)',
+    [order.local_id, JSON.stringify(order.payload), order.created_at],
+  );
+  await db.runAsync('DELETE FROM failed_orders WHERE local_id = ?', [order.local_id]);
+}
+
 export async function failedCount(): Promise<number> {
   const db  = await getDb();
   const row = await db.getFirstAsync<{ count: number }>(

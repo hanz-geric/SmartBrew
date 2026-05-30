@@ -4,7 +4,7 @@ import {
   getAggregateFromServer, getCountFromServer, sum, count,
   writeBatch, doc,
 } from 'firebase/firestore';
-import { db } from './config';
+import { db, auth, getFirebaseUser } from './config';
 import {
   usersCol, sessionsCol, productsCol, categoriesCol, ordersCol, modGroupsCol, stockCol,
   userDoc, sessionDoc, orderDoc, settingsDoc, productDoc, categoryDoc, modGroupDoc, stockDoc,
@@ -17,6 +17,7 @@ import {
 import { writeProductsCache, writeCategoriesCache, getCachedProducts, getCachedCategories } from '../db/queries/catalog';
 import { replaceStockCache } from '../db/queries/stockCache';
 import { clearSessionCache, saveSessionCache } from '../db/queries/sessionCache';
+import { logError } from '../utils/logger';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -62,6 +63,19 @@ export async function openSession(
   startingCash: number,
   startTime?:   string,
 ): Promise<CashSession> {
+  const fbUser = await getFirebaseUser();
+  if (fbUser) {
+    try {
+      await fbUser.getIdToken(true);
+    } catch (err) {
+      logError('openSession:tokenRefresh', err, `uid=${fbUser.uid} token refresh failed`);
+      throw err;
+    }
+  } else {
+    logError('openSession:tokenRefresh', null, 'No signed-in user after waiting for auth restore');
+    throw new Error('User not authenticated');
+  }
+
   const now  = startTime ?? new Date().toISOString();
   const data = {
     user_id:        userId,
@@ -87,6 +101,18 @@ export async function closeSession(
   expectedCash: number,
   userId:       string,
 ): Promise<void> {
+  const fbUser = await getFirebaseUser();
+  if (fbUser) {
+    try {
+      await fbUser.getIdToken(true);
+    } catch (err) {
+      logError('closeSession:tokenRefresh', err, `uid=${fbUser.uid} token refresh failed`);
+      throw err;
+    }
+  } else {
+    logError('closeSession:tokenRefresh', null, 'No signed-in user');
+    throw new Error('User not authenticated');
+  }
   await updateDoc(sessionDoc(sessionId), {
     end_time:      new Date().toISOString(),
     actual_cash:   actualCash,
@@ -100,16 +126,19 @@ export async function closeSession(
 // ─── Orders ──────────────────────────────────────────────────────────────────
 
 export async function createOrder(
-  payload:  CheckoutPayload,
-  session:  CashSession,
-  user:     AuthUser,
+  payload:        CheckoutPayload,
+  session:        CashSession,
+  user:           AuthUser,
+  idempotencyId?: string,   // When provided (offline sync), used as the Firestore doc ID
 ): Promise<Order> {
   const now        = new Date();
   const nowISO     = now.toISOString();
   const dateStr    = nowISO.slice(0, 10).replace(/-/g, '');
   const seq        = String(now.getTime()).slice(-5);
   // Firestore ID suffix makes the number unique even if two orders land in the same millisecond
-  const newRef     = doc(ordersCol());
+  // Use the caller-supplied ID (offline sync) so a double-sync overwrites the
+  // same Firestore document instead of creating a duplicate order.
+  const newRef     = idempotencyId ? doc(ordersCol(), idempotencyId) : doc(ordersCol());
   const orderNumber = `${dateStr}-${seq}-${newRef.id.slice(0, 4).toUpperCase()}`;
 
   const subtotal       = payload.cart_snapshot.reduce(
@@ -161,47 +190,76 @@ export async function createOrder(
     items,
   };
 
-  const batch  = writeBatch(db);
-  batch.set(newRef, orderData);
+  // Wait for Firebase Auth to restore its persisted session, then force-refresh
+  // the ID token to prevent stale-token permission rejections.
+  const fbUser = await getFirebaseUser();
+  if (fbUser) {
+    try {
+      await fbUser.getIdToken(true);
+    } catch (err) {
+      logError('createOrder:tokenRefresh', err, `uid=${fbUser.uid} token refresh failed`);
+      throw err;
+    }
+  } else {
+    logError('createOrder:tokenRefresh', null, 'No signed-in user after waiting for auth restore');
+    throw new Error('User not authenticated');
+  }
 
-  // Track cash collected on the session using atomic increment so concurrent
-  // writes and the stale in-memory session object cannot corrupt the running total.
+  // ── 1. Commit the order record (must succeed) ────────────────────────────
+  const orderBatch = writeBatch(db);
+  // merge:true makes idempotent syncs safe — re-syncing the same local_id
+  // simply overwrites with identical data instead of failing.
+  orderBatch.set(newRef, orderData, { merge: true });
+  await orderBatch.commit();
+
+  // ── 2. Deduct stock (non-fatal: permission issues must not block the order) ─
+  try {
+    const stockBatch = writeBatch(db);
+    let hasStockOps  = false;
+
+    for (const item of payload.cart_snapshot) {
+      if (item.tracking_mode === 'direct' && item.stock_item_id) {
+        stockBatch.update(stockDoc(item.stock_item_id), {
+          quantity_on_hand: increment(-item.quantity),
+        });
+        hasStockOps = true;
+      } else if (item.tracking_mode === 'recipe' && item.recipe_lines?.length) {
+        for (const line of item.recipe_lines) {
+          if (line.stock_item_id && line.quantity_required > 0) {
+            stockBatch.update(stockDoc(line.stock_item_id), {
+              quantity_on_hand: increment(-(line.quantity_required * item.quantity)),
+            });
+            hasStockOps = true;
+          }
+        }
+      }
+      for (const mod of item.modifiers) {
+        for (const line of (mod.recipe_lines ?? [])) {
+          if (line.stock_item_id && line.quantity_required > 0) {
+            stockBatch.update(stockDoc(line.stock_item_id), {
+              quantity_on_hand: increment(-(line.quantity_required * item.quantity)),
+            });
+            hasStockOps = true;
+          }
+        }
+      }
+    }
+
+    if (hasStockOps) await stockBatch.commit();
+  } catch (err) {
+    // Stock deduction failed (likely a Firestore rules issue on stock_items).
+    // The order is already saved — log for visibility but do not throw.
+    logError('createOrder:stockDeduction', err, `Order ${newRef.id} saved but stock deduction failed`);
+  }
+
+  // ── 3. Update session cash collected (non-fatal) ─────────────────────────
   if (payload.payment_method === 'cash') {
-    batch.update(sessionDoc(session.id), {
+    await updateDoc(sessionDoc(session.id), {
       cash_collected: increment(totalAmount),
       expected_cash:  increment(totalAmount),
-    });
+    }).catch((err) => logError('createOrder:sessionCash', err, `Order ${newRef.id} cash update failed`));
   }
 
-  // Deduct stock for direct-tracked and recipe-tracked items
-  for (const item of payload.cart_snapshot) {
-    if (item.tracking_mode === 'direct' && item.stock_item_id) {
-      batch.update(stockDoc(item.stock_item_id), {
-        quantity_on_hand: increment(-item.quantity),
-      });
-    } else if (item.tracking_mode === 'recipe' && item.recipe_lines?.length) {
-      for (const line of item.recipe_lines) {
-        if (line.stock_item_id && line.quantity_required > 0) {
-          batch.update(stockDoc(line.stock_item_id), {
-            quantity_on_hand: increment(-(line.quantity_required * item.quantity)),
-          });
-        }
-      }
-    }
-
-    // Deduct stock for modifier recipe lines (e.g. extra cream, extra shot)
-    for (const mod of item.modifiers) {
-      for (const line of (mod.recipe_lines ?? [])) {
-        if (line.stock_item_id && line.quantity_required > 0) {
-          batch.update(stockDoc(line.stock_item_id), {
-            quantity_on_hand: increment(-(line.quantity_required * item.quantity)),
-          });
-        }
-      }
-    }
-  }
-
-  await batch.commit();
   return { id: newRef.id, ...orderData };
 }
 
@@ -321,64 +379,73 @@ export async function saveSettings(settings: Settings): Promise<void> {
 // ─── Products & Categories (POS — active only) ────────────────────────────────
 
 export async function getProducts(): Promise<Product[]> {
-  try {
-    const [prodSnap, stockSnap] = await Promise.all([
-      getDocs(query(productsCol(), where('is_active', '==', true))),
-      getDocs(stockCol()),
-    ]);
-
-    const stockMap = new Map<string, { qty: number; reorder: number }>();
-    const stockItems: StockItem[] = [];
-    for (const d of stockSnap.docs) {
-      const data    = d.data() as DocumentData;
-      const qty     = (data.quantity_on_hand as number) ?? 0;
-      const reorder = (data.reorder_level    as number) ?? 0;
-      stockMap.set(d.id, { qty, reorder });
-      stockItems.push({
-        id:               d.id,
-        name:             (data.name          as string) ?? '',
-        unit:             (data.unit          as string) ?? '',
-        quantity_on_hand: qty,
-        reorder_level:    reorder,
-        cost_per_unit:    (data.cost_per_unit as number) ?? 0,
-        is_active:        data.is_active !== false,
-        stock_status:     qty <= 0 ? 'out' : reorder > 0 && qty <= reorder ? 'low' : 'ok',
-      });
+  // Firestore's long-polling connection can take up to ~20s to establish after
+  // app launch. Retry with increasing delays to cover the full backoff window.
+  const RETRY_DELAYS = [0, 3_000, 8_000, 15_000]; // ms before each attempt
+  for (let attempt = 0; attempt < RETRY_DELAYS.length; attempt++) {
+    if (RETRY_DELAYS[attempt] > 0) {
+      await new Promise<void>((r) => setTimeout(r, RETRY_DELAYS[attempt]));
     }
+    try {
+      const [prodSnap, stockSnap] = await Promise.all([
+        getDocs(query(productsCol(), where('is_active', '==', true))),
+        getDocs(stockCol()),
+      ]);
 
-    const products = prodSnap.docs.map((d) => {
-      const data         = d.data() as DocumentData;
-      const trackingMode = data.tracking_mode as Product['tracking_mode'];
-      const stockItemId  = data.stock_item_id as string | null;
-
-      let stock_status: Product['stock_status'] = 'ok';
-      if (trackingMode === 'direct' && stockItemId) {
-        const si = stockMap.get(stockItemId);
-        if (si) {
-          stock_status = si.qty <= 0 ? 'out'
-            : (si.reorder > 0 && si.qty <= si.reorder) ? 'low'
-            : 'ok';
-        }
+      const stockMap = new Map<string, { qty: number; reorder: number }>();
+      const stockItems: StockItem[] = [];
+      for (const d of stockSnap.docs) {
+        const data    = d.data() as DocumentData;
+        const qty     = (data.quantity_on_hand as number) ?? 0;
+        const reorder = (data.reorder_level    as number) ?? 0;
+        stockMap.set(d.id, { qty, reorder });
+        stockItems.push({
+          id:               d.id,
+          name:             (data.name          as string) ?? '',
+          unit:             (data.unit          as string) ?? '',
+          quantity_on_hand: qty,
+          reorder_level:    reorder,
+          cost_per_unit:    (data.cost_per_unit as number) ?? 0,
+          is_active:        data.is_active !== false,
+          stock_status:     qty <= 0 ? 'out' : reorder > 0 && qty <= reorder ? 'low' : 'ok',
+        });
       }
 
-      return {
-        id:              d.id,
-        ...(data        as Omit<Product, 'id'>),
-        stock_status,
-        modifier_groups: (data.modifier_groups as Product['modifier_groups']) ?? [],
-        recipe_lines:    (data.recipe_lines    as Product['recipe_lines'])   ?? [],
-      };
-    });
+      const products = prodSnap.docs.map((d) => {
+        const data         = d.data() as DocumentData;
+        const trackingMode = data.tracking_mode as Product['tracking_mode'];
+        const stockItemId  = data.stock_item_id as string | null;
 
-    // Persist to local cache (non-blocking)
-    writeProductsCache(products).catch(() => {});
-    replaceStockCache(stockItems).catch(() => {});
+        let stock_status: Product['stock_status'] = 'ok';
+        if (trackingMode === 'direct' && stockItemId) {
+          const si = stockMap.get(stockItemId);
+          if (si) {
+            stock_status = si.qty <= 0 ? 'out'
+              : (si.reorder > 0 && si.qty <= si.reorder) ? 'low'
+              : 'ok';
+          }
+        }
 
-    return products;
-  } catch {
-    // Network unavailable — serve from local cache
-    return getCachedProducts();
+        return {
+          id:              d.id,
+          ...(data        as Omit<Product, 'id'>),
+          stock_status,
+          modifier_groups: (data.modifier_groups as Product['modifier_groups']) ?? [],
+          recipe_lines:    (data.recipe_lines    as Product['recipe_lines'])   ?? [],
+        };
+      });
+
+      writeProductsCache(products).catch(() => {});
+      replaceStockCache(stockItems).catch(() => {});
+      return products;
+    } catch (err) {
+      const isLastAttempt = attempt === RETRY_DELAYS.length - 1;
+      logError('getProducts:fetch', err,
+        `Firestore fetch failed (attempt ${attempt + 1}/${RETRY_DELAYS.length})${isLastAttempt ? ' — falling back to cache' : ''}`);
+    }
   }
+  // All attempts failed — serve from local SQLite cache
+  return getCachedProducts();
 }
 
 export async function getCategories(): Promise<Category[]> {

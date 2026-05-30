@@ -10,6 +10,9 @@ import { logout } from '../../firebase/auth';
 import { useAuthStore } from '../../store/authStore';
 import { useCartStore } from '../../store/cartStore';
 import { getPendingOrders } from '../../db/queries/queue';
+import { reconcileDraftSession } from '../../services/syncService';
+import { useNetwork } from '../../context/NetworkContext';
+import { logError } from '../../utils/logger';
 import { CheckoutPayload, CashSession } from '../../types';
 import {
   Colors, FontSize, FontWeight, Radius, Shadow, Spacing,
@@ -36,8 +39,12 @@ export default function CloseSessionScreen({ route, navigation }: Props) {
   const clearCart = useCartStore((s) => s.clearCart);
   const user      = useAuthStore((s) => s.user)!;
 
+  const { isOnline } = useNetwork();
+
   const [session,           setSession]           = useState<CashSession>(initialSession);
   const [fetching,          setFetching]          = useState(true);
+  const [reconciling,       setReconciling]       = useState(false);
+  const [mustReconnect,     setMustReconnect]     = useState(false);
   const [actualCash,        setActualCash]        = useState('');
   const [closing,           setClosing]           = useState(false);
   const [closed,            setClosed]            = useState(false);
@@ -48,20 +55,45 @@ export default function CloseSessionScreen({ route, navigation }: Props) {
   const [forceClose,        setForceClose]        = useState(false);
 
   useEffect(() => {
-    Promise.all([
-      getSession(initialSession.id).catch(() => null),
-      getPendingOrders(),
-    ]).then(([live, pending]) => {
-      if (live) setSession(live);
+    async function init() {
+      // Draft sessions use UUID format (contains hyphens); real Firestore IDs do not.
+      const isDraft = initialSession.id.includes('-');
+      let resolvedSession = initialSession;
 
-      // Sum unsynced cash orders for this session
+      if (isDraft) {
+        if (isOnline) {
+          setReconciling(true);
+          try {
+            resolvedSession = await reconcileDraftSession(initialSession, user);
+            setSession(resolvedSession);
+          } catch (err) {
+            logError('CloseSessionScreen:reconcile', err, 'Draft session reconciliation failed');
+            setMustReconnect(true);
+          } finally {
+            setReconciling(false);
+          }
+        } else {
+          setMustReconnect(true);
+        }
+      } else {
+        // Fetch latest cash_collected in the background — never block the close UI.
+        // initialSession already has the correct ID and enough data to close with.
+        getSession(initialSession.id)
+          .then((live) => { if (live) setSession(live); })
+          .catch(() => {});
+      }
+
+      // Pending orders live in SQLite — always fast, no network needed
+      const pending = await getPendingOrders();
       const cashOrders = pending.filter(
-        (o) => o.payload.session_id === initialSession.id
+        (o) => o.payload.session_id === resolvedSession.id
           && o.payload.payment_method === 'cash',
       );
       setOfflineCashCount(cashOrders.length);
       setOfflineCashAmount(cashOrders.reduce((s, o) => s + offlineOrderTotal(o.payload), 0));
-    }).finally(() => setFetching(false));
+      setFetching(false);
+    }
+    init();
   }, []);
 
   // Firestore-only expected cash (safe to persist without double-counting)
@@ -96,7 +128,8 @@ export default function CloseSessionScreen({ route, navigation }: Props) {
       // acceptable trade-off vs. showing a wrong variance at close time.
       await closeSession(session.id, actualNum, fullExpected, user.uid);
       setClosed(true);
-    } catch {
+    } catch (err) {
+      logError('CloseSessionScreen:handleClose', err, `Failed to close session ${session.id}`);
       setError('Failed to close session. Check your connection.');
       setClosing(false);
     }
@@ -121,9 +154,28 @@ export default function CloseSessionScreen({ route, navigation }: Props) {
     >
       <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
 
-        {fetching ? (
+        {fetching || reconciling ? (
           <View style={s.center}>
             <ActivityIndicator size="large" color={Colors.green600} />
+            {reconciling && (
+              <Text style={s.reconcilingText}>Syncing session…</Text>
+            )}
+          </View>
+        ) : mustReconnect ? (
+          <View style={s.center}>
+            <Text style={s.mustReconnectTitle}>Reconnect Required</Text>
+            <Text style={s.mustReconnectBody}>
+              This session was started offline and hasn't synced yet.
+              Connect to the internet and return to the POS — the session
+              will sync automatically, then you can close it.
+            </Text>
+            <TouchableOpacity
+              style={s.cancelBtn}
+              onPress={() => navigation.goBack()}
+              activeOpacity={0.7}
+            >
+              <Text style={s.cancelBtnText}>← Go Back</Text>
+            </TouchableOpacity>
           </View>
         ) : !closed ? (
           <>
@@ -338,7 +390,10 @@ const s = StyleSheet.create({
   backText:    { fontSize: FontSize.base, color: Colors.green700, fontWeight: FontWeight.medium },
   headerTitle: { fontSize: FontSize.display, fontWeight: FontWeight.bold, color: Colors.gray900 },
 
-  center: { paddingTop: Spacing.xxxl, alignItems: 'center' },
+  center: { paddingTop: Spacing.xxxl, alignItems: 'center', gap: Spacing.md, paddingHorizontal: Spacing.xl },
+  reconcilingText:     { fontSize: FontSize.base, color: Colors.gray500, marginTop: Spacing.sm },
+  mustReconnectTitle:  { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: Colors.gray900, textAlign: 'center' },
+  mustReconnectBody:   { fontSize: FontSize.base, color: Colors.gray600, textAlign: 'center', lineHeight: 22 },
 
   card: {
     backgroundColor: Colors.surface, borderRadius: Radius.xl,

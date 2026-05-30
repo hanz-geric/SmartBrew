@@ -16,6 +16,7 @@ import { pendingCount } from '../../db/queries/queue';
 import { syncPendingOrders, reconcileDraftSession } from '../../services/syncService';
 import { useSyncEvents } from '../../context/SyncContext';
 import { useNetwork } from '../../context/NetworkContext';
+import { logError } from '../../utils/logger';
 import { getCatalogAge } from '../../db/queries/catalog';
 import {
   Category, ModifierGroup, Product, SelectedModifier,
@@ -515,7 +516,14 @@ export default function POSScreen({ route, navigation }: Props) {
   const [showDiscountModal, setShowDiscountModal] = useState(false);
   const [showSwitchModal,   setShowSwitchModal]   = useState(false);
 
-  const appState = useRef(AppState.currentState);
+  const appState      = useRef(AppState.currentState);
+  // Refs so the AppState handler (set up once on mount) always has current values
+  const isOnlineRef   = useRef(isOnline);
+  const isDraftRef    = useRef(isDraft);
+  const doSyncRef     = useRef<() => void>(() => {});
+  // Synchronous guard — prevents two rapid sync triggers from both passing the
+  // React state `syncing` check before the re-render propagates.
+  const syncingRef    = useRef(false);
 
   useEffect(() => {
     AsyncStorage.getItem(GRID_COLS_KEY).then((v) => {
@@ -529,18 +537,26 @@ export default function POSScreen({ route, navigation }: Props) {
     AsyncStorage.setItem(GRID_COLS_KEY, String(n));
   }
 
+  // Keep refs current every render
+  useEffect(() => {
+    isOnlineRef.current = isOnline;
+    isDraftRef.current  = isDraft;
+    doSyncRef.current   = isDraft ? reconcileAndSync : triggerSync;
+  });
+
   // Auto-sync (+ reconcile draft) when connectivity is restored
   useEffect(() => {
     if (wasOnline.current === false && isOnline) {
-      if (isDraft) {
-        reconcileAndSync();
-      } else {
-        triggerSync();
+      doSyncRef.current();
+      // If catalog failed to load at startup (Firestore was not yet connected),
+      // re-fetch now that we have network.
+      if (products.length === 0) {
+        loadData();
       }
     }
     wasOnline.current = isOnline;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOnline, isDraft]);
+  }, [isOnline, products.length]);
 
   // Refresh catalog after sync so stock_status reflects the authoritative server values
   useEffect(() => {
@@ -552,10 +568,13 @@ export default function POSScreen({ route, navigation }: Props) {
     loadData();
     refreshQueueCount();
 
-    // Retain AppState listener for re-check when app returns to foreground
+    // On foreground: refresh count and sync if online + has pending orders
     const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
       if (appState.current !== 'active' && next === 'active') {
         refreshQueueCount();
+        if (isOnlineRef.current) {
+          doSyncRef.current();
+        }
       }
       appState.current = next;
     });
@@ -586,7 +605,8 @@ export default function POSScreen({ route, navigation }: Props) {
   }
 
   async function reconcileAndSync() {
-    if (syncing) return;
+    if (syncingRef.current) return;
+    syncingRef.current = true;
     setSyncing(true);
     try {
       const realSession = await reconcileDraftSession(currentSession, user);
@@ -595,16 +615,18 @@ export default function POSScreen({ route, navigation }: Props) {
       const result = await syncPendingOrders(realSession, user);
       if (result.synced > 0) notifySynced();
       alertDeadLettered(result.deadLettered);
-    } catch {
-      // Reconciliation failed (still offline?) — will retry next time isOnline fires
+    } catch (err) {
+      logError('POSScreen:reconcileAndSync', err, 'Draft session reconciliation failed');
     } finally {
       await refreshQueueCount();
+      syncingRef.current = false;
       setSyncing(false);
     }
   }
 
   async function triggerSync() {
-    if (syncing) return;
+    if (syncingRef.current) return;
+    syncingRef.current = true;
     setSyncing(true);
     try {
       const result = await syncPendingOrders(currentSession, user);
@@ -612,6 +634,7 @@ export default function POSScreen({ route, navigation }: Props) {
       alertDeadLettered(result.deadLettered);
     } finally {
       await refreshQueueCount();
+      syncingRef.current = false;
       setSyncing(false);
     }
   }

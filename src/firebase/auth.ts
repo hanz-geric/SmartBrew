@@ -11,6 +11,8 @@ import { getDoc, setDoc } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth, firebaseConfig } from './config';
 import { userDoc } from './collections';
+import { clearSessionCache } from '../db/queries/sessionCache';
+import { logError } from '../utils/logger';
 import { AuthUser, UserRole } from '../types';
 
 const AUTH_CACHE_KEY = '@smartbrew:auth_user';
@@ -166,8 +168,16 @@ export async function switchCashierAuth(
 }
 
 export async function logout(): Promise<void> {
-  // Clear cache BEFORE signOut so the onAuthStateChanged(null) handler
-  // doesn't find a stale cache entry and re-authenticate the user.
+  // Clear session cache so stale sessions never reappear on next login.
+  // Must happen before signOut because auth.currentUser becomes null after.
+  const uid = auth.currentUser?.uid;
+  if (uid) {
+    await clearSessionCache(uid).catch((err) =>
+      logError('logout:clearSessionCache', err, `uid=${uid}`),
+    );
+  }
+  // Clear auth cache BEFORE signOut so onAuthStateChanged(null) doesn't
+  // find a stale cache entry and re-authenticate.
   await clearAuthCache();
   await signOut(auth);
 }
@@ -177,18 +187,18 @@ export function onAuthChanged(
 ): () => void {
   return onAuthStateChanged(auth, async (firebaseUser) => {
     if (!firebaseUser) {
-      // No Firebase token (in-memory cleared, app restarted, etc.).
-      // Check the profile cache — it's populated on every successful login
-      // and cleared on explicit logout, so it's safe to trust when non-null.
-      const cached = await loadAuthCache();
-      callback(cached);
+      // No Firebase Auth session — always show login screen.
+      // Do NOT fall back to profile cache here: auth.currentUser would be null,
+      // causing permission-denied on all Firestore writes even when online.
+      callback(null);
       return;
     }
     try {
       const user = await buildAuthUser(firebaseUser);
       callback(user);
     } catch {
-      // Firebase token exists but Firestore is unreachable — serve cached profile.
+      // Firebase token exists but Firestore is unreachable (offline).
+      // auth.currentUser is still valid so Firestore writes work when online.
       const cached = await loadAuthCache();
       callback(cached);
     }

@@ -8,7 +8,6 @@ import { loginWithUsername } from '../../firebase/auth';
 import { useAuthStore } from '../../store/authStore';
 import { useNetwork } from '../../context/NetworkContext';
 import { saveCredentials, verifyOfflineCredentials } from '../../db/queries/credentialsCache';
-import { loadAuthCache } from '../../firebase/auth';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '../../constants/theme';
 
 export default function LoginScreen() {
@@ -19,14 +18,8 @@ export default function LoginScreen() {
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState('');
 
-  // When offline and a cached profile exists, auto-authenticate without showing the form.
-  useEffect(() => {
-    if (!isOnline) {
-      loadAuthCache().then((cached) => {
-        if (cached) setUser(cached);
-      });
-    }
-  }, [isOnline]);
+  // No auto-login from cache here — auth.currentUser would be null without a
+  // real Firebase session, causing permission-denied on all Firestore writes.
 
   async function handleLogin() {
     if (!username.trim() || !password) {
