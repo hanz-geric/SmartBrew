@@ -725,7 +725,11 @@ export default function POSScreen({ route, navigation }: Props) {
       </View>
 
       {/* ── Right Panel (Cart) ── */}
-      <View style={s.right}>
+      <KeyboardAvoidingView
+        style={s.right}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
+      >
         {/* Cart header */}
         <View style={s.cartHeader}>
           <Text style={s.cartTitle}>
@@ -901,7 +905,7 @@ export default function POSScreen({ route, navigation }: Props) {
             </Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </KeyboardAvoidingView>
 
       {/* Modifier Modal */}
       {modProduct && (
