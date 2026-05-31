@@ -199,4 +199,5 @@ export interface CheckoutPayload {
   discount_amount?:    number;
   discount_auth_nonce?: string;
   cart_snapshot:       CartItem[];
+  order_number?:       string; // pre-assigned offline; reused on sync so receipt matches Firestore
 }

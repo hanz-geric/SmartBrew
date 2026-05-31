@@ -4,7 +4,9 @@ import {
 } from '../db/queries/queue';
 import { saveFailedOrder } from '../db/queries/failedOrders';
 import { createOrder, openSession } from '../firebase/firestoreService';
-import { saveSessionCache } from '../db/queries/sessionCache';
+import { updateDoc, increment } from 'firebase/firestore';
+import { sessionDoc } from '../firebase/collections';
+import { saveSessionCache, loadPendingClose, clearPendingClose } from '../db/queries/sessionCache';
 import { auth } from '../firebase/config';
 import { AuthUser, CashSession } from '../types';
 import { logError } from '../utils/logger';
@@ -61,6 +63,8 @@ export async function syncPendingOrders(
     }
   }
 
+  let syncedCashTotal = 0;
+
   try {
     for (const item of pending) {
       if (item.retry_count >= MAX_RETRIES) {
@@ -79,11 +83,33 @@ export async function syncPendingOrders(
         await createOrder(item.payload, effectiveSession, user, item.local_id);
         await removePendingOrder(item.local_id);
         synced++;
+
+        // Track cash collected from offline orders so we can update the real
+        // Firestore session after the loop (createOrder skips cash updates
+        // for draft UUID session IDs to avoid "No document to update" errors).
+        if (item.payload.payment_method === 'cash') {
+          const subtotal = item.payload.cart_snapshot.reduce(
+            (s, i) => s + i.unit_price * i.quantity, 0,
+          );
+          syncedCashTotal += Math.max(0, subtotal - (item.payload.discount_amount ?? 0));
+        }
       } catch (err) {
         await logError('syncService:syncPendingOrders', err, `Failed to sync order ${item.local_id}`);
         await incrementRetry(item.local_id);
         failed++;
       }
+    }
+
+    // Consolidated cash_collected update on the real Firestore session.
+    // Only runs when activeSession is a real document (no hyphens in ID).
+    if (syncedCashTotal > 0 && !activeSession.id.includes('-')) {
+      await updateDoc(sessionDoc(activeSession.id), {
+        cash_collected: increment(syncedCashTotal),
+        expected_cash:  increment(syncedCashTotal),
+      }).catch((err) =>
+        logError('syncService:sessionCash', err,
+          `Failed to update cash_collected on session ${activeSession.id}`),
+      );
     }
   } finally {
     syncInProgress = false;
@@ -104,6 +130,25 @@ export async function reconcileDraftSession(
   // but do it explicitly here to ensure it completes before we return.
   await saveSessionCache(real, user.uid, false);
   return real;
+}
+
+// Applies a session close that was saved offline. No-op if none is queued.
+export async function syncPendingClose(): Promise<void> {
+  const pending = await loadPendingClose();
+  if (!pending) return;
+  try {
+    await updateDoc(sessionDoc(pending.sessionId), {
+      end_time:      pending.closedAt,
+      actual_cash:   pending.actualCash,
+      expected_cash: pending.expectedCash,
+      difference:    pending.actualCash - pending.expectedCash,
+      status:        'closed',
+    });
+    await clearPendingClose();
+  } catch (err) {
+    logError('syncService:syncPendingClose', err,
+      `Failed to sync offline-close for session ${pending.sessionId}`);
+  }
 }
 
 export async function syncSingleOrder(

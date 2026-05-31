@@ -12,12 +12,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth, firebaseConfig } from './config';
 import { userDoc } from './collections';
 import { clearSessionCache } from '../db/queries/sessionCache';
+import { saveCredentials, verifyOfflineCredentials } from '../db/queries/credentialsCache';
 import { logError } from '../utils/logger';
 import { AuthUser, UserRole } from '../types';
 
 const AUTH_CACHE_KEY = '@smartbrew:auth_user';
 
-async function saveAuthCache(user: AuthUser): Promise<void> {
+export async function saveAuthCache(user: AuthUser): Promise<void> {
   await AsyncStorage.setItem(AUTH_CACHE_KEY, JSON.stringify(user));
 }
 
@@ -121,7 +122,17 @@ export async function createUserAccount(
 export async function verifyManagerAuth(
   username: string,
   password: string,
+  isOnline = true,
 ): Promise<string> {
+  if (!isOnline) {
+    const cached = await verifyOfflineCredentials(username, password);
+    if (!cached) throw new Error('Incorrect username or password.');
+    if (cached.role !== 'admin' && cached.role !== 'manager') {
+      throw new Error('Only an admin or manager can authorise discounts.');
+    }
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  }
+
   const email     = usernameToEmail(username);
   const secondary = initializeApp(firebaseConfig, `verify_${Date.now()}`);
   const secAuth   = getAuth(secondary);
@@ -134,6 +145,13 @@ export async function verifyManagerAuth(
     if (data.role !== 'admin' && data.role !== 'manager') {
       throw new Error('Only an admin or manager can authorise discounts.');
     }
+    const user: AuthUser = {
+      uid:       credential.user.uid,
+      role:      data.role,
+      full_name: data.full_name ?? '',
+      username:  data.username ?? username,
+    };
+    saveCredentials(username, password, user).catch(() => {});
     return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
   } finally {
     await deleteApp(secondary);
@@ -146,7 +164,14 @@ export async function verifyManagerAuth(
 export async function switchCashierAuth(
   username: string,
   password: string,
+  isOnline = true,
 ): Promise<AuthUser> {
+  if (!isOnline) {
+    const cached = await verifyOfflineCredentials(username, password);
+    if (!cached) throw new Error('Incorrect username or password.');
+    return cached;
+  }
+
   const email     = usernameToEmail(username);
   const secondary = initializeApp(firebaseConfig, `switch_${Date.now()}`);
   const secAuth   = getAuth(secondary);
@@ -156,12 +181,14 @@ export async function switchCashierAuth(
     if (!snap.exists()) throw new Error('User not found.');
     const data = snap.data();
     if (!data.is_active) throw new Error('This account has been disabled.');
-    return {
+    const user: AuthUser = {
       uid:       credential.user.uid,
       role:      data.role,
       full_name: data.full_name ?? '',
       username:  data.username ?? '',
     };
+    saveCredentials(username, password, user).catch(() => {});
+    return user;
   } finally {
     await deleteApp(secondary);
   }
@@ -187,10 +214,20 @@ export function onAuthChanged(
 ): () => void {
   return onAuthStateChanged(auth, async (firebaseUser) => {
     if (!firebaseUser) {
-      // No Firebase Auth session — always show login screen.
-      // Do NOT fall back to profile cache here: auth.currentUser would be null,
-      // causing permission-denied on all Firestore writes even when online.
-      callback(null);
+      // Firebase Auth has no valid user. Two distinct cases:
+      //
+      // 1. Genuine logout — logout() called clearAuthCache() first, so
+      //    loadAuthCache() returns null → callback(null) → login screen ✓
+      //
+      // 2. Offline with expired token — the device lost network before the
+      //    token could be refreshed. Firebase fires null here, but the user
+      //    IS still "logged in" from the business perspective. The cache
+      //    still has their profile (clearAuthCache was NOT called), so we
+      //    keep them on the cashier screen. When the network returns, Firebase
+      //    Auth silently refreshes the token and auth.currentUser gets set,
+      //    unblocking Firestore writes via getFirebaseUser().
+      const cached = await loadAuthCache();
+      callback(cached);
       return;
     }
     try {
@@ -198,7 +235,6 @@ export function onAuthChanged(
       callback(user);
     } catch {
       // Firebase token exists but Firestore is unreachable (offline).
-      // auth.currentUser is still valid so Firestore writes work when online.
       const cached = await loadAuthCache();
       callback(cached);
     }

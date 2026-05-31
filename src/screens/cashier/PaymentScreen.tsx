@@ -1,3 +1,5 @@
+import 'react-native-get-random-values';
+import { v4 as uuid } from 'uuid';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator, FlatList, KeyboardAvoidingView, Platform,
@@ -68,7 +70,7 @@ function buildOfflineOrder(
   }));
   return {
     id:              localId,
-    order_number:    `OFFLINE-${localId.slice(-6).toUpperCase()}`,
+    order_number:    payload.order_number ?? `OFFLINE-${localId.slice(-6).toUpperCase()}`,
     user_id:         user.uid,
     cashier_name:    user.full_name || user.username,
     subtotal,
@@ -169,9 +171,15 @@ export default function PaymentScreen({ route, navigation }: Props) {
 
     // Shared helper — save to local queue + optimistic stock deduction
     async function saveOffline(): Promise<Order> {
-      const localId = await enqueueOrder(payload);
+      const localId = uuid();
+      const now = new Date();
+      const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+      const seq     = String(now.getTime()).slice(-5);
+      const orderNumber = `${dateStr}-${seq}-${localId.slice(0, 4).toUpperCase()}`;
+      const payloadWithNumber: CheckoutPayload = { ...payload, order_number: orderNumber };
+      await enqueueOrder(payloadWithNumber, localId);
       deductStock(buildStockDeductions(cartItems)).catch(() => {});
-      return buildOfflineOrder(localId, payload, session, user);
+      return buildOfflineOrder(localId, payloadWithNumber, session, user);
     }
 
     if (!isOnline) {

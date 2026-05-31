@@ -39,3 +39,20 @@ export async function verifyOfflineCredentials(
 export async function clearCredentials(username: string): Promise<void> {
   await SecureStore.deleteItemAsync(credsKey(username));
 }
+
+// Returns the stored Firebase email + password for a username, used for
+// automatic re-authentication when the ID token expires while offline.
+export async function getStoredReauthCredentials(
+  username: string,
+): Promise<{ email: string; password: string } | null> {
+  try {
+    const raw = await SecureStore.getItemAsync(credsKey(username));
+    if (!raw) return null;
+    const entry: StoredCredentials = JSON.parse(raw);
+    // Mirror the email format used by loginWithUsername in auth.ts
+    const email = `${username}@smartbrew.app`;
+    return { email, password: entry.password };
+  } catch {
+    return null;
+  }
+}

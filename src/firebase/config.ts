@@ -1,7 +1,7 @@
 import { FirebaseApp, getApps, initializeApp } from 'firebase/app';
 import {
   Auth, User as FirebaseUser, getAuth, initializeAuth,
-  onAuthStateChanged,
+  onAuthStateChanged, onIdTokenChanged,
   browserLocalPersistence, getReactNativePersistence,
 } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -44,15 +44,53 @@ export const db: Firestore = isFirstInit
 
 export const storage: FirebaseStorage = getStorage(app);
 
-// Returns the currently signed-in Firebase user, waiting for auth state to
-// restore from AsyncStorage if it hasn't done so yet. Safe to call at any time
-// including immediately after app launch before onAuthStateChanged has fired.
-export function getFirebaseUser(): Promise<FirebaseUser | null> {
+// Returns the signed-in Firebase user, waiting for Firebase Auth to restore its
+// session after an offline period with an expired token.
+//
+// The challenge: when the device was offline long enough for the ID token to
+// expire, Firebase Auth fires onAuthStateChanged(null) at startup and does NOT
+// automatically re-fire when the token is refreshed after network restoration.
+// onIdTokenChanged is also unreliable in this scenario for Firebase 12.
+//
+// Strategy: listen for onIdTokenChanged (fast path if it fires) AND poll
+// auth.currentUser every 500 ms (catches silent restores that don't fire events).
+// Timeout is 45 s — long enough to cover Firebase's full reconnect backoff
+// window (~20–25 s observed in production).
+export function getFirebaseUser(timeoutMs = 5_000): Promise<FirebaseUser | null> {
   if (auth.currentUser) return Promise.resolve(auth.currentUser);
+
   return new Promise((resolve) => {
-    const unsub = onAuthStateChanged(auth, (user) => {
-      unsub();
+    let settled = false;
+
+    const finish = (user: FirebaseUser | null) => {
+      if (settled) return;
+      settled = true;
+      eventUnsub();
+      clearInterval(pollInterval);
+      clearTimeout(timer);
       resolve(user);
+    };
+
+    const started = Date.now();
+
+    // Fast path: event fires immediately if auth state is ready
+    const eventUnsub = onIdTokenChanged(auth, (user) => {
+      if (user) {
+        console.log(`[getFirebaseUser] resolved via event after ${Date.now() - started}ms uid=${user.uid}`);
+        finish(user);
+      }
+      // null ignored — Firebase may still be refreshing the token
     });
+
+    // Fallback polling: catches silent token restores that don't fire events
+    const pollInterval = setInterval(() => {
+      if (auth.currentUser) {
+        console.log(`[getFirebaseUser] resolved via poll after ${Date.now() - started}ms uid=${auth.currentUser.uid}`);
+        finish(auth.currentUser);
+      }
+    }, 500);
+
+    // Hard ceiling — if still null after timeoutMs, give up
+    const timer = setTimeout(() => finish(auth.currentUser), timeoutMs);
   });
 }

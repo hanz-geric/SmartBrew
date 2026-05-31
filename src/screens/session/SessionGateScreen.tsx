@@ -8,6 +8,7 @@ import { CashierStackParamList } from '../../navigation/CashierStack';
 import { useAuthStore } from '../../store/authStore';
 import { getOpenSession, getSession, openSession } from '../../firebase/firestoreService';
 import { saveSessionCache, loadSessionCache, clearSessionCache, openSessionOffline } from '../../db/queries/sessionCache';
+import { syncPendingClose } from '../../services/syncService';
 import { logError } from '../../utils/logger';
 import { useNetwork } from '../../context/NetworkContext';
 import { CashSession } from '../../types';
@@ -37,7 +38,9 @@ export default function SessionGateScreen({ navigation }: Props) {
   // (or the cache was stale from a previous logout), clear it and let the
   // user open a fresh session instead of resuming a ghost one.
   useEffect(() => {
-    if (!isOnline || !fromCache || !openSess) return;
+    if (!isOnline) return;
+    syncPendingClose().catch(() => {});
+    if (!fromCache || !openSess) return;
     getSession(openSess.id)
       .then((live) => {
         if (!live || live.status !== 'open') {
@@ -61,6 +64,9 @@ export default function SessionGateScreen({ navigation }: Props) {
   }, [isOnline]);
 
   async function checkSession() {
+    // Drain any offline-closed session before querying Firestore, so a pending
+    // close isn't mistaken for an active open session.
+    if (isOnline) await syncPendingClose().catch(() => {});
     try {
       const session = await getOpenSession(user.uid);
       if (session) {

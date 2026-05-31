@@ -4,7 +4,9 @@ import {
   getAggregateFromServer, getCountFromServer, sum, count,
   writeBatch, doc,
 } from 'firebase/firestore';
-import { db, auth, getFirebaseUser } from './config';
+import { FirebaseError } from 'firebase/app';
+import { db, auth } from './config';
+import { ensureAuthenticated } from './authRestore';
 import {
   usersCol, sessionsCol, productsCol, categoriesCol, ordersCol, modGroupsCol, stockCol,
   userDoc, sessionDoc, orderDoc, settingsDoc, productDoc, categoryDoc, modGroupDoc, stockDoc,
@@ -63,7 +65,7 @@ export async function openSession(
   startingCash: number,
   startTime?:   string,
 ): Promise<CashSession> {
-  const fbUser = await getFirebaseUser();
+  const fbUser = await ensureAuthenticated();
   if (fbUser) {
     try {
       await fbUser.getIdToken(true);
@@ -101,7 +103,7 @@ export async function closeSession(
   expectedCash: number,
   userId:       string,
 ): Promise<void> {
-  const fbUser = await getFirebaseUser();
+  const fbUser = await ensureAuthenticated();
   if (fbUser) {
     try {
       await fbUser.getIdToken(true);
@@ -139,7 +141,8 @@ export async function createOrder(
   // Use the caller-supplied ID (offline sync) so a double-sync overwrites the
   // same Firestore document instead of creating a duplicate order.
   const newRef     = idempotencyId ? doc(ordersCol(), idempotencyId) : doc(ordersCol());
-  const orderNumber = `${dateStr}-${seq}-${newRef.id.slice(0, 4).toUpperCase()}`;
+  const orderNumber = payload.order_number
+    ?? `${dateStr}-${seq}-${newRef.id.slice(0, 4).toUpperCase()}`;
 
   const subtotal       = payload.cart_snapshot.reduce(
     (s, item) => s + item.unit_price * item.quantity, 0,
@@ -192,7 +195,7 @@ export async function createOrder(
 
   // Wait for Firebase Auth to restore its persisted session, then force-refresh
   // the ID token to prevent stale-token permission rejections.
-  const fbUser = await getFirebaseUser();
+  const fbUser = await ensureAuthenticated();
   if (fbUser) {
     try {
       await fbUser.getIdToken(true);
@@ -253,7 +256,10 @@ export async function createOrder(
   }
 
   // ── 3. Update session cash collected (non-fatal) ─────────────────────────
-  if (payload.payment_method === 'cash') {
+  // Skip if session.id is a draft UUID (contains hyphens) — the document
+  // doesn't exist in Firestore. syncPendingOrders handles the consolidated
+  // cash update for offline orders after reconciliation.
+  if (payload.payment_method === 'cash' && !session.id.includes('-')) {
     await updateDoc(sessionDoc(session.id), {
       cash_collected: increment(totalAmount),
       expected_cash:  increment(totalAmount),
@@ -378,88 +384,116 @@ export async function saveSettings(settings: Settings): Promise<void> {
 
 // ─── Products & Categories (POS — active only) ────────────────────────────────
 
-export async function getProducts(): Promise<Product[]> {
-  // Firestore's long-polling connection can take up to ~20s to establish after
-  // app launch. Retry with increasing delays to cover the full backoff window.
-  const RETRY_DELAYS = [0, 3_000, 8_000, 15_000]; // ms before each attempt
-  for (let attempt = 0; attempt < RETRY_DELAYS.length; attempt++) {
-    if (RETRY_DELAYS[attempt] > 0) {
-      await new Promise<void>((r) => setTimeout(r, RETRY_DELAYS[attempt]));
-    }
-    try {
-      const [prodSnap, stockSnap] = await Promise.all([
-        getDocs(query(productsCol(), where('is_active', '==', true))),
-        getDocs(stockCol()),
-      ]);
+// Fetches products from Firestore and writes them to the local cache (awaited).
+// Returns the fresh product list, or throws on failure.
+async function fetchAndCacheProducts(): Promise<Product[]> {
+  // Re-establish Firebase auth if needed (e.g. after offline login or token expiry).
+  // Without this, Firestore rejects the query with permission-denied.
+  await ensureAuthenticated();
 
-      const stockMap = new Map<string, { qty: number; reorder: number }>();
-      const stockItems: StockItem[] = [];
-      for (const d of stockSnap.docs) {
-        const data    = d.data() as DocumentData;
-        const qty     = (data.quantity_on_hand as number) ?? 0;
-        const reorder = (data.reorder_level    as number) ?? 0;
-        stockMap.set(d.id, { qty, reorder });
-        stockItems.push({
-          id:               d.id,
-          name:             (data.name          as string) ?? '',
-          unit:             (data.unit          as string) ?? '',
-          quantity_on_hand: qty,
-          reorder_level:    reorder,
-          cost_per_unit:    (data.cost_per_unit as number) ?? 0,
-          is_active:        data.is_active !== false,
-          stock_status:     qty <= 0 ? 'out' : reorder > 0 && qty <= reorder ? 'low' : 'ok',
-        });
-      }
+  const [prodSnap, stockSnap] = await Promise.all([
+    getDocs(query(productsCol(), where('is_active', '==', true))),
+    getDocs(stockCol()),
+  ]);
 
-      const products = prodSnap.docs.map((d) => {
-        const data         = d.data() as DocumentData;
-        const trackingMode = data.tracking_mode as Product['tracking_mode'];
-        const stockItemId  = data.stock_item_id as string | null;
-
-        let stock_status: Product['stock_status'] = 'ok';
-        if (trackingMode === 'direct' && stockItemId) {
-          const si = stockMap.get(stockItemId);
-          if (si) {
-            stock_status = si.qty <= 0 ? 'out'
-              : (si.reorder > 0 && si.qty <= si.reorder) ? 'low'
-              : 'ok';
-          }
-        }
-
-        return {
-          id:              d.id,
-          ...(data        as Omit<Product, 'id'>),
-          stock_status,
-          modifier_groups: (data.modifier_groups as Product['modifier_groups']) ?? [],
-          recipe_lines:    (data.recipe_lines    as Product['recipe_lines'])   ?? [],
-        };
-      });
-
-      writeProductsCache(products).catch(() => {});
-      replaceStockCache(stockItems).catch(() => {});
-      return products;
-    } catch (err) {
-      const isLastAttempt = attempt === RETRY_DELAYS.length - 1;
-      logError('getProducts:fetch', err,
-        `Firestore fetch failed (attempt ${attempt + 1}/${RETRY_DELAYS.length})${isLastAttempt ? ' — falling back to cache' : ''}`);
-    }
+  const stockMap = new Map<string, { qty: number; reorder: number }>();
+  const stockItems: StockItem[] = [];
+  for (const d of stockSnap.docs) {
+    const data    = d.data() as DocumentData;
+    const qty     = (data.quantity_on_hand as number) ?? 0;
+    const reorder = (data.reorder_level    as number) ?? 0;
+    stockMap.set(d.id, { qty, reorder });
+    stockItems.push({
+      id:               d.id,
+      name:             (data.name          as string) ?? '',
+      unit:             (data.unit          as string) ?? '',
+      quantity_on_hand: qty,
+      reorder_level:    reorder,
+      cost_per_unit:    (data.cost_per_unit as number) ?? 0,
+      is_active:        data.is_active !== false,
+      stock_status:     qty <= 0 ? 'out' : reorder > 0 && qty <= reorder ? 'low' : 'ok',
+    });
   }
-  // All attempts failed — serve from local SQLite cache
-  return getCachedProducts();
+
+  const products = prodSnap.docs.map((d) => {
+    const data         = d.data() as DocumentData;
+    const trackingMode = data.tracking_mode as Product['tracking_mode'];
+    const stockItemId  = data.stock_item_id as string | null;
+
+    let stock_status: Product['stock_status'] = 'ok';
+    if (trackingMode === 'direct' && stockItemId) {
+      const si = stockMap.get(stockItemId);
+      if (si) {
+        stock_status = si.qty <= 0 ? 'out'
+          : (si.reorder > 0 && si.qty <= si.reorder) ? 'low'
+          : 'ok';
+      }
+    }
+
+    return {
+      id:              d.id,
+      ...(data        as Omit<Product, 'id'>),
+      stock_status,
+      modifier_groups: (data.modifier_groups as Product['modifier_groups']) ?? [],
+      recipe_lines:    (data.recipe_lines    as Product['recipe_lines'])   ?? [],
+    };
+  });
+
+  // Await the write so it is guaranteed to complete before we return.
+  await writeProductsCache(products);
+  replaceStockCache(stockItems).catch(() => {});
+  return products;
+}
+
+// Stale-while-revalidate: serve from cache immediately if available,
+// refresh from Firestore in the background. Falls back to cache-only when offline.
+export async function getProducts(): Promise<Product[]> {
+  const cached = await getCachedProducts();
+
+  if (cached.length > 0) {
+    // Return cached data immediately, refresh in background when online.
+    fetchAndCacheProducts().catch(() => {});
+    return cached;
+  }
+
+  // No cache yet — must fetch live (first online launch).
+  try {
+    return await fetchAndCacheProducts();
+  } catch (err) {
+    logError('getProducts:fetch', err, 'Firestore fetch failed, cache is empty');
+    return [];
+  }
 }
 
 export async function getCategories(): Promise<Category[]> {
+  const cached = await getCachedCategories();
+
+  if (cached.length > 0) {
+    // Return cached data immediately, refresh in background.
+    (async () => {
+      try {
+        const q    = query(categoriesCol(), where('is_active', '==', true));
+        const snap = await getDocs(q);
+        const fresh = snap.docs
+          .map((d) => ({ id: d.id, ...(d.data() as Omit<Category, 'id'>) }))
+          .sort((a, b) => a.sort_order - b.sort_order);
+        await writeCategoriesCache(fresh);
+      } catch { /* stay on cached */ }
+    })();
+    return cached;
+  }
+
+  // No cache — fetch live.
   try {
     const q    = query(categoriesCol(), where('is_active', '==', true));
     const snap = await getDocs(q);
     const categories = snap.docs
       .map((d) => ({ id: d.id, ...(d.data() as Omit<Category, 'id'>) }))
       .sort((a, b) => a.sort_order - b.sort_order);
-
-    writeCategoriesCache(categories).catch(() => {});
+    await writeCategoriesCache(categories);
     return categories;
   } catch {
-    return getCachedCategories();
+    return [];
   }
 }
 

@@ -3,9 +3,9 @@ import { v4 as uuid } from 'uuid';
 import { getDb } from '../schema';
 import { PendingOrder, CheckoutPayload } from '../../types';
 
-export async function enqueueOrder(payload: CheckoutPayload): Promise<string> {
+export async function enqueueOrder(payload: CheckoutPayload, localIdOverride?: string): Promise<string> {
   const db = await getDb();
-  const local_id = uuid();
+  const local_id = localIdOverride ?? uuid();
   const now = new Date().toISOString();
   await db.runAsync(
     'INSERT INTO pending_orders (local_id, payload, created_at, retry_count) VALUES (?, ?, ?, 0)',

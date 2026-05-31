@@ -11,6 +11,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useCartStore } from '../../store/cartStore';
 import { getPendingOrders } from '../../db/queries/queue';
 import { reconcileDraftSession } from '../../services/syncService';
+import { clearSessionCache, savePendingClose } from '../../db/queries/sessionCache';
 import { useNetwork } from '../../context/NetworkContext';
 import { logError } from '../../utils/logger';
 import { CheckoutPayload, CashSession } from '../../types';
@@ -48,6 +49,7 @@ export default function CloseSessionScreen({ route, navigation }: Props) {
   const [actualCash,        setActualCash]        = useState('');
   const [closing,           setClosing]           = useState(false);
   const [closed,            setClosed]            = useState(false);
+  const [closedOffline,     setClosedOffline]     = useState(false);
   const [loggingOut,        setLoggingOut]        = useState(false);
   const [error,             setError]             = useState('');
   const [offlineCashCount,  setOfflineCashCount]  = useState(0);
@@ -123,6 +125,19 @@ export default function CloseSessionScreen({ route, navigation }: Props) {
     setClosing(true);
     setError('');
     try {
+      if (!isOnline) {
+        await savePendingClose({
+          sessionId:    session.id,
+          actualCash:   actualNum,
+          expectedCash: fullExpected,
+          userId:       user.uid,
+          closedAt:     new Date().toISOString(),
+        });
+        clearSessionCache(user.uid).catch(() => {});
+        setClosedOffline(true);
+        setClosed(true);
+        return;
+      }
       // Pass fullExpected so the recorded difference reflects all cash including offline.
       // When offline orders eventually sync, they increment expected_cash further —
       // acceptable trade-off vs. showing a wrong variance at close time.
@@ -302,6 +317,11 @@ export default function CloseSessionScreen({ route, navigation }: Props) {
           <>
             <View style={s.header}>
               <Text style={s.headerTitle}>Shift Closed</Text>
+              {closedOffline && (
+                <Text style={s.offlineSyncNote}>
+                  Saved offline — will sync when reconnected.
+                </Text>
+              )}
             </View>
 
             <View style={s.card}>
@@ -427,6 +447,10 @@ const s = StyleSheet.create({
   forceCloseLink:    { paddingVertical: Spacing.sm },
   forceCloseLinkText:{ fontSize: FontSize.sm, color: Colors.danger, fontWeight: FontWeight.medium },
 
+  offlineSyncNote: {
+    fontSize: FontSize.sm, color: Colors.warning,
+    marginTop: Spacing.xs, textAlign: 'center',
+  },
   offlineNote: {
     backgroundColor: Colors.infoBg ?? Colors.gray50,
     borderRadius: Radius.sm, padding: Spacing.sm,

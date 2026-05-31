@@ -42,6 +42,35 @@ export async function clearSessionCache(userId: string): Promise<void> {
   await AsyncStorage.removeItem(key(userId));
 }
 
+// ─── Pending close (offline session close queued for sync) ───────────────────
+
+const PENDING_CLOSE_KEY = '@smartbrew:pending_session_close';
+
+export interface PendingClose {
+  sessionId:    string;
+  actualCash:   number;
+  expectedCash: number;
+  userId:       string;
+  closedAt:     string;
+}
+
+export async function savePendingClose(data: PendingClose): Promise<void> {
+  await AsyncStorage.setItem(PENDING_CLOSE_KEY, JSON.stringify(data));
+}
+
+export async function loadPendingClose(): Promise<PendingClose | null> {
+  try {
+    const raw = await AsyncStorage.getItem(PENDING_CLOSE_KEY);
+    return raw ? (JSON.parse(raw) as PendingClose) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function clearPendingClose(): Promise<void> {
+  await AsyncStorage.removeItem(PENDING_CLOSE_KEY);
+}
+
 // Creates a local draft session (never written to Firestore until reconciled)
 export async function openSessionOffline(
   userId:       string,

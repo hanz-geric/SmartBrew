@@ -4,10 +4,11 @@ import {
   StyleSheet, KeyboardAvoidingView, Platform,
   ActivityIndicator, ScrollView,
 } from 'react-native';
-import { loginWithUsername } from '../../firebase/auth';
+import { loginWithUsername, saveAuthCache } from '../../firebase/auth';
 import { useAuthStore } from '../../store/authStore';
 import { useNetwork } from '../../context/NetworkContext';
 import { saveCredentials, verifyOfflineCredentials } from '../../db/queries/credentialsCache';
+import { getProducts, getCategories } from '../../firebase/firestoreService';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '../../constants/theme';
 
 export default function LoginScreen() {
@@ -35,6 +36,7 @@ export default function LoginScreen() {
       try {
         const user = await verifyOfflineCredentials(username.trim().toLowerCase(), password);
         if (user) {
+          saveAuthCache(user).catch(() => {});
           setUser(user);
         } else {
           setError('Incorrect credentials, or this account has not been used on this device while online.');
@@ -52,6 +54,9 @@ export default function LoginScreen() {
       const user = await loginWithUsername(username.trim(), password);
       // Save credentials to device for future offline logins
       saveCredentials(username.trim().toLowerCase(), password, user).catch(() => {});
+      // Pre-cache the product catalog so the POS works on the next offline launch
+      getProducts().catch(() => {});
+      getCategories().catch(() => {});
       setUser(user);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Login failed.');

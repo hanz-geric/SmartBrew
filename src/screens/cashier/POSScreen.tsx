@@ -13,7 +13,7 @@ import { useCartStore } from '../../store/cartStore';
 import { getProducts, getCategories } from '../../firebase/firestoreService';
 import { logout, switchCashierAuth, verifyManagerAuth } from '../../firebase/auth';
 import { pendingCount } from '../../db/queries/queue';
-import { syncPendingOrders, reconcileDraftSession } from '../../services/syncService';
+import { syncPendingOrders, reconcileDraftSession, syncPendingClose } from '../../services/syncService';
 import { useSyncEvents } from '../../context/SyncContext';
 import { useNetwork } from '../../context/NetworkContext';
 import { logError } from '../../utils/logger';
@@ -207,21 +207,36 @@ function ModifierModal({ product, onClose, onAdd }: ModModalProps) {
   );
 }
 
-// ─── Discount Auth Modal ──────────────────────────────────────────────────────
+// ─── Discount Auth Panel (inline, left panel) ────────────────────────────────
 
-interface DiscountAuthProps {
-  onClose:   () => void;
-  onSuccess: (nonce: string) => void;
+interface DiscountAuthPanelProps {
+  onClose:              () => void;
+  onSuccess:            (nonce: string, type: 'percent' | 'amount', input: string) => void;
+  isOnline:             boolean;
+  initialDiscountType:  'percent' | 'amount';
+  initialDiscountInput: string;
+  cartSubtotal:         number;
 }
 
 const MAX_AUTH_ATTEMPTS = 3;
 
-function DiscountAuthModal({ onClose, onSuccess }: DiscountAuthProps) {
-  const [username,   setUsername]   = useState('');
-  const [password,   setPassword]   = useState('');
-  const [verifying,  setVerifying]  = useState(false);
-  const [authError,  setAuthError]  = useState('');
-  const [attempts,   setAttempts]   = useState(0);
+function DiscountAuthPanel({
+  onClose, onSuccess, isOnline,
+  initialDiscountType, initialDiscountInput, cartSubtotal,
+}: DiscountAuthPanelProps) {
+  const [username,     setUsername]     = useState('');
+  const [password,     setPassword]     = useState('');
+  const [verifying,    setVerifying]    = useState(false);
+  const [authError,    setAuthError]    = useState('');
+  const [attempts,     setAttempts]     = useState(0);
+  const [discountType, setDiscountType] = useState<'percent' | 'amount'>(initialDiscountType);
+  const [discountAmt,  setDiscountAmt]  = useState(initialDiscountInput);
+
+  const attemptsLeft  = MAX_AUTH_ATTEMPTS - attempts;
+  const rawNum        = parseFloat(discountAmt) || 0;
+  const discountPesos = discountType === 'percent'
+    ? Math.min((rawNum / 100) * cartSubtotal, cartSubtotal)
+    : Math.min(rawNum, cartSubtotal);
 
   async function handleVerify() {
     setAuthError('');
@@ -231,8 +246,8 @@ function DiscountAuthModal({ onClose, onSuccess }: DiscountAuthProps) {
     }
     setVerifying(true);
     try {
-      const nonce = await verifyManagerAuth(username.trim(), password);
-      onSuccess(nonce);
+      const nonce = await verifyManagerAuth(username.trim(), password, isOnline);
+      onSuccess(nonce, discountType, discountAmt);
     } catch (e: unknown) {
       const next = attempts + 1;
       setAttempts(next);
@@ -247,90 +262,128 @@ function DiscountAuthModal({ onClose, onSuccess }: DiscountAuthProps) {
     }
   }
 
-  const attemptsLeft = MAX_AUTH_ATTEMPTS - attempts;
-
   return (
-    <Modal transparent animationType="fade" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={da.overlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        <View style={da.sheet}>
-          <View style={da.header}>
-            <Text style={da.title}>Manager Authorisation</Text>
-            <Text style={da.subtitle}>A manager or admin must approve this discount.</Text>
-            <TouchableOpacity onPress={onClose} style={da.closeBtn} hitSlop={12}>
-              <Text style={da.closeX}>✕</Text>
-            </TouchableOpacity>
-          </View>
+    <ScrollView
+      style={ap.container}
+      contentContainerStyle={ap.content}
+      keyboardShouldPersistTaps="handled"
+      bounces={false}
+    >
+      <View style={ap.titleRow}>
+        <Text style={ap.title}>Manager Authorisation</Text>
+        <TouchableOpacity onPress={onClose} hitSlop={12}>
+          <Text style={ap.closeX}>✕</Text>
+        </TouchableOpacity>
+      </View>
 
-          <ScrollView keyboardShouldPersistTaps="handled" bounces={false}>
-            <View style={da.body}>
-              <Text style={da.fieldLabel}>Username</Text>
-              <TextInput
-                style={da.input}
-                value={username}
-                onChangeText={setUsername}
-                placeholder="manager username"
-                placeholderTextColor={Colors.gray400}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              <Text style={da.fieldLabel}>Password</Text>
-              <TextInput
-                style={da.input}
-                value={password}
-                onChangeText={setPassword}
-                placeholder="••••••••"
-                placeholderTextColor={Colors.gray400}
-                secureTextEntry
-              />
-              {!!authError && (
-                <View style={da.errorContainer}>
-                  <Text style={da.error}>{authError}</Text>
-                </View>
-              )}
-              {attempts > 0 && attemptsLeft > 0 && (
-                <Text style={da.attemptsLeft}>{attemptsLeft} attempt{attemptsLeft !== 1 ? 's' : ''} remaining</Text>
-              )}
-            </View>
-          </ScrollView>
+      <Text style={ap.subtitle}>A manager or admin must approve this discount.</Text>
 
-          <View style={da.footer}>
-            <TouchableOpacity style={da.cancelBtn} onPress={onClose} activeOpacity={0.7}>
-              <Text style={da.cancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[da.verifyBtn, verifying && da.verifyBtnOff]}
-              onPress={handleVerify}
-              disabled={verifying}
-              activeOpacity={0.8}
-            >
-              {verifying
-                ? <ActivityIndicator color={Colors.white} size="small" />
-                : <Text style={da.verifyText}>Approve Discount</Text>
-              }
-            </TouchableOpacity>
-          </View>
+      <Text style={ap.fieldLabel}>Discount Amount</Text>
+      <View style={ap.discountTypeRow}>
+        <TouchableOpacity
+          style={[ap.discountTypeBtn, discountType === 'percent' && ap.discountTypeBtnSel]}
+          onPress={() => setDiscountType('percent')}
+          activeOpacity={0.7}
+        >
+          <Text style={[ap.discountTypeBtnText, discountType === 'percent' && ap.discountTypeBtnTextSel]}>%</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[ap.discountTypeBtn, discountType === 'amount' && ap.discountTypeBtnSel]}
+          onPress={() => setDiscountType('amount')}
+          activeOpacity={0.7}
+        >
+          <Text style={[ap.discountTypeBtnText, discountType === 'amount' && ap.discountTypeBtnTextSel]}>₱</Text>
+        </TouchableOpacity>
+      </View>
+      <View style={ap.discountInputRow}>
+        <Text style={ap.discountInputPrefix}>−</Text>
+        <TextInput
+          style={ap.discountInputField}
+          value={discountAmt}
+          onChangeText={(t) => {
+            if (t === '' || /^\d*\.?\d*$/.test(t)) {
+              if (discountType === 'percent' && parseFloat(t) > 100) return;
+              setDiscountAmt(t);
+            }
+          }}
+          placeholder="0"
+          placeholderTextColor={Colors.gray400}
+          keyboardType="decimal-pad"
+        />
+        <Text style={ap.discountInputSuffix}>{discountType === 'percent' ? '%' : '₱'}</Text>
+      </View>
+      {rawNum > 0 && (
+        <Text style={ap.discountPreview}>= −₱{discountPesos.toFixed(2)} off</Text>
+      )}
+
+      <Text style={ap.fieldLabel}>Username</Text>
+      <TextInput
+        style={ap.input}
+        value={username}
+        onChangeText={setUsername}
+        placeholder="manager username"
+        placeholderTextColor={Colors.gray400}
+        autoCapitalize="none"
+        autoCorrect={false}
+      />
+
+      <Text style={ap.fieldLabel}>Password</Text>
+      <TextInput
+        style={ap.input}
+        value={password}
+        onChangeText={setPassword}
+        placeholder="••••••••"
+        placeholderTextColor={Colors.gray400}
+        secureTextEntry
+      />
+
+      {!!authError && (
+        <View style={ap.errorContainer}>
+          <Text style={ap.error}>{authError}</Text>
         </View>
-      </KeyboardAvoidingView>
-    </Modal>
+      )}
+      {attempts > 0 && attemptsLeft > 0 && (
+        <Text style={ap.attemptsLeft}>
+          {attemptsLeft} attempt{attemptsLeft !== 1 ? 's' : ''} remaining
+        </Text>
+      )}
+
+      <View style={ap.actions}>
+        <TouchableOpacity style={ap.cancelBtn} onPress={onClose} activeOpacity={0.7}>
+          <Text style={ap.cancelText}>Cancel</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[ap.verifyBtn, verifying && ap.verifyBtnOff]}
+          onPress={handleVerify}
+          disabled={verifying}
+          activeOpacity={0.8}
+        >
+          {verifying
+            ? <ActivityIndicator color={Colors.white} size="small" />
+            : <Text style={ap.verifyText}>Approve Discount</Text>
+          }
+        </TouchableOpacity>
+      </View>
+    </ScrollView>
   );
 }
 
-// ─── Cashier Switch Modal ─────────────────────────────────────────────────────
+// ─── Cashier Switch Panel (inline, left panel) ───────────────────────────────
 
-interface CashierSwitchProps {
+interface CashierSwitchPanelProps {
   onClose:   () => void;
   onSuccess: (user: import('../../types').AuthUser) => void;
+  isOnline:  boolean;
 }
 
-function CashierSwitchModal({ onClose, onSuccess }: CashierSwitchProps) {
+function CashierSwitchPanel({ onClose, onSuccess, isOnline }: CashierSwitchPanelProps) {
   const [username,  setUsername]  = useState('');
   const [password,  setPassword]  = useState('');
   const [verifying, setVerifying] = useState(false);
   const [authError, setAuthError] = useState('');
   const [attempts,  setAttempts]  = useState(0);
+
+  const attemptsLeft = MAX_AUTH_ATTEMPTS - attempts;
 
   async function handleSwitch() {
     setAuthError('');
@@ -340,7 +393,7 @@ function CashierSwitchModal({ onClose, onSuccess }: CashierSwitchProps) {
     }
     setVerifying(true);
     try {
-      const newUser = await switchCashierAuth(username.trim(), password);
+      const newUser = await switchCashierAuth(username.trim(), password, isOnline);
       onSuccess(newUser);
     } catch (e: unknown) {
       const next = attempts + 1;
@@ -356,74 +409,71 @@ function CashierSwitchModal({ onClose, onSuccess }: CashierSwitchProps) {
     }
   }
 
-  const attemptsLeft = MAX_AUTH_ATTEMPTS - attempts;
-
   return (
-    <Modal transparent animationType="fade" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={da.overlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        <View style={da.sheet}>
-          <View style={da.header}>
-            <Text style={da.title}>Switch Cashier</Text>
-            <Text style={da.subtitle}>Enter the credentials of the next cashier.</Text>
-            <TouchableOpacity onPress={onClose} style={da.closeBtn} hitSlop={12}>
-              <Text style={da.closeX}>✕</Text>
-            </TouchableOpacity>
-          </View>
+    <ScrollView
+      style={ap.container}
+      contentContainerStyle={ap.content}
+      keyboardShouldPersistTaps="handled"
+      bounces={false}
+    >
+      <View style={ap.titleRow}>
+        <Text style={ap.title}>Switch Cashier</Text>
+        <TouchableOpacity onPress={onClose} hitSlop={12}>
+          <Text style={ap.closeX}>✕</Text>
+        </TouchableOpacity>
+      </View>
 
-          <ScrollView keyboardShouldPersistTaps="handled" bounces={false}>
-            <View style={da.body}>
-              <Text style={da.fieldLabel}>Username</Text>
-              <TextInput
-                style={da.input}
-                value={username}
-                onChangeText={setUsername}
-                placeholder="cashier username"
-                placeholderTextColor={Colors.gray400}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              <Text style={da.fieldLabel}>Password</Text>
-              <TextInput
-                style={da.input}
-                value={password}
-                onChangeText={setPassword}
-                placeholder="••••••••"
-                placeholderTextColor={Colors.gray400}
-                secureTextEntry
-              />
-              {!!authError && (
-                <View style={da.errorContainer}>
-                  <Text style={da.error}>{authError}</Text>
-                </View>
-              )}
-              {attempts > 0 && attemptsLeft > 0 && (
-                <Text style={da.attemptsLeft}>{attemptsLeft} attempt{attemptsLeft !== 1 ? 's' : ''} remaining</Text>
-              )}
-            </View>
-          </ScrollView>
+      <Text style={ap.subtitle}>Enter the credentials of the next cashier.</Text>
 
-          <View style={da.footer}>
-            <TouchableOpacity style={da.cancelBtn} onPress={onClose} activeOpacity={0.7}>
-              <Text style={da.cancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[da.verifyBtn, verifying && da.verifyBtnOff]}
-              onPress={handleSwitch}
-              disabled={verifying}
-              activeOpacity={0.8}
-            >
-              {verifying
-                ? <ActivityIndicator color={Colors.white} size="small" />
-                : <Text style={da.verifyText}>Switch Cashier</Text>
-              }
-            </TouchableOpacity>
-          </View>
+      <Text style={ap.fieldLabel}>Username</Text>
+      <TextInput
+        style={ap.input}
+        value={username}
+        onChangeText={setUsername}
+        placeholder="cashier username"
+        placeholderTextColor={Colors.gray400}
+        autoCapitalize="none"
+        autoCorrect={false}
+      />
+
+      <Text style={ap.fieldLabel}>Password</Text>
+      <TextInput
+        style={ap.input}
+        value={password}
+        onChangeText={setPassword}
+        placeholder="••••••••"
+        placeholderTextColor={Colors.gray400}
+        secureTextEntry
+      />
+
+      {!!authError && (
+        <View style={ap.errorContainer}>
+          <Text style={ap.error}>{authError}</Text>
         </View>
-      </KeyboardAvoidingView>
-    </Modal>
+      )}
+      {attempts > 0 && attemptsLeft > 0 && (
+        <Text style={ap.attemptsLeft}>
+          {attemptsLeft} attempt{attemptsLeft !== 1 ? 's' : ''} remaining
+        </Text>
+      )}
+
+      <View style={ap.actions}>
+        <TouchableOpacity style={ap.cancelBtn} onPress={onClose} activeOpacity={0.7}>
+          <Text style={ap.cancelText}>Cancel</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[ap.verifyBtn, verifying && ap.verifyBtnOff]}
+          onPress={handleSwitch}
+          disabled={verifying}
+          activeOpacity={0.8}
+        >
+          {verifying
+            ? <ActivityIndicator color={Colors.white} size="small" />
+            : <Text style={ap.verifyText}>Switch Cashier</Text>
+          }
+        </TouchableOpacity>
+      </View>
+    </ScrollView>
   );
 }
 
@@ -609,6 +659,7 @@ export default function POSScreen({ route, navigation }: Props) {
     syncingRef.current = true;
     setSyncing(true);
     try {
+      syncPendingClose().catch(() => {});
       const realSession = await reconcileDraftSession(currentSession, user);
       setCurrentSession(realSession);
       setIsDraft(false);
@@ -629,6 +680,7 @@ export default function POSScreen({ route, navigation }: Props) {
     syncingRef.current = true;
     setSyncing(true);
     try {
+      syncPendingClose().catch(() => {});
       const result = await syncPendingOrders(currentSession, user);
       if (result.synced > 0) notifySynced();
       alertDeadLettered(result.deadLettered);
@@ -800,110 +852,148 @@ export default function POSScreen({ route, navigation }: Props) {
           </View>
         </View>
 
-        {/* Offline banner */}
-        {!isOnline && (
-          <View style={s.offlineBanner}>
-            <Text style={s.offlineBannerText}>
-              ⚠ Offline — orders are being saved locally and will sync when connection returns
-            </Text>
-          </View>
-        )}
-
-        {/* Stale catalog notice */}
-        {catalogStale && isOnline && (
-          <View style={s.staleBanner}>
-            <Text style={s.staleBannerText}>Using cached product list</Text>
-            <TouchableOpacity onPress={loadData} activeOpacity={0.7}>
-              <Text style={s.staleBannerRefresh}>Refresh</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Category tabs */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={s.catScroll}
-          contentContainerStyle={s.catContent}
-        >
-          <TouchableOpacity
-            style={[s.catTab, selCat === null && s.catTabSel]}
-            onPress={() => setSelCat(null)}
-          >
-            <Text style={[s.catTabText, selCat === null && s.catTabTextSel]}>All</Text>
-          </TouchableOpacity>
-          {categories.map((cat) => (
-            <TouchableOpacity
-              key={cat.id}
-              style={[s.catTab, selCat === cat.id && s.catTabSel]}
-              onPress={() => setSelCat(cat.id)}
-            >
-              <Text style={[s.catTabText, selCat === cat.id && s.catTabTextSel]}>
-                {cat.name}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        {/* Search + column picker */}
-        <View style={s.searchRow}>
-          <TextInput
-            style={s.searchInput}
-            placeholder="Search products…"
-            placeholderTextColor={Colors.gray400}
-            value={search}
-            onChangeText={setSearch}
-            returnKeyType="search"
+        {showDiscountModal ? (
+          <DiscountAuthPanel
+            onClose={() => setShowDiscountModal(false)}
+            onSuccess={(nonce, type, input) => {
+              setDiscountNonce(nonce);
+              setDiscountType(type);
+              setDiscountInput(input);
+              setShowDiscountModal(false);
+            }}
+            isOnline={isOnline}
+            initialDiscountType={discountType}
+            initialDiscountInput={discountInput}
+            cartSubtotal={total}
           />
-          {!!search && (
-            <TouchableOpacity style={s.searchClear} onPress={() => setSearch('')}>
-              <Text style={s.searchClearText}>✕</Text>
-            </TouchableOpacity>
-          )}
-          <View style={s.colPicker}>
-            {GRID_COLS_OPTIONS.map((n) => (
-              <TouchableOpacity
-                key={n}
-                style={[s.colBtn, gridCols === n && s.colBtnSel]}
-                onPress={() => changeGridCols(n)}
-                activeOpacity={0.7}
-              >
-                <Text style={[s.colBtnText, gridCols === n && s.colBtnTextSel]}>{n}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {/* Product grid */}
-        {loading ? (
-          <View style={s.loadingBox}>
-            <ActivityIndicator size="large" color={Colors.green600} />
-          </View>
-        ) : loadError ? (
-          <View style={s.loadingBox}>
-            <View style={s.loadErrorBox}>
-              <Text style={s.loadErrorText}>Could not load products.</Text>
-            </View>
-            <TouchableOpacity style={s.retryBtn} onPress={loadData} activeOpacity={0.8}>
-              <Text style={s.retryBtnText}>Retry</Text>
-            </TouchableOpacity>
-          </View>
+        ) : showSwitchModal ? (
+          <CashierSwitchPanel
+            onClose={() => setShowSwitchModal(false)}
+            onSuccess={(newUser) => {
+              setUser(newUser);
+              clearDiscount();
+              setShowSwitchModal(false);
+            }}
+            isOnline={isOnline}
+          />
         ) : (
-          <FlatList
-            data={filtered}
-            keyExtractor={(p) => p.id}
-            numColumns={gridCols}
-            key={gridCols}
-            contentContainerStyle={s.gridContent}
-            renderItem={({ item }) => (
-              <ProductCard product={item} onPress={handleProductPress} cols={gridCols} />
-            )}
-            ListEmptyComponent={
-              <View style={s.emptyBox}>
-                <Text style={s.emptyText}>No products found</Text>
+          <>
+            {/* Offline banner */}
+            {!isOnline && (
+              <View style={s.offlineBanner}>
+                <Text style={s.offlineBannerText}>
+                  ⚠ Offline — orders are being saved locally and will sync when connection returns
+                </Text>
               </View>
-            }
-          />
+            )}
+
+            {/* Stale catalog notice */}
+            {catalogStale && isOnline && (
+              <View style={s.staleBanner}>
+                <Text style={s.staleBannerText}>Using cached product list</Text>
+                <TouchableOpacity onPress={loadData} activeOpacity={0.7}>
+                  <Text style={s.staleBannerRefresh}>Refresh</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Category tabs */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={s.catScroll}
+              contentContainerStyle={s.catContent}
+            >
+              <TouchableOpacity
+                style={[s.catTab, selCat === null && s.catTabSel]}
+                onPress={() => setSelCat(null)}
+              >
+                <Text style={[s.catTabText, selCat === null && s.catTabTextSel]}>All</Text>
+              </TouchableOpacity>
+              {categories.map((cat) => (
+                <TouchableOpacity
+                  key={cat.id}
+                  style={[s.catTab, selCat === cat.id && s.catTabSel]}
+                  onPress={() => setSelCat(cat.id)}
+                >
+                  <Text style={[s.catTabText, selCat === cat.id && s.catTabTextSel]}>
+                    {cat.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            {/* Search + column picker */}
+            <View style={s.searchRow}>
+              <TextInput
+                style={s.searchInput}
+                placeholder="Search products…"
+                placeholderTextColor={Colors.gray400}
+                value={search}
+                onChangeText={setSearch}
+                returnKeyType="search"
+              />
+              {!!search && (
+                <TouchableOpacity style={s.searchClear} onPress={() => setSearch('')}>
+                  <Text style={s.searchClearText}>✕</Text>
+                </TouchableOpacity>
+              )}
+              <View style={s.colPicker}>
+                {GRID_COLS_OPTIONS.map((n) => (
+                  <TouchableOpacity
+                    key={n}
+                    style={[s.colBtn, gridCols === n && s.colBtnSel]}
+                    onPress={() => changeGridCols(n)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[s.colBtnText, gridCols === n && s.colBtnTextSel]}>{n}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* Product grid */}
+            {loading ? (
+              <View style={s.loadingBox}>
+                <ActivityIndicator size="large" color={Colors.green600} />
+              </View>
+            ) : loadError ? (
+              <View style={s.loadingBox}>
+                <View style={s.loadErrorBox}>
+                  <Text style={s.loadErrorText}>Could not load products.</Text>
+                </View>
+                <TouchableOpacity style={s.retryBtn} onPress={loadData} activeOpacity={0.8}>
+                  <Text style={s.retryBtnText}>Retry</Text>
+                </TouchableOpacity>
+              </View>
+            ) : !isOnline && products.length === 0 ? (
+              <View style={s.loadingBox}>
+                <View style={s.loadErrorBox}>
+                  <Text style={s.loadErrorText}>No product data saved on this device.</Text>
+                  <Text style={s.loadErrorSubtext}>
+                    Connect to the internet to download your menu. Products will be
+                    available offline after the first successful sync.
+                  </Text>
+                </View>
+              </View>
+            ) : (
+              <FlatList
+                data={filtered}
+                keyExtractor={(p) => p.id}
+                numColumns={gridCols}
+                key={gridCols}
+                contentContainerStyle={s.gridContent}
+                renderItem={({ item }) => (
+                  <ProductCard product={item} onPress={handleProductPress} cols={gridCols} />
+                )}
+                ListEmptyComponent={
+                  <View style={s.emptyBox}>
+                    <Text style={s.emptyText}>No products found</Text>
+                  </View>
+                }
+              />
+            )}
+          </>
         )}
       </View>
 
@@ -1099,28 +1189,6 @@ export default function POSScreen({ route, navigation }: Props) {
         />
       )}
 
-      {/* Discount Auth Modal */}
-      {showDiscountModal && (
-        <DiscountAuthModal
-          onClose={() => setShowDiscountModal(false)}
-          onSuccess={(nonce) => {
-            setDiscountNonce(nonce);
-            setShowDiscountModal(false);
-          }}
-        />
-      )}
-
-      {/* Cashier Switch Modal */}
-      {showSwitchModal && (
-        <CashierSwitchModal
-          onClose={() => setShowSwitchModal(false)}
-          onSuccess={(newUser) => {
-            setUser(newUser);
-            clearDiscount();
-            setShowSwitchModal(false);
-          }}
-        />
-      )}
     </View>
   );
 }
@@ -1375,6 +1443,12 @@ const s = StyleSheet.create({
     fontSize: FontSize.base,
     color: Colors.danger,
     fontWeight: FontWeight.medium,
+  },
+  loadErrorSubtext: {
+    fontSize: FontSize.sm,
+    color: Colors.gray600,
+    marginTop: Spacing.xs,
+    lineHeight: 18,
   },
   retryBtn: {
     paddingHorizontal: Spacing.xl,
@@ -1893,53 +1967,38 @@ const mm = StyleSheet.create({
   },
 });
 
-// ─── Discount Auth Modal Styles ───────────────────────────────────────────────
+// ─── Auth Panel Styles ────────────────────────────────────────────────────────
 
-const da = StyleSheet.create({
-  overlay: {
+const ap = StyleSheet.create({
+  container: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: Spacing.xxl,
-  },
-  sheet: {
-    width: '100%',
-    maxWidth: isTablet ? 480 : 400,
-    maxHeight: '88%',
     backgroundColor: Colors.surface,
-    borderRadius: Radius.xl,
-    overflow: 'hidden',
-    ...Shadow.lg,
   },
-  header: {
-    backgroundColor: Colors.green700,
-    padding: isTablet ? Spacing.xl : Spacing.md,
-    gap: Spacing.xs,
+  content: {
+    padding: Spacing.xxl,
+    gap: Spacing.md,
+    flexGrow: 1,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.xs,
   },
   title: {
     fontSize: FontSize.xl,
     fontWeight: FontWeight.bold,
-    color: Colors.white,
-  },
-  subtitle: {
-    fontSize: FontSize.sm,
-    color: Colors.green200,
-  },
-  closeBtn: {
-    position: 'absolute',
-    top: Spacing.lg,
-    right: Spacing.lg,
-    padding: Spacing.xs,
+    color: Colors.gray800,
   },
   closeX: {
     fontSize: FontSize.lg,
-    color: Colors.white,
+    color: Colors.gray500,
     fontWeight: FontWeight.bold,
+    padding: Spacing.xs,
   },
-  body: {
-    padding: Spacing.xl,
-    gap: Spacing.sm,
+  subtitle: {
+    fontSize: FontSize.sm,
+    color: Colors.gray500,
   },
   fieldLabel: {
     fontSize: FontSize.sm,
@@ -1963,7 +2022,6 @@ const da = StyleSheet.create({
     borderRadius: Radius.md,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
-    marginTop: Spacing.xs,
   },
   error: {
     fontSize: FontSize.sm,
@@ -1973,13 +2031,11 @@ const da = StyleSheet.create({
   attemptsLeft: {
     fontSize: FontSize.xs,
     color: Colors.gray500,
-    marginTop: Spacing.xs,
   },
-  footer: {
+  actions: {
     flexDirection: 'row',
     gap: Spacing.md,
-    padding: isTablet ? Spacing.xl : Spacing.md,
-    paddingTop: 0,
+    marginTop: Spacing.lg,
   },
   cancelBtn: {
     flex: 1,
@@ -2007,5 +2063,64 @@ const da = StyleSheet.create({
     fontSize: FontSize.base,
     fontWeight: FontWeight.bold,
     color: Colors.white,
+  },
+
+  // Discount input controls
+  discountTypeRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+  },
+  discountTypeBtn: {
+    flex: 1,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    backgroundColor: Colors.gray50,
+  },
+  discountTypeBtnSel: {
+    backgroundColor: Colors.green700,
+    borderColor: Colors.green700,
+  },
+  discountTypeBtnText: {
+    fontSize: FontSize.base,
+    fontWeight: FontWeight.semibold,
+    color: Colors.gray600,
+  },
+  discountTypeBtnTextSel: {
+    color: Colors.white,
+  },
+  discountInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.gray50,
+    paddingHorizontal: Spacing.lg,
+    gap: Spacing.sm,
+  },
+  discountInputPrefix: {
+    fontSize: FontSize.lg,
+    color: Colors.gray500,
+    fontWeight: FontWeight.medium,
+  },
+  discountInputField: {
+    flex: 1,
+    fontSize: FontSize.xl,
+    fontWeight: FontWeight.bold,
+    color: Colors.gray800,
+    paddingVertical: Spacing.md,
+  },
+  discountInputSuffix: {
+    fontSize: FontSize.base,
+    color: Colors.gray500,
+    fontWeight: FontWeight.medium,
+  },
+  discountPreview: {
+    fontSize: FontSize.sm,
+    color: Colors.green700,
+    fontWeight: FontWeight.medium,
   },
 });
