@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator, FlatList, TextInput,
+  ActivityIndicator, FlatList, ScrollView, TextInput,
   StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -166,18 +166,27 @@ export default function SessionsScreen() {
         <View style={s.header}>
           <View style={s.titleRow}>
             <Text style={s.title}>Cash Sessions</Text>
-            {!loading && filteredSessions.length > 0 && (
-              <TouchableOpacity
-                style={[s.exportBtn, exporting && s.exportBtnOff]}
-                onPress={handleExport}
-                disabled={exporting}
-                activeOpacity={0.8}
-              >
-                <Text style={s.exportBtnText}>{exporting ? 'Exporting…' : '⬇ Export CSV'}</Text>
+            <View style={s.titleActions}>
+              {!loading && filteredSessions.length > 0 && (
+                <TouchableOpacity
+                  style={[s.exportBtn, exporting && s.exportBtnOff]}
+                  onPress={handleExport}
+                  disabled={exporting}
+                  activeOpacity={0.8}
+                >
+                  <Text style={s.exportBtnText}>{exporting ? 'Exporting…' : '⬇ Export'}</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity style={s.refreshBtn} onPress={load} disabled={loading}>
+                <Text style={s.refreshText}>{loading ? '…' : '↻ Refresh'}</Text>
               </TouchableOpacity>
-            )}
+            </View>
           </View>
-          <View style={s.periodTabs}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={s.periodTabsContent}
+          >
             {SESSION_PERIODS.map((p) => (
               <TouchableOpacity
                 key={p.value}
@@ -189,10 +198,7 @@ export default function SessionsScreen() {
                 </Text>
               </TouchableOpacity>
             ))}
-          </View>
-          <TouchableOpacity style={s.refreshBtn} onPress={load} disabled={loading}>
-            <Text style={s.refreshText}>{loading ? '…' : '↻ Refresh'}</Text>
-          </TouchableOpacity>
+          </ScrollView>
         </View>
 
         {/* Cashier search */}
@@ -213,7 +219,12 @@ export default function SessionsScreen() {
         </View>
 
         {/* Status filter chips */}
-        <View style={s.statusFilterRow}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={s.statusFilterRow}
+          contentContainerStyle={s.statusFilterContent}
+        >
           {(['all', 'open', 'closed'] as const).map((f) => (
             <TouchableOpacity
               key={f}
@@ -226,7 +237,7 @@ export default function SessionsScreen() {
               </Text>
             </TouchableOpacity>
           ))}
-        </View>
+        </ScrollView>
 
         {/* Summary */}
         {!loading && !error && filteredSessions.length > 0 && (
@@ -354,12 +365,24 @@ function CashCell({ label, value }: { label: string; value: string }) {
 const s = StyleSheet.create({
   root:    { flex: 1, backgroundColor: Colors.background },
   header: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: Spacing.xl, paddingVertical: Spacing.lg,
-    backgroundColor: Colors.surface, borderBottomWidth: 1, borderColor: Colors.border,
-    gap: Spacing.md, flexWrap: 'wrap',
+    paddingHorizontal: Spacing.xl,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.sm,
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderColor: Colors.border,
+    gap: Spacing.sm,
   },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  titleActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
   title: { fontSize: FontSize.display, fontWeight: FontWeight.bold, color: Colors.gray900 },
   exportBtn: {
     borderWidth: 1.5, borderColor: Colors.green600,
@@ -367,7 +390,7 @@ const s = StyleSheet.create({
   },
   exportBtnOff: { opacity: 0.5 },
   exportBtnText: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.green700 },
-  periodTabs: { flex: 1, flexDirection: 'row', gap: Spacing.xs, flexWrap: 'wrap' },
+  periodTabsContent: { flexDirection: 'row', gap: Spacing.xs },
   periodTab: {
     paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
     borderRadius: Radius.full, backgroundColor: Colors.gray100,
@@ -376,7 +399,7 @@ const s = StyleSheet.create({
   periodTabText:    { fontSize: FontSize.sm, fontWeight: FontWeight.medium, color: Colors.gray600 },
   periodTabTextSel: { color: Colors.white, fontWeight: FontWeight.bold },
   refreshBtn: {
-    paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs,
     borderRadius: Radius.md, backgroundColor: Colors.surface,
     borderWidth: 1, borderColor: Colors.border,
   },
@@ -396,9 +419,15 @@ const s = StyleSheet.create({
   searchClearText: { fontSize: FontSize.sm, color: Colors.gray400 },
 
   statusFilterRow: {
-    flexDirection: 'row', gap: Spacing.xs,
-    paddingHorizontal: Spacing.xl, paddingVertical: Spacing.sm,
-    backgroundColor: Colors.surface, borderBottomWidth: 1, borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderColor: Colors.border,
+  },
+  statusFilterContent: {
+    flexDirection: 'row',
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.sm,
   },
   statusChip: {
     paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs,

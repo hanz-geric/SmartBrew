@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator, Alert, FlatList, StyleSheet, Text,
+  ActivityIndicator, Alert, FlatList, ScrollView, StyleSheet, Text,
   TextInput, TouchableOpacity, View,
 } from 'react-native';
 import AdminLayout from './AdminLayout';
@@ -193,18 +193,27 @@ export default function OrderHistoryScreen() {
         <View style={s.header}>
           <View style={s.titleRow}>
             <Text style={s.title}>Orders</Text>
-            {!loading && filteredOrders.length > 0 && (
-              <TouchableOpacity
-                style={[s.exportBtn, exporting && s.exportBtnOff]}
-                onPress={handleExport}
-                disabled={exporting}
-                activeOpacity={0.8}
-              >
-                <Text style={s.exportBtnText}>{exporting ? 'Exporting…' : '⬇ Export CSV'}</Text>
+            <View style={s.titleActions}>
+              {!loading && filteredOrders.length > 0 && (
+                <TouchableOpacity
+                  style={[s.exportBtn, exporting && s.exportBtnOff]}
+                  onPress={handleExport}
+                  disabled={exporting}
+                  activeOpacity={0.8}
+                >
+                  <Text style={s.exportBtnText}>{exporting ? 'Exporting…' : '⬇ Export'}</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity style={s.refreshBtn} onPress={loadOrders} disabled={loading}>
+                <Text style={s.refreshText}>{loading ? '…' : '↻ Refresh'}</Text>
               </TouchableOpacity>
-            )}
+            </View>
           </View>
-          <View style={s.periodTabs}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={s.periodTabsContent}
+          >
             {PERIODS.map((p) => (
               <TouchableOpacity
                 key={p.value}
@@ -216,11 +225,16 @@ export default function OrderHistoryScreen() {
                 </Text>
               </TouchableOpacity>
             ))}
-          </View>
+          </ScrollView>
         </View>
 
         {/* Payment filter chips */}
-        <View style={s.payFilterRow}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={s.payFilterRow}
+          contentContainerStyle={s.filterChipsContent}
+        >
           {(['all', 'cash', 'card', 'qr', 'gift_card'] as const).map((m) => (
             <TouchableOpacity
               key={m}
@@ -233,10 +247,15 @@ export default function OrderHistoryScreen() {
               </Text>
             </TouchableOpacity>
           ))}
-        </View>
+        </ScrollView>
 
         {/* Order type filter chips */}
-        <View style={s.typeFilterRow}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={s.typeFilterRow}
+          contentContainerStyle={s.filterChipsContent}
+        >
           {(['all', 'dine_in', 'takeaway', 'delivery'] as const).map((t) => (
             <TouchableOpacity
               key={t}
@@ -249,7 +268,7 @@ export default function OrderHistoryScreen() {
               </Text>
             </TouchableOpacity>
           ))}
-        </View>
+        </ScrollView>
 
         {/* Search by order number */}
         <View style={s.searchRow}>
@@ -413,21 +432,23 @@ const s = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.lg,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.sm,
     backgroundColor: Colors.surface,
     borderBottomWidth: 1,
     borderColor: Colors.border,
-    gap: Spacing.lg,
-    flexWrap: 'wrap',
+    gap: Spacing.sm,
   },
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.md,
+    justifyContent: 'space-between',
+  },
+  titleActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
   },
   title: {
     fontSize: FontSize.display,
@@ -447,10 +468,15 @@ const s = StyleSheet.create({
     fontWeight: FontWeight.semibold,
     color: Colors.green700,
   },
-  periodTabs: {
-    flexDirection: 'row',
-    gap: Spacing.xs,
+  refreshBtn: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
+  refreshText: { fontSize: FontSize.sm, color: Colors.green700, fontWeight: FontWeight.semibold },
+  periodTabsContent: { flexDirection: 'row', gap: Spacing.xs },
   periodTab: {
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
@@ -471,24 +497,20 @@ const s = StyleSheet.create({
   },
 
   payFilterRow: {
-    flexDirection: 'row',
-    gap: Spacing.xs,
-    paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.sm,
     backgroundColor: Colors.surface,
     borderBottomWidth: 1,
     borderColor: Colors.border,
-    flexWrap: 'wrap',
   },
   typeFilterRow: {
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderColor: Colors.border,
+  },
+  filterChipsContent: {
     flexDirection: 'row',
     gap: Spacing.xs,
     paddingHorizontal: Spacing.xl,
     paddingVertical: Spacing.sm,
-    backgroundColor: Colors.surface,
-    borderBottomWidth: 1,
-    borderColor: Colors.border,
-    flexWrap: 'wrap',
   },
   searchRow: {
     paddingHorizontal: Spacing.xl,
