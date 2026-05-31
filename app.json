@@ -34,10 +34,12 @@
         "ACCESS_NETWORK_STATE"
       ]
     },
+    "experiments": {
+      "baseUrl": "/SmartBrew"
+    },
     "web": {
       "favicon": "./assets/favicon.png",
-      "output": "single",
-      "baseUrl": "/SmartBrew"
+      "output": "single"
     },
     "assetBundlePatterns": [
       "assets/**/*"

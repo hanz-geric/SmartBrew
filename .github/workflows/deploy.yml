@@ -31,11 +31,8 @@ jobs:
       - name: Build web
         run: npx expo export --platform web
 
-      - name: Fix asset paths for GitHub Pages
-        run: |
-          sed -i 's|src="/_expo/|src="/SmartBrew/_expo/|g' dist/index.html
-          sed -i 's|href="/favicon.ico"|href="/SmartBrew/favicon.ico"|g' dist/index.html
-          find dist/_expo -name "*.js" -exec sed -i 's|"/assets/|"/SmartBrew/assets/|g' {} \;
+      - name: Disable Jekyll for GitHub Pages
+        run: touch dist/.nojekyll
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
