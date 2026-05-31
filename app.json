@@ -39,6 +39,9 @@
       "output": "single",
       "baseUrl": "/SmartBrew"
     },
+    "assetBundlePatterns": [
+      "assets/**/*"
+    ],
     "plugins": [
       "expo-sqlite",
       "expo-secure-store",
