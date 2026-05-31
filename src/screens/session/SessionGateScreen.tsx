@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator, KeyboardAvoidingView, Platform,
+  ActivityIndicator, Image, KeyboardAvoidingView, Platform,
   StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -139,7 +139,11 @@ export default function SessionGateScreen({ navigation }: Props) {
     return (
       <View style={s.center}>
         <View style={s.card}>
-          <Text style={s.logo}>☕ SmartBrew POS</Text>
+          <Image
+            source={require('../../../assets/images/SmartBrew_logo.jpg')}
+            style={s.logo}
+            resizeMode="contain"
+          />
           <Text style={s.title}>Shift In Progress</Text>
           <Text style={s.subtitle}>{openSess.cashier_name}</Text>
           <Text style={s.sessionInfo}>Started {started}</Text>
@@ -267,7 +271,7 @@ const s = StyleSheet.create({
     backgroundColor: Colors.surface, borderRadius: Radius.xl,
     padding: Spacing.xxl, gap: Spacing.md, ...Shadow.lg,
   },
-  logo:        { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: Colors.green700, textAlign: 'center' },
+  logo:        { width: 180, height: 72, alignSelf: 'center', marginBottom: Spacing.xs },
   title:       { fontSize: FontSize.xxl, fontWeight: FontWeight.bold, color: Colors.gray800, textAlign: 'center' },
   subtitle:    { fontSize: FontSize.base, color: Colors.gray500, textAlign: 'center' },
   sessionInfo: { fontSize: FontSize.sm, color: Colors.green700, textAlign: 'center', fontWeight: FontWeight.medium },

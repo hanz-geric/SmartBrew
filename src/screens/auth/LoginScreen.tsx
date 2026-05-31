@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, KeyboardAvoidingView, Platform,
-  ActivityIndicator, ScrollView,
+  ActivityIndicator, ScrollView, Image,
 } from 'react-native';
 import { loginWithUsername, saveAuthCache } from '../../firebase/auth';
 import { useAuthStore } from '../../store/authStore';
@@ -77,10 +77,11 @@ export default function LoginScreen() {
       >
       <View style={styles.card}>
         <View style={styles.header}>
-          <View style={styles.logoCircle}>
-            <Text style={styles.logoLetter}>S</Text>
-          </View>
-          <Text style={styles.appName}>SmartBrew POS</Text>
+          <Image
+            source={require('../../../assets/images/SmartBrew_logo.jpg')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
           <Text style={styles.tagline}>Sign in to continue</Text>
         </View>
 
@@ -168,25 +169,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Spacing.xxl,
   },
-  logoCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: Colors.green700,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: Spacing.md,
-  },
-  logoLetter: {
-    fontSize: 36,
-    fontWeight: FontWeight.extrabold,
-    color: Colors.white,
-  },
-  appName: {
-    fontSize: FontSize.xxl,
-    fontWeight: FontWeight.extrabold,
-    color: Colors.gray800,
-    marginBottom: Spacing.xs,
+  logo: {
+    width: 180,
+    height: 90,
+    marginBottom: Spacing.sm,
   },
   tagline: {
     fontSize: FontSize.sm,

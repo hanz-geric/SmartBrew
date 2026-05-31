@@ -797,9 +797,14 @@ export default function POSScreen({ route, navigation }: Props) {
         {/* Top bar */}
         <View style={s.topBar}>
           <View style={s.topBarLeft}>
-            <Text style={s.shopName}>
-              ☕ SmartBrew POS{isDraft ? ' · DRAFT' : ''}
-            </Text>
+            <View style={s.topBarBrand}>
+              <Image
+                source={require('../../../assets/images/SmartBrew_logo.jpg')}
+                style={s.topBarLogo}
+                resizeMode="contain"
+              />
+              {isDraft && <Text style={s.draftBadge}>DRAFT</Text>}
+            </View>
             <Text style={s.sessionInfo}>
               {user.full_name} · Started{' '}
               {new Date(currentSession.start_time).toLocaleTimeString('en-PH', {
@@ -1220,6 +1225,25 @@ const s = StyleSheet.create({
   topBarLeft: {
     flex: 1,
     minWidth: 0,
+  },
+  topBarBrand: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  topBarLogo: {
+    width: 120,
+    height: 36,
+  },
+  draftBadge: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.bold,
+    color: Colors.warning,
+    backgroundColor: Colors.warningBg,
+    paddingHorizontal: Spacing.xs,
+    paddingVertical: 2,
+    borderRadius: Radius.sm,
+    overflow: 'hidden',
   },
   shopName: {
     fontSize: FontSize.xl,
