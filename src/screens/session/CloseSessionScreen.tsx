@@ -1,11 +1,11 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator, KeyboardAvoidingView, Platform,
   ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { CashierStackParamList } from '../../navigation/CashierStack';
-import { closeSession, getSession } from '../../firebase/firestoreService';
+import { closeSession, getSession, clockOutAllActiveCashiers } from '../../firebase/firestoreService';
 import { logout } from '../../firebase/auth';
 import { useAuthStore } from '../../store/authStore';
 import { useCartStore } from '../../store/cartStore';
@@ -138,10 +138,14 @@ export default function CloseSessionScreen({ route, navigation }: Props) {
         setClosed(true);
         return;
       }
+      // Clock out all still-active roster entries before closing (non-fatal)
+      clockOutAllActiveCashiers(session.id, session.roster ?? []).catch((err) =>
+        logError('CloseSessionScreen:clockOutAll', err, `session=${session.id}`),
+      );
       // Pass fullExpected so the recorded difference reflects all cash including offline.
       // When offline orders eventually sync, they increment expected_cash further —
       // acceptable trade-off vs. showing a wrong variance at close time.
-      await closeSession(session.id, actualNum, fullExpected, user.uid);
+      await closeSession(session.id, actualNum, fullExpected, user.uid, { uid: user.uid, name: user.full_name });
       setClosed(true);
     } catch (err) {
       logError('CloseSessionScreen:handleClose', err, `Failed to close session ${session.id}`);
@@ -165,7 +169,7 @@ export default function CloseSessionScreen({ route, navigation }: Props) {
   return (
     <KeyboardAvoidingView
       style={s.root}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'android' ? 'height' : 'padding'}
     >
       <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
 
@@ -203,7 +207,10 @@ export default function CloseSessionScreen({ route, navigation }: Props) {
 
             <View style={s.card}>
               <View style={s.infoGrid}>
-                <InfoRow label="Cashier"     value={session.cashier_name} />
+                <InfoRow label="Opened by"   value={session.opened_by_name ?? session.cashier_name} />
+                {user.uid !== (session.opened_by_uid ?? session.user_id) && (
+                  <InfoRow label="Closing as"  value={user.full_name} />
+                )}
                 <InfoRow label="Shift Start" value={formatDateTime(session.start_time)} />
                 <InfoRow label="Duration"    value={durationStr} />
               </View>
@@ -325,6 +332,27 @@ export default function CloseSessionScreen({ route, navigation }: Props) {
             </View>
 
             <View style={s.card}>
+              {/* Shift handover summary */}
+              <Text style={s.sectionLabel}>Shift Summary</Text>
+              <View style={s.infoGrid}>
+                <InfoRow
+                  label="Opened by"
+                  value={session.opened_by_name ?? session.cashier_name}
+                />
+                <InfoRow
+                  label="Closed by"
+                  value={user.full_name}
+                />
+                {(session.roster?.length ?? 0) > 0 && (
+                  <InfoRow
+                    label="Cashiers this shift"
+                    value={`${session.roster!.length} — ${session.roster!.map((e) => e.full_name.split(' ')[0]).join(', ')}`}
+                  />
+                )}
+              </View>
+
+              <View style={s.divider} />
+
               <Text style={s.sectionLabel}>Cash Reconciliation</Text>
               <View style={s.infoGrid}>
                 <InfoRow label="Your Count" value={`₱${actualNum.toFixed(2)}`} />

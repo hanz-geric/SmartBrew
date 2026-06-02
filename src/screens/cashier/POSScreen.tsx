@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, AppState, AppStateStatus, FlatList,
+  ActivityIndicator, Animated, AppState, AppStateStatus, FlatList,
   Image, KeyboardAvoidingView, Modal, Platform, ScrollView,
-  StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions,
+  StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback,
+  View, useWindowDimensions,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -10,8 +11,13 @@ import { useShallow } from 'zustand/react/shallow';
 import { CashierStackParamList } from '../../navigation/CashierStack';
 import { useAuthStore } from '../../store/authStore';
 import { useCartStore } from '../../store/cartStore';
-import { getProducts, getCategories } from '../../firebase/firestoreService';
-import { logout, switchCashierAuth, verifyManagerAuth } from '../../firebase/auth';
+import {
+  getProducts, getCategories,
+  addCashierToRoster, clockOutCashierEntry, switchActiveCashier,
+} from '../../firebase/firestoreService';
+import { switchCashierAuth, verifyManagerAuth } from '../../firebase/auth';
+import { savePendingCashierSync, loadPendingCashierSync } from '../../db/queries/sessionCache';
+import CashierRosterBar from '../../components/CashierRosterBar';
 import { pendingCount } from '../../db/queries/queue';
 import { syncPendingOrders, reconcileDraftSession, syncPendingClose } from '../../services/syncService';
 import { useSyncEvents } from '../../context/SyncContext';
@@ -19,7 +25,8 @@ import { useNetwork } from '../../context/NetworkContext';
 import { logError } from '../../utils/logger';
 import { getCatalogAge } from '../../db/queries/catalog';
 import {
-  Category, ModifierGroup, Product, SelectedModifier,
+  AuthUser, CashierEvent, Category, ModifierGroup, Product,
+  RosterEntry, SelectedModifier,
 } from '../../types';
 import {
   Colors, FontSize, FontWeight, Radius, Shadow, Spacing, isTablet, rs, BREAKPOINTS,
@@ -27,9 +34,6 @@ import {
 
 type Props = NativeStackScreenProps<CashierStackParamList, 'POS'>;
 
-// Fixed at module load — never reacts to keyboard/window changes, preventing
-// the bounce that occurs when useWindowDimensions updates inside a Modal.
-const MODAL_SCROLL_MAX_H = isTablet ? 420 : 320;
 
 const GRID_COLS_KEY     = 'pos_grid_cols';
 const GRID_COLS_OPTIONS = [2, 3, 4, 5] as const;
@@ -40,14 +44,31 @@ type GridCols = typeof GRID_COLS_OPTIONS[number];
 interface ModModalProps {
   product: Product;
   onClose: () => void;
-  onAdd: (mods: SelectedModifier[], qty: number, notes: string) => void;
+  onAdd: (mods: SelectedModifier[], qty: number) => void;
 }
 
 function ModifierModal({ product, onClose, onAdd }: ModModalProps) {
   const [selections, setSelections] = useState<Record<string, string[]>>({});
   const [qty, setQty]               = useState(1);
-  const [notes, setNotes]           = useState('');
   const [errors, setErrors]         = useState<Record<string, boolean>>({});
+  const translateY                  = useRef(new Animated.Value(700)).current;
+
+  useEffect(() => {
+    Animated.spring(translateY, {
+      toValue: 0,
+      tension: 65,
+      friction: 11,
+      useNativeDriver: true,
+    }).start();
+  }, [translateY]);
+
+  const slideClose = useCallback((cb: () => void) => {
+    Animated.timing(translateY, {
+      toValue: 700,
+      duration: 220,
+      useNativeDriver: true,
+    }).start(() => cb());
+  }, [translateY]);
 
   const modTotal = useMemo(() => {
     let total = 0;
@@ -98,29 +119,41 @@ function ModifierModal({ product, onClose, onAdd }: ModModalProps) {
         });
       }
     }
-    onAdd(mods, qty, notes);
+    slideClose(() => onAdd(mods, qty));
   }
 
   const lineTotal = (product.price + modTotal) * qty;
 
   return (
-    <Modal transparent animationType="fade" onRequestClose={onClose}>
-      <View style={mm.overlay}>
-        <View style={mm.sheet}>
+    <Modal transparent animationType="none" onRequestClose={() => slideClose(onClose)}>
+      <KeyboardAvoidingView
+        style={mm.kav}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        {/* Backdrop — tap to dismiss */}
+        <TouchableWithoutFeedback onPress={() => slideClose(onClose)}>
+          <View style={StyleSheet.absoluteFill} />
+        </TouchableWithoutFeedback>
+
+        {/* Bottom sheet */}
+        <Animated.View style={[mm.sheet, { transform: [{ translateY }] }]}>
+          {/* Drag handle */}
+          <View style={mm.handle} />
+
           {/* Header */}
           <View style={mm.header}>
             <View style={{ flex: 1 }}>
               <Text style={mm.productName}>{product.name}</Text>
               <Text style={mm.productBase}>₱{product.price.toFixed(2)}</Text>
             </View>
-            <TouchableOpacity onPress={onClose} hitSlop={12} style={mm.closeBtn}>
+            <TouchableOpacity onPress={() => slideClose(onClose)} hitSlop={12} style={mm.closeBtn}>
               <Text style={mm.closeX}>✕</Text>
             </TouchableOpacity>
           </View>
 
-          {/* Groups */}
+          {/* Groups + Notes */}
           <ScrollView
-            style={[mm.scrollArea, { maxHeight: MODAL_SCROLL_MAX_H }]}
+            style={mm.scrollArea}
             contentContainerStyle={mm.scrollContent}
             keyboardShouldPersistTaps="handled"
           >
@@ -163,21 +196,8 @@ function ModifierModal({ product, onClose, onAdd }: ModModalProps) {
                 </View>
               </View>
             ))}
-          </ScrollView>
 
-          {/* Notes — outside ScrollView to prevent multiline-TextInput/ScrollView conflict on Android */}
-          <View style={mm.notesSection}>
-            <Text style={mm.groupName}>Notes (optional)</Text>
-            <TextInput
-              style={mm.notesInput}
-              placeholder="Special instructions…"
-              placeholderTextColor={Colors.gray400}
-              value={notes}
-              onChangeText={setNotes}
-              multiline
-              numberOfLines={2}
-            />
-          </View>
+          </ScrollView>
 
           {/* Footer */}
           <View style={mm.footer}>
@@ -201,8 +221,8 @@ function ModifierModal({ product, onClose, onAdd }: ModModalProps) {
               <Text style={mm.addBtnText}>Add to Order</Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </View>
+        </Animated.View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -368,15 +388,15 @@ function DiscountAuthPanel({
   );
 }
 
-// ─── Cashier Switch Panel (inline, left panel) ───────────────────────────────
+// ─── Add Cashier Panel (inline, left panel) ──────────────────────────────────
 
-interface CashierSwitchPanelProps {
+interface AddCashierPanelProps {
   onClose:   () => void;
-  onSuccess: (user: import('../../types').AuthUser) => void;
+  onSuccess: (user: AuthUser) => void;
   isOnline:  boolean;
 }
 
-function CashierSwitchPanel({ onClose, onSuccess, isOnline }: CashierSwitchPanelProps) {
+function AddCashierPanel({ onClose, onSuccess, isOnline }: AddCashierPanelProps) {
   const [username,  setUsername]  = useState('');
   const [password,  setPassword]  = useState('');
   const [verifying, setVerifying] = useState(false);
@@ -385,7 +405,7 @@ function CashierSwitchPanel({ onClose, onSuccess, isOnline }: CashierSwitchPanel
 
   const attemptsLeft = MAX_AUTH_ATTEMPTS - attempts;
 
-  async function handleSwitch() {
+  async function handleAdd() {
     setAuthError('');
     if (!username.trim() || !password) {
       setAuthError('Enter username and password.');
@@ -417,13 +437,13 @@ function CashierSwitchPanel({ onClose, onSuccess, isOnline }: CashierSwitchPanel
       bounces={false}
     >
       <View style={ap.titleRow}>
-        <Text style={ap.title}>Switch Cashier</Text>
+        <Text style={ap.title}>Add Cashier</Text>
         <TouchableOpacity onPress={onClose} hitSlop={12}>
           <Text style={ap.closeX}>✕</Text>
         </TouchableOpacity>
       </View>
 
-      <Text style={ap.subtitle}>Enter the credentials of the next cashier.</Text>
+      <Text style={ap.subtitle}>Sign in once to add this cashier to the session roster.</Text>
 
       <Text style={ap.fieldLabel}>Username</Text>
       <TextInput
@@ -463,13 +483,13 @@ function CashierSwitchPanel({ onClose, onSuccess, isOnline }: CashierSwitchPanel
         </TouchableOpacity>
         <TouchableOpacity
           style={[ap.verifyBtn, verifying && ap.verifyBtnOff]}
-          onPress={handleSwitch}
+          onPress={handleAdd}
           disabled={verifying}
           activeOpacity={0.8}
         >
           {verifying
             ? <ActivityIndicator color={Colors.white} size="small" />
-            : <Text style={ap.verifyText}>Switch Cashier</Text>
+            : <Text style={ap.verifyText}>Add to Session</Text>
           }
         </TouchableOpacity>
       </View>
@@ -521,6 +541,66 @@ function ProductCard({ product, onPress, cols }: ProductCardProps) {
   );
 }
 
+// ─── Info Modal ───────────────────────────────────────────────────────────────
+
+interface InfoModalProps {
+  title:   string;
+  body:    string;
+  onClose: () => void;
+}
+
+function InfoModal({ title, body, onClose }: InfoModalProps) {
+  return (
+    <Modal transparent animationType="fade" onRequestClose={onClose}>
+      <View style={so.overlay}>
+        <View style={so.sheet}>
+          <Text style={so.title}>{title}</Text>
+          <Text style={so.body}>{body}</Text>
+          <TouchableOpacity style={so.confirmBtn} onPress={onClose} activeOpacity={0.8}>
+            <Text style={so.confirmText}>OK</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ─── Confirm Modal ────────────────────────────────────────────────────────────
+
+interface ConfirmModalProps {
+  title:       string;
+  body:        string;
+  confirmText: string;
+  danger?:     boolean;
+  onCancel:    () => void;
+  onConfirm:   () => void;
+}
+
+function ConfirmModal({ title, body, confirmText, danger, onCancel, onConfirm }: ConfirmModalProps) {
+  return (
+    <Modal transparent animationType="fade" onRequestClose={onCancel}>
+      <View style={so.overlay}>
+        <View style={so.sheet}>
+          <Text style={so.title}>{title}</Text>
+          <Text style={so.body}>{body}</Text>
+          <View style={so.actions}>
+            <TouchableOpacity style={so.cancelBtn} onPress={onCancel} activeOpacity={0.7}>
+              <Text style={so.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[so.confirmBtn, danger && so.confirmBtnDanger]}
+              onPress={onConfirm}
+              activeOpacity={0.8}
+            >
+              <Text style={so.confirmText}>{confirmText}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // ─── POS Screen ───────────────────────────────────────────────────────────────
 
 export default function POSScreen({ route, navigation }: Props) {
@@ -534,6 +614,7 @@ export default function POSScreen({ route, navigation }: Props) {
   const total        = useCartStore((s) => s.total);
   const addItem      = useCartStore((s) => s.addItem);
   const updateQty    = useCartStore((s) => s.updateQuantity);
+  const updateNote   = useCartStore((s) => s.updateNote);
   const clearCart    = useCartStore((s) => s.clearCart);
 
   const { width: windowWidth } = useWindowDimensions();
@@ -563,8 +644,35 @@ export default function POSScreen({ route, navigation }: Props) {
   const [discountNonce,  setDiscountNonce]  = useState<string | null>(null);
   const [discountType,   setDiscountType]   = useState<'percent' | 'amount'>('percent');
   const [discountInput,  setDiscountInput]  = useState('20');
-  const [showDiscountModal, setShowDiscountModal] = useState(false);
-  const [showSwitchModal,   setShowSwitchModal]   = useState(false);
+  const [showDiscountModal,  setShowDiscountModal]  = useState(false);
+  const [showAddCashierPanel, setShowAddCashierPanel] = useState(false);
+  const [infoModal,    setInfoModal]    = useState<{ title: string; body: string } | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{
+    title:       string;
+    body:        string;
+    confirmText: string;
+    danger?:     boolean;
+    onConfirm:   () => void;
+  } | null>(null);
+
+  // Roster state — mirrors the session's roster array, updated locally on every action
+  const [roster, setRoster] = useState<RosterEntry[]>(() => {
+    const r = route.params.session.roster ?? [];
+    // Backward compat: if no roster (old session), synthesize opener entry
+    if (r.length === 0) {
+      return [{
+        uid:          user.uid,
+        username:     user.username,
+        full_name:    user.full_name,
+        role:         user.role,
+        clock_in_at:  route.params.session.start_time,
+        clock_out_at: null,
+        status:       'active',
+      }];
+    }
+    return r;
+  });
+  const activeUid = currentSession.active_cashier_uid ?? user.uid;
 
   const appState      = useRef(AppState.currentState);
   // Refs so the AppState handler (set up once on mount) always has current values
@@ -693,11 +801,10 @@ export default function POSScreen({ route, navigation }: Props) {
 
   function alertDeadLettered(count: number) {
     if (count <= 0) return;
-    Alert.alert(
-      'Orders Could Not Be Synced',
-      `${count} order${count !== 1 ? 's' : ''} failed too many times and have been moved to Failed. Review them in Pending Orders.`,
-      [{ text: 'OK' }],
-    );
+    setInfoModal({
+      title: 'Orders Could Not Be Synced',
+      body:  `${count} order${count !== 1 ? 's' : ''} failed too many times and have been moved to Failed. Review them in Pending Orders.`,
+    });
   }
 
   const filtered = useMemo(() => {
@@ -721,10 +828,10 @@ export default function POSScreen({ route, navigation }: Props) {
     }
   }, [addItem]);
 
-  function handleModifierAdd(mods: SelectedModifier[], qty: number, notes: string) {
+  function handleModifierAdd(mods: SelectedModifier[], qty: number) {
     if (!modProduct) return;
     for (let i = 0; i < qty; i++) {
-      addItem(modProduct.id, modProduct.name, modProduct.price, modProduct.cost, mods, notes, modProduct.tracking_mode, modProduct.stock_item_id, modProduct.recipe_lines, modProduct.needs_kitchen);
+      addItem(modProduct.id, modProduct.name, modProduct.price, modProduct.cost, mods, '', modProduct.tracking_mode, modProduct.stock_item_id, modProduct.recipe_lines, modProduct.needs_kitchen);
     }
     setModProduct(null);
   }
@@ -735,38 +842,164 @@ export default function POSScreen({ route, navigation }: Props) {
     setDiscountType('percent');
   }
 
-  async function handleLogout() {
-    if (currentSession.status === 'open') {
-      if (isDraft) {
-        Alert.alert(
-          'Draft Session Active',
-          'You have unsynced offline orders. Logging out will discard this draft session. Connect first to save your orders.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Discard & Logout', style: 'destructive',
-              onPress: async () => { clearCart(); clearDiscount(); await logout(); },
-            },
-          ],
-        );
+  // ── Roster helpers ──────────────────────────────────────────────────────────
+
+  function persistRoster(
+    updatedRoster: RosterEntry[],
+    newActiveUid:  string,
+    newActiveName: string,
+    newEvents:     CashierEvent[],
+  ) {
+    const updated: typeof currentSession = {
+      ...currentSession,
+      roster:              updatedRoster,
+      active_cashier_uid:  newActiveUid,
+      active_cashier_name: newActiveName,
+      cashier_log:         [...(currentSession.cashier_log ?? []), ...newEvents],
+    };
+    setCurrentSession(updated);
+    setRoster(updatedRoster);
+
+    // If offline, queue roster changes for Firestore sync when reconnected.
+    // Accumulate events across multiple offline operations so none are lost.
+    if (!isOnline) {
+      loadPendingCashierSync().then((existing) =>
+        savePendingCashierSync({
+          sessionId:  currentSession.id,
+          roster:     updatedRoster,
+          activeUid:  newActiveUid,
+          activeName: newActiveName,
+          newEvents:  [...(existing?.newEvents ?? []), ...newEvents],
+        }),
+      ).catch(() => {});
+    }
+  }
+
+  function handleAddCashierSuccess(newUser: AuthUser) {
+    const existing = roster.find((e) => e.uid === newUser.uid);
+    if (existing) {
+      setShowAddCashierPanel(false);
+      setInfoModal({
+        title: 'Already on Shift',
+        body:  existing.status === 'active'
+          ? `${newUser.full_name} is already the active cashier on this shift.`
+          : `${newUser.full_name} is already on this shift. Tap their chip in the roster bar to re-activate them.`,
+      });
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const logEvents: CashierEvent[] = [
+      { uid: user.uid, username: user.username, full_name: user.full_name, role: user.role, action: 'switch_out', at: now },
+      { uid: newUser.uid, username: newUser.username, full_name: newUser.full_name, role: newUser.role, action: 'clock_in', at: now },
+    ];
+    const newEntry: RosterEntry = {
+      uid: newUser.uid, username: newUser.username,
+      full_name: newUser.full_name, role: newUser.role,
+      clock_in_at: now, clock_out_at: null, status: 'active',
+    };
+    const updatedRoster = [...roster, newEntry];
+
+    persistRoster(updatedRoster, newUser.uid, newUser.full_name, logEvents);
+    setUser(newUser);
+    clearDiscount();
+    setShowAddCashierPanel(false);
+
+    // Best-effort Firestore write — skipped for draft sessions, fails silently offline
+    const prevUser = user;
+    addCashierToRoster(currentSession.id, newUser, prevUser, roster).catch((err) =>
+      logError('POSScreen:handleAddCashierSuccess', err, 'Failed to sync new cashier to Firestore'),
+    );
+  }
+
+  function handleRosterSwitch(entry: RosterEntry) {
+    const prevUser: AuthUser = {
+      uid: user.uid, username: user.username,
+      full_name: user.full_name, role: user.role,
+    };
+    const nextUser: AuthUser = {
+      uid: entry.uid, username: entry.username,
+      full_name: entry.full_name, role: entry.role,
+    };
+    if (prevUser.uid === nextUser.uid) return;
+
+    const now = new Date().toISOString();
+    const logEvents: CashierEvent[] = [
+      { ...prevUser, action: 'switch_out', at: now },
+      { ...nextUser, action: 'switch_in',  at: now },
+    ];
+    const updatedRoster = entry.status === 'clocked_out'
+      ? roster.map((e) =>
+          e.uid === entry.uid
+            ? { ...e, clock_out_at: null, status: 'active' as const, clock_in_at: now }
+            : e,
+        )
+      : roster;
+
+    persistRoster(updatedRoster, nextUser.uid, nextUser.full_name, logEvents);
+    setUser(nextUser);
+    clearDiscount();
+
+    // Best-effort Firestore write — skipped for draft sessions, fails silently offline
+    switchActiveCashier(currentSession.id, prevUser, nextUser).catch((err) =>
+      logError('POSScreen:handleRosterSwitch', err, 'Failed to sync switch to Firestore'),
+    );
+  }
+
+  function handleRosterClockOut(entry: RosterEntry) {
+    const isActive = entry.uid === activeUid;
+    const now = new Date().toISOString();
+
+    if (isActive) {
+      const others = roster.filter((e) => e.uid !== entry.uid && e.status === 'active');
+      if (others.length === 0) {
+        setInfoModal({ title: 'Cannot Clock Out', body: 'Add another cashier before clocking out.' });
         return;
       }
-      Alert.alert(
-        'Session Still Open',
-        'You have an open cash session. End your shift first to reconcile your cash.',
-        [
-          {
-            text: 'End Shift',
-            onPress: () => navigation.navigate('CloseSession', { session: currentSession }),
-          },
-          { text: 'Cancel', style: 'cancel' },
-        ],
+      const next = others[0];
+      const currentUser: AuthUser = { uid: user.uid, username: user.username, full_name: user.full_name, role: user.role };
+      const nextUser: AuthUser    = { uid: next.uid, username: next.username, full_name: next.full_name, role: next.role };
+
+      const logEvents: CashierEvent[] = [
+        { ...currentUser, action: 'switch_out', at: now },
+        { ...nextUser,    action: 'switch_in',  at: now },
+        { uid: entry.uid, username: entry.username, full_name: entry.full_name, role: entry.role, action: 'clock_out', at: now },
+      ];
+      const updatedRoster = roster.map((e) =>
+        e.uid === entry.uid
+          ? { ...e, clock_out_at: now, status: 'clocked_out' as const }
+          : e,
+      );
+
+      persistRoster(updatedRoster, nextUser.uid, nextUser.full_name, logEvents);
+      setUser(nextUser);
+      clearDiscount();
+
+      // Best-effort Firestore writes — skipped for draft sessions, fail silently offline
+      switchActiveCashier(currentSession.id, currentUser, nextUser).catch((err) =>
+        logError('POSScreen:handleRosterClockOut', err, `switch uid=${entry.uid}`),
+      );
+      clockOutCashierEntry(currentSession.id, entry.uid, roster).catch((err) =>
+        logError('POSScreen:handleRosterClockOut', err, `clockOut uid=${entry.uid}`),
       );
       return;
     }
-    clearCart();
-    clearDiscount();
-    await logout();
+
+    const logEvents: CashierEvent[] = [
+      { uid: entry.uid, username: entry.username, full_name: entry.full_name, role: entry.role, action: 'clock_out', at: now },
+    ];
+    const updatedRoster = roster.map((e) =>
+      e.uid === entry.uid
+        ? { ...e, clock_out_at: now, status: 'clocked_out' as const }
+        : e,
+    );
+
+    persistRoster(updatedRoster, activeUid, currentSession.active_cashier_name ?? user.full_name, logEvents);
+
+    // Best-effort Firestore write — skipped for draft sessions, fails silently offline
+    clockOutCashierEntry(currentSession.id, entry.uid, roster).catch((err) =>
+      logError('POSScreen:handleRosterClockOut', err, `uid=${entry.uid}`),
+    );
   }
 
   const rawDiscountNum   = parseFloat(discountInput) || 0;
@@ -797,22 +1030,24 @@ export default function POSScreen({ route, navigation }: Props) {
         {/* Top bar */}
         <View style={s.topBar}>
           <View style={s.topBarLeft}>
-            <View style={s.topBarBrand}>
+            <View style={s.topBarLogoCircle}>
               <Image
                 source={require('../../../assets/images/SmartBrew_logo.jpg')}
                 style={s.topBarLogo}
-                resizeMode="contain"
+                resizeMode="cover"
               />
-              {isDraft && <Text style={s.draftBadge}>DRAFT</Text>}
             </View>
-            <Text style={s.sessionInfo}>
-              {user.full_name} · Started{' '}
-              {new Date(currentSession.start_time).toLocaleTimeString('en-PH', {
-                hour: 'numeric', minute: '2-digit', hour12: true,
-              })}
-              {' '}· ₱{currentSession.starting_cash.toFixed(2)} opening cash
-              {isDraft ? ' · reconnect to sync' : ''}
-            </Text>
+            <View style={s.topBarInfo}>
+              {isDraft && <Text style={s.draftBadge}>DRAFT</Text>}
+              <Text style={s.sessionInfo}>
+                {user.full_name} · Started{' '}
+                {new Date(currentSession.start_time).toLocaleTimeString('en-PH', {
+                  hour: 'numeric', minute: '2-digit', hour12: true,
+                })}
+                {' '}· ₱{currentSession.starting_cash.toFixed(2)} opening cash
+                {isDraft ? ' · reconnect to sync' : ''}
+              </Text>
+            </View>
           </View>
           <View style={s.topBarActions}>
             {queueCount > 0 && (
@@ -828,21 +1063,13 @@ export default function POSScreen({ route, navigation }: Props) {
               </TouchableOpacity>
             )}
             <TouchableOpacity
-              style={s.switchBtn}
-              onPress={() => setShowSwitchModal(true)}
-              activeOpacity={0.7}
-            >
-              <Text style={s.switchText}>Switch Cashier</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
               style={[s.endShiftBtn, isDraft && s.endShiftBtnDisabled]}
               onPress={() => {
                 if (isDraft) {
-                  Alert.alert(
-                    'Reconnect First',
-                    'Your session is offline. Reconnect to sync your orders before ending the shift.',
-                    [{ text: 'OK' }],
-                  );
+                  setInfoModal({
+                    title: 'Reconnect First',
+                    body:  'Your session is offline. Reconnect to sync your orders before ending the shift.',
+                  });
                   return;
                 }
                 navigation.navigate('CloseSession', { session: currentSession });
@@ -850,9 +1077,6 @@ export default function POSScreen({ route, navigation }: Props) {
               activeOpacity={0.7}
             >
               <Text style={s.endShiftText}>End Shift</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={s.logoutBtn} onPress={handleLogout} activeOpacity={0.7}>
-              <Text style={s.logoutText}>Log out</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -871,18 +1095,24 @@ export default function POSScreen({ route, navigation }: Props) {
             initialDiscountInput={discountInput}
             cartSubtotal={total}
           />
-        ) : showSwitchModal ? (
-          <CashierSwitchPanel
-            onClose={() => setShowSwitchModal(false)}
-            onSuccess={(newUser) => {
-              setUser(newUser);
-              clearDiscount();
-              setShowSwitchModal(false);
-            }}
+        ) : showAddCashierPanel ? (
+          <AddCashierPanel
+            onClose={() => setShowAddCashierPanel(false)}
+            onSuccess={handleAddCashierSuccess}
             isOnline={isOnline}
           />
         ) : (
           <>
+            {/* Cashier roster bar */}
+            <CashierRosterBar
+              roster={roster}
+              activeUid={activeUid}
+              onAddPress={() => setShowAddCashierPanel(true)}
+              onSwitchPress={handleRosterSwitch}
+              onClockOut={handleRosterClockOut}
+              disabled={false}
+            />
+
             {/* Offline banner */}
             {!isOnline && (
               <View style={s.offlineBanner}>
@@ -1015,14 +1245,13 @@ export default function POSScreen({ route, navigation }: Props) {
           </Text>
           {cartItems.length > 0 && (
             <TouchableOpacity
-              onPress={() => Alert.alert(
-                'Clear Cart',
-                'Remove all items from the order?',
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  { text: 'Clear', style: 'destructive', onPress: () => { clearCart(); clearDiscount(); } },
-                ],
-              )}
+              onPress={() => setConfirmModal({
+                title:       'Clear Cart',
+                body:        'Remove all items from the order?',
+                confirmText: 'Clear',
+                danger:      true,
+                onConfirm:   () => { clearCart(); clearDiscount(); },
+              })}
               hitSlop={8}
               activeOpacity={0.7}
             >
@@ -1039,39 +1268,46 @@ export default function POSScreen({ route, navigation }: Props) {
           contentContainerStyle={cartItems.length === 0 ? s.cartEmpty : undefined}
           renderItem={({ item }) => (
             <View style={s.cartRow}>
-              <View style={s.cartRowInfo}>
-                <Text style={s.cartRowName} numberOfLines={1}>{item.name}</Text>
-                {item.modifiers.length > 0 && (
-                  <Text style={s.cartRowMods} numberOfLines={1}>
-                    {item.modifiers.map((m) => m.modifier_name).join(', ')}
+              <View style={s.cartRowTop}>
+                <View style={s.cartRowInfo}>
+                  <Text style={s.cartRowName} numberOfLines={1}>{item.name}</Text>
+                  {item.modifiers.length > 0 && (
+                    <Text style={s.cartRowMods} numberOfLines={1}>
+                      {item.modifiers.map((m) => m.modifier_name).join(', ')}
+                    </Text>
+                  )}
+                  <Text style={s.cartRowPrice}>
+                    ₱{(item.unit_price * item.quantity).toFixed(2)}
                   </Text>
-                )}
-                {!!item.notes && (
-                  <Text style={s.cartRowNote} numberOfLines={1}>"{item.notes}"</Text>
-                )}
-                <Text style={s.cartRowPrice}>
-                  ₱{(item.unit_price * item.quantity).toFixed(2)}
-                </Text>
+                </View>
+                <View style={s.qtyControl}>
+                  <TouchableOpacity
+                    style={s.qtyMini}
+                    onPress={() => updateQty(item.cart_key, item.quantity - 1)}
+                    hitSlop={8}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={s.qtyMiniText}>−</Text>
+                  </TouchableOpacity>
+                  <Text style={s.qtyNum}>{item.quantity}</Text>
+                  <TouchableOpacity
+                    style={s.qtyMini}
+                    onPress={() => updateQty(item.cart_key, item.quantity + 1)}
+                    hitSlop={8}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={s.qtyMiniText}>+</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-              <View style={s.qtyControl}>
-                <TouchableOpacity
-                  style={s.qtyMini}
-                  onPress={() => updateQty(item.cart_key, item.quantity - 1)}
-                  hitSlop={8}
-                  activeOpacity={0.7}
-                >
-                  <Text style={s.qtyMiniText}>−</Text>
-                </TouchableOpacity>
-                <Text style={s.qtyNum}>{item.quantity}</Text>
-                <TouchableOpacity
-                  style={s.qtyMini}
-                  onPress={() => updateQty(item.cart_key, item.quantity + 1)}
-                  hitSlop={8}
-                  activeOpacity={0.7}
-                >
-                  <Text style={s.qtyMiniText}>+</Text>
-                </TouchableOpacity>
-              </View>
+              <TextInput
+                style={s.cartItemNotes}
+                placeholder="Add note…"
+                placeholderTextColor={Colors.gray400}
+                value={item.notes ?? ''}
+                onChangeText={(t) => updateNote(item.cart_key, t)}
+                scrollEnabled={false}
+              />
             </View>
           )}
           ListEmptyComponent={
@@ -1194,6 +1430,27 @@ export default function POSScreen({ route, navigation }: Props) {
         />
       )}
 
+      {/* Generic Info Modal */}
+      {infoModal && (
+        <InfoModal
+          title={infoModal.title}
+          body={infoModal.body}
+          onClose={() => setInfoModal(null)}
+        />
+      )}
+
+      {/* Generic Confirm Modal */}
+      {confirmModal && (
+        <ConfirmModal
+          title={confirmModal.title}
+          body={confirmModal.body}
+          confirmText={confirmModal.confirmText}
+          danger={confirmModal.danger}
+          onCancel={() => setConfirmModal(null)}
+          onConfirm={() => { confirmModal.onConfirm(); setConfirmModal(null); }}
+        />
+      )}
+
     </View>
   );
 }
@@ -1224,16 +1481,26 @@ const s = StyleSheet.create({
   },
   topBarLeft: {
     flex: 1,
-    minWidth: 0,
-  },
-  topBarBrand: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.sm,
+    gap: Spacing.md,
+    minWidth: 0,
+  },
+  topBarLogoCircle: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    overflow: 'hidden',
+    backgroundColor: Colors.white,
+    flexShrink: 0,
   },
   topBarLogo: {
-    width: 120,
-    height: 36,
+    width: 52,
+    height: 52,
+  },
+  topBarInfo: {
+    flex: 1,
+    minWidth: 0,
   },
   draftBadge: {
     fontSize: FontSize.xs,
@@ -1282,17 +1549,6 @@ const s = StyleSheet.create({
     fontWeight: FontWeight.bold,
     color: Colors.warning,
   },
-  switchBtn: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderRadius: Radius.sm,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-  },
-  switchText: {
-    fontSize: FontSize.sm,
-    color: Colors.green100,
-    fontWeight: FontWeight.medium,
-  },
   endShiftBtn: {
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
@@ -1309,18 +1565,6 @@ const s = StyleSheet.create({
     color: Colors.white,
     fontWeight: FontWeight.medium,
   },
-  logoutBtn: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderRadius: Radius.sm,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-  },
-  logoutText: {
-    fontSize: FontSize.sm,
-    color: Colors.white,
-    fontWeight: FontWeight.medium,
-  },
-
   offlineBanner: {
     backgroundColor: Colors.warningBg,
     borderBottomWidth: 1,
@@ -1538,16 +1782,30 @@ const s = StyleSheet.create({
     lineHeight: 22,
   },
   cartRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'column',
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
     borderBottomWidth: 1,
     borderColor: Colors.gray100,
+    gap: Spacing.xs,
+  },
+  cartRowTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: Spacing.sm,
   },
   cartRowInfo: {
     flex: 1,
+  },
+  cartItemNotes: {
+    fontSize: FontSize.xs,
+    color: Colors.gray700,
+    paddingVertical: 3,
+    paddingHorizontal: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.gray200,
+    borderRadius: Radius.sm,
+    backgroundColor: Colors.gray50,
   },
   cartRowName: {
     fontSize: FontSize.base,
@@ -1558,11 +1816,6 @@ const s = StyleSheet.create({
     fontSize: FontSize.xs,
     color: Colors.gray500,
     marginTop: 1,
-  },
-  cartRowNote: {
-    fontSize: FontSize.xs,
-    color: Colors.info,
-    fontStyle: 'italic',
   },
   cartRowPrice: {
     fontSize: FontSize.sm,
@@ -1804,19 +2057,31 @@ const pc = StyleSheet.create({
 // ─── Modifier Modal Styles ────────────────────────────────────────────────────
 
 const mm = StyleSheet.create({
-  overlay: {
-    flex: 1,
+  kav: {
+    // On Expo Web the KAV with flex:1 or absoluteFill only covers the visual
+    // viewport (which excludes the browser toolbar height), leaving the app's
+    // top bar uncovered. position:'fixed' anchors to the layout viewport so the
+    // dark backdrop covers the full screen. On native, flex:1 is correct.
+    ...(Platform.OS === 'web'
+      ? ({ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 } as object)
+      : { flex: 1 }),
+    justifyContent: 'flex-end',
     backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: isTablet ? Spacing.xxl : Spacing.sm,
+  },
+  handle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.gray300,
+    alignSelf: 'center',
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.xs,
   },
   sheet: {
-    width: '100%',
-    maxWidth: isTablet ? 560 : 480,
     backgroundColor: Colors.surface,
-    borderRadius: Radius.xl,
-    overflow: 'hidden',
+    borderTopLeftRadius: Radius.xl,
+    borderTopRightRadius: Radius.xl,
+    maxHeight: isTablet ? '75%' : '90%',
     ...Shadow.lg,
   },
   header: {
@@ -1854,14 +2119,6 @@ const mm = StyleSheet.create({
     gap: Spacing.lg,
   },
   groupBlock: {
-    gap: Spacing.sm,
-  },
-  notesSection: {
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.md,
-    paddingBottom: Spacing.sm,
-    borderTopWidth: 1,
-    borderColor: Colors.border,
     gap: Spacing.sm,
   },
   groupHeader: {
@@ -1927,17 +2184,6 @@ const mm = StyleSheet.create({
   optionPrice: {
     fontSize: FontSize.xs,
     color: Colors.gray500,
-  },
-  notesInput: {
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: Radius.md,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    fontSize: FontSize.base,
-    color: Colors.gray800,
-    minHeight: 56,
-    textAlignVertical: 'top',
   },
   footer: {
     borderTopWidth: 1,
@@ -2146,5 +2392,74 @@ const ap = StyleSheet.create({
     fontSize: FontSize.sm,
     color: Colors.green700,
     fontWeight: FontWeight.medium,
+  },
+});
+
+// ─── Sign Out Modal Styles ────────────────────────────────────────────────────
+
+const so = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: Spacing.xxl,
+  },
+  sheet: {
+    width: '100%',
+    maxWidth: 400,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.xl,
+    padding: Spacing.xl,
+    gap: Spacing.md,
+    ...Shadow.lg,
+  },
+  title: {
+    fontSize: FontSize.xl,
+    fontWeight: FontWeight.bold,
+    color: Colors.gray900,
+  },
+  warning: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
+    color: Colors.warning,
+  },
+  body: {
+    fontSize: FontSize.base,
+    color: Colors.gray600,
+    lineHeight: 22,
+  },
+  actions: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+    marginTop: Spacing.sm,
+  },
+  cancelBtn: {
+    flex: 1,
+    paddingVertical: Spacing.md,
+    borderRadius: Radius.md,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    alignItems: 'center',
+  },
+  cancelText: {
+    fontSize: FontSize.base,
+    fontWeight: FontWeight.semibold,
+    color: Colors.gray600,
+  },
+  confirmBtn: {
+    flex: 1,
+    paddingVertical: Spacing.md,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.green600,
+    alignItems: 'center',
+  },
+  confirmBtnDanger: {
+    backgroundColor: Colors.danger,
+  },
+  confirmText: {
+    fontSize: FontSize.base,
+    fontWeight: FontWeight.bold,
+    color: Colors.white,
   },
 });

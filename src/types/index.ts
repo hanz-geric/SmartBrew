@@ -5,6 +5,29 @@ export type OrderType     = 'dine_in' | 'takeaway' | 'delivery';
 export type TrackingMode  = 'none' | 'direct' | 'recipe';
 export type StockStatus   = 'ok' | 'low' | 'out';
 
+// ─── Cashier Roster & Attendance ──────────────────────────────────────────────
+
+export type CashierAction = 'open' | 'clock_in' | 'switch_in' | 'switch_out' | 'clock_out';
+
+export interface CashierEvent {
+  uid:       string;
+  username:  string;
+  full_name: string;
+  role:      UserRole;
+  action:    CashierAction;
+  at:        string;      // ISO timestamp
+}
+
+export interface RosterEntry {
+  uid:          string;
+  username:     string;
+  full_name:    string;
+  role:         UserRole;
+  clock_in_at:  string;
+  clock_out_at: string | null;
+  status:       'active' | 'clocked_out';
+}
+
 export interface AuthUser {
   uid:       string;
   role:      UserRole;
@@ -105,7 +128,17 @@ export interface CashSession {
   actual_cash:    number | null;
   difference:     number | null;
   status:         'open' | 'closed';
-  cash_collected?: number;
+  cash_collected?:      number;
+  // Opener / closer audit fields
+  opened_by_uid?:       string;
+  opened_by_name?:      string;
+  closed_by_uid?:       string;
+  closed_by_name?:      string;
+  // Cashier roster fields (present on sessions created after roster feature)
+  active_cashier_uid?:  string;
+  active_cashier_name?: string;
+  roster?:              RosterEntry[];
+  cashier_log?:         CashierEvent[];
 }
 
 export interface Order {

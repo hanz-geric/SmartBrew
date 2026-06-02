@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator, Alert, FlatList, ScrollView,
+  ActivityIndicator, Alert, FlatList, Image, ScrollView,
   StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -88,7 +88,12 @@ export default function ReceiptScreen({ route, navigation }: Props) {
 
         {/* Header */}
         <View style={s.receiptHeader}>
-          <Text style={s.shopName}>☕ SmartBrew POS</Text>
+          <Image
+            source={require('../../../assets/images/SmartBrew_logo.jpg')}
+            style={s.receiptLogo}
+            resizeMode="contain"
+          />
+          <Text style={s.shopName}>SmartBrew POS</Text>
           <Text style={s.orderNum}>Order #{order.order_number}</Text>
           <Text style={s.dateText}>{dateStr}</Text>
           <View style={s.typeBadge}>
@@ -219,6 +224,13 @@ const s = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.xs,
     marginBottom: Spacing.lg,
+  },
+  receiptLogo: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignSelf: 'center',
+    marginBottom: Spacing.xs,
   },
   shopName: {
     fontSize: FontSize.xl,

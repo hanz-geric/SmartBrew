@@ -4,9 +4,12 @@ import {
 } from '../db/queries/queue';
 import { saveFailedOrder } from '../db/queries/failedOrders';
 import { createOrder, openSession } from '../firebase/firestoreService';
-import { updateDoc, increment } from 'firebase/firestore';
+import { updateDoc, increment, arrayUnion } from 'firebase/firestore';
 import { sessionDoc } from '../firebase/collections';
-import { saveSessionCache, loadPendingClose, clearPendingClose } from '../db/queries/sessionCache';
+import {
+  saveSessionCache, loadPendingClose, clearPendingClose,
+  loadPendingCashierSync, clearPendingCashierSync,
+} from '../db/queries/sessionCache';
 import { auth } from '../firebase/config';
 import { AuthUser, CashSession } from '../types';
 import { logError } from '../utils/logger';
@@ -118,18 +121,40 @@ export async function syncPendingOrders(
   return { synced, failed, deadLettered };
 }
 
-// Promotes a draft session to a real Firestore session, then patches all queued
-// orders so their session_id points to the real document. Returns the real session.
+
+// Promotes a draft session and also flushes any offline cashier roster events.
 export async function reconcileDraftSession(
   draft: CashSession,
   user:  AuthUser,
 ): Promise<CashSession> {
-  const real = await openSession(draft.user_id, draft.cashier_name, draft.starting_cash, draft.start_time);
+  const real = await openSession(
+    draft.user_id, draft.cashier_name, draft.starting_cash, draft.start_time,
+    { username: user.username, role: user.role },
+  );
   await patchPendingOrdersSessionId(draft.id, real.id);
-  // openSession already saves to sessionCache (isDraft=false) non-blocking,
-  // but do it explicitly here to ensure it completes before we return.
   await saveSessionCache(real, user.uid, false);
+  // Flush any offline roster changes that happened during the draft session
+  await syncPendingCashierEvents(real.id).catch((err) =>
+    logError('reconcileDraftSession:cashierSync', err, `session=${real.id}`),
+  );
   return real;
+}
+
+// Flushes queued offline cashier roster changes to Firestore.
+export async function syncPendingCashierEvents(realSessionId: string): Promise<void> {
+  const pending = await loadPendingCashierSync();
+  if (!pending) return;
+  try {
+    await updateDoc(sessionDoc(realSessionId), {
+      roster:              pending.roster,
+      active_cashier_uid:  pending.activeUid,
+      active_cashier_name: pending.activeName,
+      cashier_log:         arrayUnion(...pending.newEvents),
+    });
+    await clearPendingCashierSync();
+  } catch (err) {
+    logError('syncPendingCashierEvents', err, `session=${realSessionId}`);
+  }
 }
 
 // Applies a session close that was saved offline. No-op if none is queued.

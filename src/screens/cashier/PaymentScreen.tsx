@@ -1,4 +1,4 @@
-import 'react-native-get-random-values';
+﻿import 'react-native-get-random-values';
 import { v4 as uuid } from 'uuid';
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -114,7 +114,7 @@ export default function PaymentScreen({ route, navigation }: Props) {
   const [error,        setError]       = useState('');
   const [settings,     setSettings]    = useState<Settings>({});
   const { notifySynced } = useSyncEvents();
-  // Ref guard — prevents double-tap from enqueuing the same order twice before
+  // Ref guard ??" prevents double-tap from enqueuing the same order twice before
   // React re-renders the disabled state of the confirm button.
   const submittingRef = useRef(false);
 
@@ -157,7 +157,7 @@ export default function PaymentScreen({ route, navigation }: Props) {
     let order: Order;
     let warnings: string[] = [];
 
-    // Shared helper — prints kitchen ticket from local printer (no cloud needed)
+    // Shared helper ??" prints kitchen ticket from local printer (no cloud needed)
     function printKitchenIfNeeded(o: Order) {
       if (!cartItems.some((i) => i.needs_kitchen)) return;
       const bytes = buildKitchenTicket(o, settings);
@@ -169,7 +169,7 @@ export default function PaymentScreen({ route, navigation }: Props) {
       }).catch(() => {});
     }
 
-    // Shared helper — save to local queue + optimistic stock deduction
+    // Shared helper ??" save to local queue + optimistic stock deduction
     async function saveOffline(): Promise<Order> {
       const localId = uuid();
       const now = new Date();
@@ -183,7 +183,7 @@ export default function PaymentScreen({ route, navigation }: Props) {
     }
 
     if (!isOnline) {
-      // Skip Firestore entirely — long-polling hangs indefinitely when offline
+      // Skip Firestore entirely ??" long-polling hangs indefinitely when offline
       try {
         order    = await saveOffline();
         warnings = ['Order saved offline — will sync when connected.'];
@@ -221,7 +221,7 @@ export default function PaymentScreen({ route, navigation }: Props) {
 
   return (
     <View style={s.root}>
-      {/* ── Left: Order Summary ── */}
+      {/* ?"??"? Left: Order Summary ?"??"? */}
       <View style={s.left}>
         <View style={s.panelHeader}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={s.backBtn}>
@@ -281,10 +281,10 @@ export default function PaymentScreen({ route, navigation }: Props) {
         />
       </View>
 
-      {/* ── Right: Payment Form ── */}
+      {/* ?"??"? Right: Payment Form ?"??"? */}
       <KeyboardAvoidingView
         style={s.right}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'android' ? 'height' : 'padding'}
         keyboardVerticalOffset={0}
       >
       <ScrollView style={{ flex: 1 }} contentContainerStyle={s.rightContent} keyboardShouldPersistTaps="handled">

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+﻿import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
   ScrollView, StyleSheet, Switch, Text, TextInput,
@@ -191,7 +191,7 @@ export default function ModifierGroupEditScreen() {
     <AdminLayout active="Modifiers">
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'android' ? 'height' : 'padding'}
       >
         <ScrollView
           ref={scrollRef}

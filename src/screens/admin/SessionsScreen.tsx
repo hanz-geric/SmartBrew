@@ -219,12 +219,7 @@ export default function SessionsScreen() {
         </View>
 
         {/* Status filter chips */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={s.statusFilterRow}
-          contentContainerStyle={s.statusFilterContent}
-        >
+        <View style={s.statusFilterRow}>
           {(['all', 'open', 'closed'] as const).map((f) => (
             <TouchableOpacity
               key={f}
@@ -237,7 +232,7 @@ export default function SessionsScreen() {
               </Text>
             </TouchableOpacity>
           ))}
-        </ScrollView>
+        </View>
 
         {/* Summary */}
         {!loading && !error && filteredSessions.length > 0 && (
@@ -407,27 +402,26 @@ const s = StyleSheet.create({
 
   searchRow: {
     flexDirection: 'row', alignItems: 'center',
-    marginHorizontal: Spacing.xl, marginBottom: Spacing.sm,
+    marginHorizontal: Spacing.xl, marginTop: Spacing.sm, marginBottom: Spacing.sm,
     backgroundColor: Colors.surface, borderRadius: Radius.md,
     borderWidth: 1, borderColor: Colors.border, ...Shadow.sm,
   },
   searchInput: {
     flex: 1, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm,
-    fontSize: FontSize.base, color: Colors.gray800,
+    fontSize: FontSize.base, color: Colors.gray800, textAlignVertical: 'center',
   },
   searchClear: { paddingHorizontal: Spacing.md },
   searchClearText: { fontSize: FontSize.sm, color: Colors.gray400 },
 
   statusFilterRow: {
-    backgroundColor: Colors.surface,
-    borderBottomWidth: 1,
-    borderColor: Colors.border,
-  },
-  statusFilterContent: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: Spacing.xs,
     paddingHorizontal: Spacing.xl,
     paddingVertical: Spacing.sm,
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderColor: Colors.border,
   },
   statusChip: {
     paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs,

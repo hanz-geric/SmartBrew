@@ -1,5 +1,5 @@
 import React from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AdminStackParamList } from '../../navigation/AdminStack';
@@ -44,8 +44,12 @@ export default function AdminLayout({ active, children }: Props) {
     <View style={s.root}>
       {/* ── Sidebar ── */}
       <View style={[s.sidebar, compact && s.sidebarCompact]}>
-        <View style={s.brand}>
-          <Text style={s.brandIcon}>☕</Text>
+        <View style={[s.brand, compact && s.brandCompact]}>
+          <Image
+            source={require('../../../assets/images/SmartBrew_logo.jpg')}
+            style={compact ? s.brandLogoCompact : s.brandLogo}
+            resizeMode="cover"
+          />
           {!compact && <Text style={s.brandName}>SmartBrew</Text>}
           {!compact && (
             <Text style={s.brandRole}>
@@ -127,8 +131,25 @@ const s = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.1)',
     marginBottom: Spacing.md,
   },
-  brandIcon: {
-    fontSize: rs(28),
+  brandCompact: {
+    paddingHorizontal: Spacing.xs,
+    paddingBottom: Spacing.lg,
+    alignItems: 'center',
+  },
+  brandLogo: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.45)',
+    marginBottom: Spacing.sm,
+  },
+  brandLogoCompact: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.45)',
   },
   brandName: {
     fontSize: FontSize.lg,

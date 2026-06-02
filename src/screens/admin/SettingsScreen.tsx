@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform,
   ScrollView, StyleSheet, Text, TextInput,
@@ -222,7 +222,7 @@ export default function SettingsScreen() {
     <AdminLayout active="Settings">
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'android' ? 'height' : 'padding'}
       >
         <ScrollView
           style={s.scroll}

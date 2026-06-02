@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+﻿import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator, Alert, FlatList, KeyboardAvoidingView,
   Modal, Platform, ScrollView,
@@ -283,7 +283,7 @@ export default function StockScreen() {
         <View style={m.overlay}>
           <KeyboardAvoidingView
             style={m.sheet}
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            behavior={Platform.OS === 'android' ? 'height' : 'padding'}
           >
             {/* Fixed header */}
             <View style={m.modalHeader}>

@@ -2,7 +2,7 @@ import {
   query, where, orderBy, limit, getDocs, addDoc,
   updateDoc, getDoc, setDoc, DocumentData, increment,
   getAggregateFromServer, getCountFromServer, sum, count,
-  writeBatch, doc,
+  writeBatch, doc, arrayUnion,
 } from 'firebase/firestore';
 import { FirebaseError } from 'firebase/app';
 import { db, auth } from './config';
@@ -12,9 +12,9 @@ import {
   userDoc, sessionDoc, orderDoc, settingsDoc, productDoc, categoryDoc, modGroupDoc, stockDoc,
 } from './collections';
 import {
-  AuthUser, CartItem, CashSession, Category, CheckoutPayload,
-  ModifierGroup, Order, OrderItem, Product, Settings, StockItem, StockStatus,
-  UserProfile, UserRole,
+  AuthUser, CartItem, CashierEvent, CashSession, Category, CheckoutPayload,
+  ModifierGroup, Order, OrderItem, Product, RosterEntry, Settings, StockItem,
+  StockStatus, UserProfile, UserRole,
 } from '../types';
 import { writeProductsCache, writeCategoriesCache, getCachedProducts, getCachedCategories } from '../db/queries/catalog';
 import { replaceStockCache } from '../db/queries/stockCache';
@@ -26,16 +26,24 @@ import { logError } from '../utils/logger';
 function toSession(id: string, d: DocumentData): CashSession {
   return {
     id,
-    user_id:        d.user_id,
-    cashier_name:   d.cashier_name,
-    start_time:     d.start_time,
-    end_time:       d.end_time   ?? null,
-    starting_cash:  d.starting_cash,
-    expected_cash:  d.expected_cash ?? null,
-    actual_cash:    d.actual_cash   ?? null,
-    difference:     d.difference    ?? null,
-    status:         d.status,
-    cash_collected: d.cash_collected ?? 0,
+    user_id:              d.user_id,
+    cashier_name:         d.cashier_name,
+    start_time:           d.start_time,
+    end_time:             d.end_time        ?? null,
+    starting_cash:        d.starting_cash,
+    expected_cash:        d.expected_cash   ?? null,
+    actual_cash:          d.actual_cash     ?? null,
+    difference:           d.difference      ?? null,
+    status:               d.status,
+    cash_collected:       d.cash_collected  ?? 0,
+    opened_by_uid:        d.opened_by_uid   ?? undefined,
+    opened_by_name:       d.opened_by_name  ?? undefined,
+    closed_by_uid:        d.closed_by_uid   ?? undefined,
+    closed_by_name:       d.closed_by_name  ?? undefined,
+    active_cashier_uid:   d.active_cashier_uid  ?? undefined,
+    active_cashier_name:  d.active_cashier_name ?? undefined,
+    roster:               (d.roster      as RosterEntry[])  ?? [],
+    cashier_log:          (d.cashier_log as CashierEvent[]) ?? [],
   };
 }
 
@@ -59,11 +67,27 @@ export async function getOpenSession(userId: string): Promise<CashSession | null
   return toSession(d.id, d.data());
 }
 
+// Register-owned query: finds whichever drawer is open on this register.
+// Used instead of getOpenSession so any authenticated cashier can resume/close
+// a drawer regardless of who opened it.
+export async function getAnyOpenSession(): Promise<CashSession | null> {
+  const q = query(
+    sessionsCol(),
+    where('status', '==', 'open'),
+    orderBy('start_time', 'desc'),
+    limit(1),
+  );
+  const snap = await getDocs(q);
+  if (snap.empty) return null;
+  return toSession(snap.docs[0].id, snap.docs[0].data());
+}
+
 export async function openSession(
   userId:       string,
   cashierName:  string,
   startingCash: number,
   startTime?:   string,
+  userInfo?:    { username: string; role: UserRole },
 ): Promise<CashSession> {
   const fbUser = await ensureAuthenticated();
   if (fbUser) {
@@ -78,18 +102,47 @@ export async function openSession(
     throw new Error('User not authenticated');
   }
 
-  const now  = startTime ?? new Date().toISOString();
+  const now      = startTime ?? new Date().toISOString();
+  const role     = userInfo?.role     ?? 'cashier';
+  const username = userInfo?.username ?? '';
+
+  const openerEntry: RosterEntry = {
+    uid:          userId,
+    username,
+    full_name:    cashierName,
+    role,
+    clock_in_at:  now,
+    clock_out_at: null,
+    status:       'active',
+  };
+  const openEvent: CashierEvent = {
+    uid:       userId,
+    username,
+    full_name: cashierName,
+    role,
+    action:    'open',
+    at:        now,
+  };
+
   const data = {
-    user_id:        userId,
-    cashier_name:   cashierName,
-    start_time:     now,
-    end_time:       null,
-    starting_cash:  startingCash,
-    expected_cash:  null,
-    actual_cash:    null,
-    difference:     null,
-    status:         'open',
-    cash_collected: 0,
+    user_id:              userId,
+    cashier_name:         cashierName,
+    start_time:           now,
+    end_time:             null,
+    starting_cash:        startingCash,
+    expected_cash:        null,
+    actual_cash:          null,
+    difference:           null,
+    status:               'open',
+    cash_collected:       0,
+    opened_by_uid:        userId,
+    opened_by_name:       cashierName,
+    closed_by_uid:        null,
+    closed_by_name:       null,
+    active_cashier_uid:   userId,
+    active_cashier_name:  cashierName,
+    roster:               [openerEntry],
+    cashier_log:          [openEvent],
   };
   const ref     = await addDoc(sessionsCol(), data);
   const session = { id: ref.id, ...data } as CashSession;
@@ -102,6 +155,7 @@ export async function closeSession(
   actualCash:   number,
   expectedCash: number,
   userId:       string,
+  closerInfo?:  { uid: string; name: string },
 ): Promise<void> {
   const fbUser = await ensureAuthenticated();
   if (fbUser) {
@@ -116,13 +170,144 @@ export async function closeSession(
     throw new Error('User not authenticated');
   }
   await updateDoc(sessionDoc(sessionId), {
-    end_time:      new Date().toISOString(),
-    actual_cash:   actualCash,
-    expected_cash: expectedCash,
-    difference:    actualCash - expectedCash,
-    status:        'closed',
+    end_time:        new Date().toISOString(),
+    actual_cash:     actualCash,
+    expected_cash:   expectedCash,
+    difference:      actualCash - expectedCash,
+    status:          'closed',
+    ...(closerInfo && {
+      closed_by_uid:  closerInfo.uid,
+      closed_by_name: closerInfo.name,
+    }),
   });
   clearSessionCache(userId).catch(() => {});
+}
+
+// ─── Cashier Roster ───────────────────────────────────────────────────────────
+
+// Adds a new cashier to the session roster and makes them the active cashier.
+// Emits switch_out for the previous active, clock_in + switch_in for the new one.
+export async function addCashierToRoster(
+  sessionId:   string,
+  newUser:     AuthUser,
+  prevUser:    AuthUser,
+  currentRoster: RosterEntry[],
+): Promise<{ roster: RosterEntry[]; log: CashierEvent[] }> {
+  const now = new Date().toISOString();
+
+  const switchOut: CashierEvent = {
+    uid: prevUser.uid, username: prevUser.username,
+    full_name: prevUser.full_name, role: prevUser.role,
+    action: 'switch_out', at: now,
+  };
+  const clockIn: CashierEvent = {
+    uid: newUser.uid, username: newUser.username,
+    full_name: newUser.full_name, role: newUser.role,
+    action: 'clock_in', at: now,
+  };
+
+  const newEntry: RosterEntry = {
+    uid: newUser.uid, username: newUser.username,
+    full_name: newUser.full_name, role: newUser.role,
+    clock_in_at: now, clock_out_at: null, status: 'active',
+  };
+  const updatedRoster = [...currentRoster, newEntry];
+
+  if (!sessionId.includes('-')) {
+    await updateDoc(sessionDoc(sessionId), {
+      active_cashier_uid:  newUser.uid,
+      active_cashier_name: newUser.full_name,
+      roster:              updatedRoster,
+      cashier_log:         arrayUnion(switchOut, clockIn),
+    });
+  }
+  return { roster: updatedRoster, log: [switchOut, clockIn] };
+}
+
+// Switches the active cashier to an already-rostered cashier (tap-to-switch).
+// Emits switch_out for prev, switch_in for next.
+export async function switchActiveCashier(
+  sessionId:   string,
+  prevUser:    AuthUser,
+  nextUser:    AuthUser,
+): Promise<CashierEvent[]> {
+  const now = new Date().toISOString();
+  const switchOut: CashierEvent = {
+    uid: prevUser.uid, username: prevUser.username,
+    full_name: prevUser.full_name, role: prevUser.role,
+    action: 'switch_out', at: now,
+  };
+  const switchIn: CashierEvent = {
+    uid: nextUser.uid, username: nextUser.username,
+    full_name: nextUser.full_name, role: nextUser.role,
+    action: 'switch_in', at: now,
+  };
+
+  if (!sessionId.includes('-')) {
+    await updateDoc(sessionDoc(sessionId), {
+      active_cashier_uid:  nextUser.uid,
+      active_cashier_name: nextUser.full_name,
+      cashier_log:         arrayUnion(switchOut, switchIn),
+    });
+  }
+  return [switchOut, switchIn];
+}
+
+// Clocks out a single cashier from the roster (they leave for the day).
+// If they were the active cashier the caller must switch to someone else first.
+export async function clockOutCashierEntry(
+  sessionId:     string,
+  uid:           string,
+  currentRoster: RosterEntry[],
+): Promise<{ roster: RosterEntry[]; log: CashierEvent[] }> {
+  const now = new Date().toISOString();
+  const entry = currentRoster.find((e) => e.uid === uid);
+  if (!entry) return { roster: currentRoster, log: [] };
+
+  const updated = currentRoster.map((e) =>
+    e.uid === uid ? { ...e, clock_out_at: now, status: 'clocked_out' as const } : e,
+  );
+  const clockOutEvent: CashierEvent = {
+    uid: entry.uid, username: entry.username,
+    full_name: entry.full_name, role: entry.role,
+    action: 'clock_out', at: now,
+  };
+
+  if (!sessionId.includes('-')) {
+    await updateDoc(sessionDoc(sessionId), {
+      roster:      updated,
+      cashier_log: arrayUnion(clockOutEvent),
+    });
+  }
+  return { roster: updated, log: [clockOutEvent] };
+}
+
+// Clocks out ALL still-active cashiers — called when closing the shift.
+export async function clockOutAllActiveCashiers(
+  sessionId:     string,
+  currentRoster: RosterEntry[],
+): Promise<void> {
+  const active = currentRoster.filter((e) => e.status === 'active');
+  if (active.length === 0) return;
+
+  const now     = new Date().toISOString();
+  const updated = currentRoster.map((e) =>
+    e.status === 'active' ? { ...e, clock_out_at: now, status: 'clocked_out' as const } : e,
+  );
+  const events: CashierEvent[] = active.map((e) => ({
+    uid: e.uid, username: e.username,
+    full_name: e.full_name, role: e.role,
+    action: 'clock_out' as const, at: now,
+  }));
+
+  if (!sessionId.includes('-')) {
+    await updateDoc(sessionDoc(sessionId), {
+      roster:      updated,
+      cashier_log: arrayUnion(...events),
+    }).catch((err) =>
+      logError('clockOutAllActiveCashiers', err, `session=${sessionId}`),
+    );
+  }
 }
 
 // ─── Orders ──────────────────────────────────────────────────────────────────

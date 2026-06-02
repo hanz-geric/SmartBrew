@@ -8,7 +8,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AdminLayout from './AdminLayout';
 import { AdminStackParamList } from '../../navigation/AdminStack';
 import { getOrdersBySession } from '../../firebase/firestoreService';
-import { CashSession, Order, PaymentMethod } from '../../types';
+import { CashSession, CashierEvent, Order, PaymentMethod, RosterEntry } from '../../types';
 import {
   Colors, FontSize, FontWeight, Radius, Shadow, Spacing, rs,
 } from '../../constants/theme';
@@ -16,7 +16,7 @@ import {
 type Nav   = NativeStackNavigationProp<AdminStackParamList>;
 type Route = RouteProp<AdminStackParamList, 'SessionDetail'>;
 
-type DrillTab = 'summary' | 'orders';
+type DrillTab = 'cashiers' | 'summary' | 'orders';
 
 const PAY_LABELS: Record<PaymentMethod, string> = {
   cash: 'Cash', card: 'Card', qr: 'QR', gift_card: 'Gift',
@@ -48,6 +48,41 @@ function buildProductStats(orders: Order[]): ProductStat[] {
   }
   return Object.values(map).sort((a, b) => b.qty - a.qty);
 }
+
+interface CashierStat {
+  entry:         RosterEntry;
+  orderCount:    number;
+  revenue:       number;
+  cashCollected: number;
+  voidedCount:   number;
+}
+
+function buildCashierStats(roster: RosterEntry[], orders: Order[]): CashierStat[] {
+  return roster.map((entry) => {
+    const mine    = orders.filter((o) => o.cashier_name === entry.full_name);
+    const active  = mine.filter((o) => o.status !== 'cancelled');
+    const voided  = mine.length - active.length;
+    return {
+      entry,
+      orderCount:    active.length,
+      revenue:       active.reduce((s, o) => s + o.total_amount, 0),
+      cashCollected: active.filter((o) => o.payment_method === 'cash').reduce((s, o) => s + o.total_amount, 0),
+      voidedCount:   voided,
+    };
+  });
+}
+
+function initials(name: string): string {
+  return name.split(' ').map((n) => n[0] ?? '').join('').toUpperCase().slice(0, 2);
+}
+
+const ACTION_LABEL: Record<string, string> = {
+  open:       'Opened session',
+  clock_in:   'Clocked in',
+  switch_in:  'Switched in',
+  switch_out: 'Switched out',
+  clock_out:  'Clocked out',
+};
 
 function fmtDateTime(iso: string): string {
   return new Date(iso).toLocaleString('en-PH', {
@@ -85,7 +120,7 @@ export default function SessionDetailScreen() {
   const route      = useRoute<Route>();
   const { session } = route.params;
 
-  const [tab,     setTab]     = useState<DrillTab>('summary');
+  const [tab,     setTab]     = useState<DrillTab>('cashiers');
   const [orders,  setOrders]  = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -105,8 +140,18 @@ export default function SessionDetailScreen() {
   const productStats = buildProductStats(orders);
   const statTotal    = productStats.reduce((sum, p) => sum + p.revenue, 0);
 
-  const cashierNames = [...new Set(orders.map((o) => o.cashier_name).filter(Boolean))];
-  const hadSwitches  = cashierNames.length > 1;
+  const cashierNames  = [...new Set(orders.map((o) => o.cashier_name).filter(Boolean))];
+  const hadSwitches   = cashierNames.length > 1;
+  const roster        = session.roster ?? [];
+  const cashierLog    = session.cashier_log ?? [];
+  const cashierStats  = buildCashierStats(
+    roster.length > 0 ? roster : cashierNames.map((n) => ({
+      uid: n!, username: n!, full_name: n!, role: 'cashier' as const,
+      clock_in_at: session.start_time, clock_out_at: session.end_time,
+      status: session.status === 'open' ? 'active' as const : 'clocked_out' as const,
+    })),
+    orders,
+  );
 
   return (
     <AdminLayout active="Sessions">
@@ -158,28 +203,39 @@ export default function SessionDetailScreen() {
           />
         </View>
 
-        {/* Cashier switch log */}
-        {hadSwitches && (
-          <View style={s.switchBanner}>
-            <Text style={s.switchTitle}>Cashier switches during this session</Text>
-            <View style={s.switchList}>
-              {cashierNames.map((name, i) => (
-                <View key={i} style={s.switchItem}>
-                  <View style={s.switchDot} />
-                  <Text style={s.switchName}>{name}</Text>
-                </View>
-              ))}
-            </View>
+        {/* Opener / closer audit row */}
+        {(session.opened_by_name || session.closed_by_name) && (
+          <View style={s.auditRow}>
+            {session.opened_by_name && (
+              <View style={s.auditItem}>
+                <Text style={s.auditLabel}>Opened by</Text>
+                <Text style={s.auditValue}>{session.opened_by_name}</Text>
+              </View>
+            )}
+            {session.closed_by_name && (
+              <View style={s.auditItem}>
+                <Text style={s.auditLabel}>Closed by</Text>
+                <Text style={s.auditValue}>{session.closed_by_name}</Text>
+              </View>
+            )}
           </View>
         )}
 
         {/* Tabs */}
         <View style={s.tabs}>
           <TouchableOpacity
+            style={[s.tab, tab === 'cashiers' && s.tabSel]}
+            onPress={() => setTab('cashiers')}
+          >
+            <Text style={[s.tabText, tab === 'cashiers' && s.tabTextSel]}>
+              Cashiers{cashierStats.length > 0 ? ` (${cashierStats.length})` : ''}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={[s.tab, tab === 'summary' && s.tabSel]}
             onPress={() => setTab('summary')}
           >
-            <Text style={[s.tabText, tab === 'summary' && s.tabTextSel]}>Product Summary</Text>
+            <Text style={[s.tabText, tab === 'summary' && s.tabTextSel]}>Products</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[s.tab, tab === 'orders' && s.tabSel]}
@@ -196,6 +252,32 @@ export default function SessionDetailScreen() {
           <View style={s.center}>
             <ActivityIndicator size="large" color={Colors.green600} />
           </View>
+        ) : tab === 'cashiers' ? (
+          <ScrollView style={s.scroll} contentContainerStyle={s.scrollContent}>
+            {cashierStats.length === 0 ? (
+              <Text style={s.empty}>No cashier data for this session.</Text>
+            ) : (
+              cashierStats.map((stat) => (
+                <CashierCard key={stat.entry.uid} stat={stat} session={session} />
+              ))
+            )}
+            {cashierLog.length > 0 && (
+              <View style={s.logCard}>
+                <Text style={s.logTitle}>Session Event Log</Text>
+                {cashierLog.map((ev, i) => (
+                  <View key={i} style={[s.logRow, i < cashierLog.length - 1 && s.logRowBorder]}>
+                    <View style={[s.logDot, ev.action === 'clock_out' || ev.action === 'switch_out'
+                      ? s.logDotOut : s.logDotIn]} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.logName}>{ev.full_name}</Text>
+                      <Text style={s.logAction}>{ACTION_LABEL[ev.action] ?? ev.action}</Text>
+                    </View>
+                    <Text style={s.logTime}>{fmtTime(ev.at)}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </ScrollView>
         ) : tab === 'summary' ? (
           <ScrollView style={s.scroll} contentContainerStyle={s.scrollContent}>
             <View style={s.tableCard}>
@@ -274,6 +356,70 @@ export default function SessionDetailScreen() {
   );
 }
 
+function CashierCard({ stat, session }: { stat: CashierStat; session: CashSession }) {
+  const { entry, orderCount, revenue, cashCollected, voidedCount } = stat;
+  const isActive = entry.status === 'active';
+  const dur = entry.clock_out_at
+    ? duration(entry.clock_in_at, entry.clock_out_at)
+    : session.end_time
+      ? duration(entry.clock_in_at, session.end_time)
+      : 'Active';
+
+  return (
+    <View style={cc2.card}>
+      <View style={cc2.top}>
+        <View style={[cc2.avatar, isActive && cc2.avatarActive]}>
+          <Text style={cc2.avatarText}>{initials(entry.full_name)}</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <View style={cc2.nameRow}>
+            <Text style={cc2.name}>{entry.full_name}</Text>
+            <View style={[cc2.roleBadge, entry.role === 'admin' && cc2.roleBadgeAdmin,
+                                          entry.role === 'manager' && cc2.roleBadgeMgr]}>
+              <Text style={cc2.roleText}>{entry.role}</Text>
+            </View>
+            {isActive && (
+              <View style={cc2.activePill}>
+                <Text style={cc2.activeText}>Active</Text>
+              </View>
+            )}
+          </View>
+          <Text style={cc2.times}>
+            In: {fmtTime(entry.clock_in_at)}
+            {entry.clock_out_at ? `  ·  Out: ${fmtTime(entry.clock_out_at)}` : ''}
+            {'  ·  '}{dur}
+          </Text>
+        </View>
+      </View>
+      <View style={cc2.stats}>
+        <View style={cc2.statItem}>
+          <Text style={cc2.statValue}>{orderCount}</Text>
+          <Text style={cc2.statLabel}>Orders</Text>
+        </View>
+        <View style={cc2.statDivider} />
+        <View style={cc2.statItem}>
+          <Text style={cc2.statValue}>₱{revenue.toFixed(2)}</Text>
+          <Text style={cc2.statLabel}>Revenue</Text>
+        </View>
+        <View style={cc2.statDivider} />
+        <View style={cc2.statItem}>
+          <Text style={cc2.statValue}>₱{cashCollected.toFixed(2)}</Text>
+          <Text style={cc2.statLabel}>Cash</Text>
+        </View>
+        {voidedCount > 0 && (
+          <>
+            <View style={cc2.statDivider} />
+            <View style={cc2.statItem}>
+              <Text style={[cc2.statValue, { color: Colors.danger }]}>{voidedCount}</Text>
+              <Text style={cc2.statLabel}>Voided</Text>
+            </View>
+          </>
+        )}
+      </View>
+    </View>
+  );
+}
+
 function CashCell({ label, value }: { label: string; value: string }) {
   return (
     <View style={cc.cell}>
@@ -323,17 +469,34 @@ const s = StyleSheet.create({
     backgroundColor: Colors.surface, marginBottom: Spacing.md,
   },
 
-  switchBanner: {
+  auditRow: {
+    flexDirection: 'row', gap: Spacing.md,
     marginHorizontal: Spacing.xl, marginBottom: Spacing.md,
-    backgroundColor: Colors.warningBg, borderRadius: Radius.lg,
-    padding: Spacing.lg, gap: Spacing.sm,
-    borderWidth: 1, borderColor: Colors.warning + '44',
   },
-  switchTitle: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: Colors.warning },
-  switchList:  { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md },
-  switchItem:  { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
-  switchDot:   { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.warning },
-  switchName:  { fontSize: FontSize.sm, color: Colors.gray700, fontWeight: FontWeight.medium },
+  auditItem:  { flex: 1, backgroundColor: Colors.surface, borderRadius: Radius.lg,
+                padding: Spacing.md, borderWidth: 1, borderColor: Colors.border },
+  auditLabel: { fontSize: FontSize.xs, color: Colors.gray400, marginBottom: 2 },
+  auditValue: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.gray800 },
+
+  logCard: {
+    backgroundColor: Colors.surface, borderRadius: Radius.lg,
+    overflow: 'hidden', borderWidth: 1, borderColor: Colors.border,
+  },
+  logTitle: {
+    fontSize: FontSize.xs, fontWeight: FontWeight.bold,
+    color: Colors.gray500, textTransform: 'uppercase',
+    paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm,
+    backgroundColor: Colors.gray50, borderBottomWidth: 1, borderColor: Colors.gray100,
+  },
+  logRow:        { flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+                   paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md },
+  logRowBorder:  { borderBottomWidth: 1, borderColor: Colors.gray100 },
+  logDot:        { width: 8, height: 8, borderRadius: 4 },
+  logDotIn:      { backgroundColor: Colors.green600 },
+  logDotOut:     { backgroundColor: Colors.gray400 },
+  logName:       { fontSize: FontSize.sm, fontWeight: FontWeight.medium, color: Colors.gray800 },
+  logAction:     { fontSize: FontSize.xs, color: Colors.gray500 },
+  logTime:       { fontSize: FontSize.xs, color: Colors.gray400, fontWeight: FontWeight.medium },
 
   tabs: {
     flexDirection: 'row',
@@ -408,4 +571,45 @@ const cc = StyleSheet.create({
   },
   label: { fontSize: FontSize.xs, color: Colors.gray500, fontWeight: FontWeight.medium, marginBottom: 2 },
   value: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: Colors.gray800 },
+});
+
+const cc2 = StyleSheet.create({
+  card: {
+    backgroundColor: Colors.surface, borderRadius: Radius.lg,
+    borderWidth: 1, borderColor: Colors.border, overflow: 'hidden',
+  },
+  top: {
+    flexDirection: 'row', alignItems: 'flex-start',
+    padding: Spacing.lg, gap: Spacing.md,
+  },
+  avatar: {
+    width: rs(44), height: rs(44), borderRadius: rs(22),
+    backgroundColor: Colors.gray200, alignItems: 'center', justifyContent: 'center',
+  },
+  avatarActive: { backgroundColor: Colors.green100 },
+  avatarText:   { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: Colors.gray700 },
+  nameRow:      { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: Spacing.sm, marginBottom: 4 },
+  name:         { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: Colors.gray900 },
+  roleBadge: {
+    paddingHorizontal: Spacing.sm, paddingVertical: 1,
+    borderRadius: Radius.full, backgroundColor: Colors.gray100,
+  },
+  roleBadgeAdmin: { backgroundColor: Colors.green100 },
+  roleBadgeMgr:   { backgroundColor: '#EEF2FF' },
+  roleText:       { fontSize: FontSize.xs, fontWeight: FontWeight.bold, color: Colors.gray600, textTransform: 'capitalize' },
+  activePill: {
+    paddingHorizontal: Spacing.sm, paddingVertical: 1,
+    borderRadius: Radius.full, backgroundColor: Colors.green600,
+  },
+  activeText: { fontSize: FontSize.xs, fontWeight: FontWeight.bold, color: Colors.white },
+  times:      { fontSize: FontSize.xs, color: Colors.gray500 },
+  stats: {
+    flexDirection: 'row',
+    borderTopWidth: 1, borderColor: Colors.gray100,
+    backgroundColor: Colors.gray50,
+  },
+  statItem:    { flex: 1, alignItems: 'center', paddingVertical: Spacing.md },
+  statDivider: { width: 1, backgroundColor: Colors.gray100 },
+  statValue:   { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: Colors.gray800, marginBottom: 2 },
+  statLabel:   { fontSize: FontSize.xs, color: Colors.gray500 },
 });

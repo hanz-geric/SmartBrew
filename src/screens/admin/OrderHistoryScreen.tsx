@@ -228,47 +228,51 @@ export default function OrderHistoryScreen() {
           </ScrollView>
         </View>
 
-        {/* Payment filter chips */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={s.payFilterRow}
-          contentContainerStyle={s.filterChipsContent}
-        >
-          {(['all', 'cash', 'card', 'qr', 'gift_card'] as const).map((m) => (
-            <TouchableOpacity
-              key={m}
-              style={[s.payChip, payFilter === m && s.payChipSel]}
-              onPress={() => { setPayFilter(m); setExpanded(null); }}
-              activeOpacity={0.7}
+        {/* Filter chips — payment + type in one section */}
+        <View style={s.filterSection}>
+          <View style={s.filterRow}>
+            <Text style={s.filterRowLabel}>Pay</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={s.filterChipsContent}
             >
-              <Text style={[s.payChipText, payFilter === m && s.payChipTextSel]}>
-                {m === 'all' ? 'All' : PAY_LABELS[m as PaymentMethod]}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        {/* Order type filter chips */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={s.typeFilterRow}
-          contentContainerStyle={s.filterChipsContent}
-        >
-          {(['all', 'dine_in', 'takeaway', 'delivery'] as const).map((t) => (
-            <TouchableOpacity
-              key={t}
-              style={[s.payChip, typeFilter === t && s.payChipSel]}
-              onPress={() => { setTypeFilter(t); setExpanded(null); }}
-              activeOpacity={0.7}
+              {(['all', 'cash', 'card', 'qr', 'gift_card'] as const).map((m) => (
+                <TouchableOpacity
+                  key={m}
+                  style={[s.payChip, payFilter === m && s.payChipSel]}
+                  onPress={() => { setPayFilter(m); setExpanded(null); }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[s.payChipText, payFilter === m && s.payChipTextSel]}>
+                    {m === 'all' ? 'All' : PAY_LABELS[m as PaymentMethod]}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+          <View style={s.filterRow}>
+            <Text style={s.filterRowLabel}>Type</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={s.filterChipsContent}
             >
-              <Text style={[s.payChipText, typeFilter === t && s.payChipTextSel]}>
-                {t === 'all' ? 'All Types' : TYPE_LABELS[t]}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+              {(['all', 'dine_in', 'takeaway', 'delivery'] as const).map((t) => (
+                <TouchableOpacity
+                  key={t}
+                  style={[s.payChip, typeFilter === t && s.payChipSel]}
+                  onPress={() => { setTypeFilter(t); setExpanded(null); }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[s.payChipText, typeFilter === t && s.payChipTextSel]}>
+                    {t === 'all' ? 'All' : TYPE_LABELS[t]}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
 
         {/* Search by order number */}
         <View style={s.searchRow}>
@@ -496,20 +500,28 @@ const s = StyleSheet.create({
     fontWeight: FontWeight.bold,
   },
 
-  payFilterRow: {
+  filterSection: {
     backgroundColor: Colors.surface,
     borderBottomWidth: 1,
     borderColor: Colors.border,
+    paddingVertical: Spacing.xs,
   },
-  typeFilterRow: {
-    backgroundColor: Colors.surface,
-    borderBottomWidth: 1,
-    borderColor: Colors.border,
+  filterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  filterRowLabel: {
+    width: 56,
+    paddingLeft: Spacing.xl,
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.bold,
+    color: Colors.gray400,
+    flexShrink: 0,
   },
   filterChipsContent: {
     flexDirection: 'row',
     gap: Spacing.xs,
-    paddingHorizontal: Spacing.xl,
+    paddingHorizontal: Spacing.sm,
     paddingVertical: Spacing.sm,
   },
   searchRow: {

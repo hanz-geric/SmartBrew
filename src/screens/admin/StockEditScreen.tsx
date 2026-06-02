@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
   ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View,
@@ -190,7 +190,7 @@ export default function StockEditScreen({ route, navigation }: Props) {
     <AdminLayout active="Stock">
     <KeyboardAvoidingView
       style={s.root}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'android' ? 'height' : 'padding'}
     >
       <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
         {/* Header */}

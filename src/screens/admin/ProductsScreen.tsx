@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+﻿import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator, KeyboardAvoidingView, Modal, Platform, ScrollView, SectionList,
   StyleSheet, Switch, Text, TextInput, TouchableOpacity, View,
@@ -192,7 +192,7 @@ export default function ProductsScreen() {
       >
         <KeyboardAvoidingView
           style={cm.overlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={Platform.OS === 'android' ? 'height' : 'padding'}
         >
           <View style={cm.sheet}>
             {/* Header */}

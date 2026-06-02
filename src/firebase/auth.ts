@@ -15,6 +15,7 @@ import { clearSessionCache } from '../db/queries/sessionCache';
 import { saveCredentials, verifyOfflineCredentials } from '../db/queries/credentialsCache';
 import { logError } from '../utils/logger';
 import { AuthUser, UserRole } from '../types';
+import { useAuthStore } from '../store/authStore';
 
 const AUTH_CACHE_KEY = '@smartbrew:auth_user';
 
@@ -195,18 +196,37 @@ export async function switchCashierAuth(
 }
 
 export async function logout(): Promise<void> {
-  // Clear session cache so stale sessions never reappear on next login.
-  // Must happen before signOut because auth.currentUser becomes null after.
   const uid = auth.currentUser?.uid;
+
+  // Clear the auth cache FIRST (and await it): the onAuthStateChanged(null)
+  // listener in RootNavigator reads this cache, and must find it empty so it
+  // doesn't reload the profile and bounce us back to the POS screen.
+  // removeItem is fast; guard it so a failure can never block sign-out.
+  await clearAuthCache().catch((err) => logError('logout:clearAuthCache', err));
+
+  // Flip the app's auth state IMMEDIATELY. RootNavigator renders AuthStack the
+  // moment `user` is null, so navigation to Login no longer depends on signOut()
+  // finishing. This is the critical ordering fix: setUser must run BEFORE the
+  // awaits below, because a `.catch()` only handles a *rejected* promise — it
+  // does nothing for one that hangs or settles slowly. Previously this line sat
+  // last, after `await signOut(auth)`; if signOut stalled (Firebase auth /
+  // AsyncStorage persistence layer), logout() never reached it and the user was
+  // stranded on POS with the Sign Out dialog already dismissed — the exact
+  // reported symptom.
+  useAuthStore.getState().setUser(null);
+
+  // Best-effort, non-blocking cleanup. Safe to fire-and-forget now that the UI
+  // has already signed out — a locked DB or dead network can't strand the user.
+  signOut(auth).catch((err) =>
+    logError('logout:signOut', err, 'Firebase signOut failed — continuing with local clear'),
+  );
+  // Clear only the per-user cache, NOT the device-level register cache.
+  // The session may still be open for the next cashier to resume on this device.
   if (uid) {
-    await clearSessionCache(uid).catch((err) =>
+    clearSessionCache(uid, { keepRegister: true }).catch((err) =>
       logError('logout:clearSessionCache', err, `uid=${uid}`),
     );
   }
-  // Clear auth cache BEFORE signOut so onAuthStateChanged(null) doesn't
-  // find a stale cache entry and re-authenticate.
-  await clearAuthCache();
-  await signOut(auth);
 }
 
 export function onAuthChanged(

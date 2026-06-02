@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator, Image, KeyboardAvoidingView, Platform,
   StyleSheet, Text, TextInput, TouchableOpacity, View,
@@ -6,12 +6,12 @@ import {
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { CashierStackParamList } from '../../navigation/CashierStack';
 import { useAuthStore } from '../../store/authStore';
-import { getOpenSession, getSession, openSession } from '../../firebase/firestoreService';
+import { getAnyOpenSession, getSession, openSession, addCashierToRoster } from '../../firebase/firestoreService';
 import { saveSessionCache, loadSessionCache, clearSessionCache, openSessionOffline } from '../../db/queries/sessionCache';
 import { syncPendingClose } from '../../services/syncService';
 import { logError } from '../../utils/logger';
 import { useNetwork } from '../../context/NetworkContext';
-import { CashSession } from '../../types';
+import { AuthUser, CashSession } from '../../types';
 import {
   Colors, FontSize, FontWeight, Radius, Shadow, Spacing, isTablet,
 } from '../../constants/theme';
@@ -44,7 +44,7 @@ export default function SessionGateScreen({ navigation }: Props) {
     getSession(openSess.id)
       .then((live) => {
         if (!live || live.status !== 'open') {
-          // Session no longer open in Firestore — clear stale cache
+          // Session no longer open in Firestore — clear stale cache (both keys)
           clearSessionCache(user.uid).catch((err) =>
             logError('SessionGate:verifyCache', err, `Stale session cache for uid=${user.uid}`),
           );
@@ -68,8 +68,29 @@ export default function SessionGateScreen({ navigation }: Props) {
     // close isn't mistaken for an active open session.
     if (isOnline) await syncPendingClose().catch(() => {});
     try {
-      const session = await getOpenSession(user.uid);
+      // Query for ANY open session on this register (not just opened by this user).
+      // This is the core of the register-owned model: A opens, B can resume/close.
+      let session = await getAnyOpenSession();
+
       if (session) {
+        // If the logged-in user is not on the roster, auto-add them (they're
+        // taking over the register from whoever was last on it).
+        const roster = session.roster ?? [];
+        const inRoster = roster.some((e) => e.uid === user.uid);
+        if (!inRoster) {
+          const prevEntry = roster.find((e) => e.uid === (session!.active_cashier_uid ?? session!.user_id));
+          const prevUser: AuthUser = prevEntry
+            ? { uid: prevEntry.uid, username: prevEntry.username, full_name: prevEntry.full_name, role: prevEntry.role }
+            : { uid: session.user_id, username: '', full_name: session.cashier_name, role: 'cashier' };
+          try {
+            const { roster: updatedRoster } = await addCashierToRoster(
+              session.id, user, prevUser, roster,
+            );
+            session = { ...session, roster: updatedRoster, active_cashier_uid: user.uid, active_cashier_name: user.full_name };
+          } catch (err) {
+            logError('SessionGate:autoAddCashier', err, `uid=${user.uid}`);
+          }
+        }
         setOpenSess(session);
         setGateState('resume');
         saveSessionCache(session, user.uid, false).catch(() => {});
@@ -77,7 +98,8 @@ export default function SessionGateScreen({ navigation }: Props) {
         setGateState('open');
       }
     } catch {
-      // Network unavailable — try local cache
+      // Network unavailable — try local cache (falls back to device-level key
+      // so a different user can resume a drawer opened by someone else offline).
       const cached = await loadSessionCache(user.uid);
       if (cached && cached.session.status === 'open') {
         setOpenSess(cached.session);
@@ -96,7 +118,7 @@ export default function SessionGateScreen({ navigation }: Props) {
     setSubmitting(true);
     setError('');
     try {
-      const session = await openSession(user.uid, user.full_name, amount);
+      const session = await openSession(user.uid, user.full_name, amount, undefined, { username: user.username, role: user.role });
       navigation.replace('POS', { session, isDraft: false });
     } catch {
       setError('Failed to open session. Try again.');
@@ -110,7 +132,7 @@ export default function SessionGateScreen({ navigation }: Props) {
     setSubmitting(true);
     setError('');
     try {
-      const session = await openSessionOffline(user.uid, user.full_name, amount);
+      const session = await openSessionOffline(user.uid, user.full_name, amount, { username: user.username, role: user.role });
       navigation.replace('POS', { session, isDraft: true });
     } catch {
       setError('Failed to create offline session. Try again.');
@@ -152,8 +174,8 @@ export default function SessionGateScreen({ navigation }: Props) {
             <View style={s.offlineBanner}>
               <Text style={s.offlineBannerText}>
                 {resumeIsDraft
-                  ? '⚠ Offline — draft session. Orders will sync when connected.'
-                  : '⚠ Offline — resuming from cached session. Orders will sync when connected.'}
+                  ? '⚠  Offline - draft session. Orders will sync when connected.'
+                  : '⚠  Offline - resuming from cached session. Orders will sync when connected.'}
               </Text>
             </View>
           )}
@@ -186,10 +208,14 @@ export default function SessionGateScreen({ navigation }: Props) {
   return (
     <KeyboardAvoidingView
       style={s.center}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'android' ? 'height' : 'padding'}
     >
       <View style={s.card}>
-        <Text style={s.logo}>☕ SmartBrew POS</Text>
+        <Image
+          source={require('../../../assets/images/SmartBrew_logo.jpg')}
+          style={s.logo}
+          resizeMode="contain"
+        />
         <Text style={s.title}>Open Cash Session</Text>
         <Text style={s.subtitle}>{user.full_name}</Text>
 
