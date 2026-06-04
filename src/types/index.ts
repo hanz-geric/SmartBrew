@@ -1,5 +1,5 @@
 export type UserRole      = 'admin' | 'manager' | 'cashier';
-export type PaymentMethod = 'cash' | 'card' | 'qr' | 'gift_card';
+export type PaymentMethod = 'cash' | 'card' | 'qr' | 'gift_card' | 'pay_later';
 export type OrderStatus   = 'pending' | 'completed' | 'cancelled';
 export type OrderType     = 'dine_in' | 'takeaway' | 'delivery';
 export type TrackingMode  = 'none' | 'direct' | 'recipe';
@@ -146,6 +146,7 @@ export interface Order {
   order_number:     string;
   user_id:          string;
   cashier_name?:    string;
+  customer_name?:   string;
   subtotal:         number;
   discount_amount:  number;
   total_amount:     number;
@@ -174,6 +175,8 @@ export interface OrderItem {
   tracking_mode?: TrackingMode;
   stock_item_id?: string | null;
   recipe_lines?:  RecipeLine[];
+  // Snapshot of the product's kitchen flag — drives kitchen-ticket filtering
+  needs_kitchen?: boolean;
 }
 
 export interface StockItem {
@@ -233,4 +236,5 @@ export interface CheckoutPayload {
   discount_auth_nonce?: string;
   cart_snapshot:       CartItem[];
   order_number?:       string; // pre-assigned offline; reused on sync so receipt matches Firestore
+  customer_name?:      string; // pay_later: tab/customer label
 }

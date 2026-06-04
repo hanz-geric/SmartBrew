@@ -1,9 +1,10 @@
 ﻿import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform,
+  ActivityIndicator, Image, KeyboardAvoidingView, Platform,
   ScrollView, StyleSheet, Switch, Text, TextInput,
   TouchableOpacity, View,
 } from 'react-native';
+import { AppModal } from '../../components/ui';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
@@ -28,10 +29,12 @@ export default function ProductEditScreen() {
   const { productId } = route.params;
   const isNew = !productId;
 
-  const [loading,   setLoading]  = useState(true);
-  const [saving,    setSaving]   = useState(false);
-  const [deleting,  setDeleting] = useState(false);
-  const [error,     setError]    = useState('');
+  const [loading,          setLoading]          = useState(true);
+  const [saving,           setSaving]           = useState(false);
+  const [deleting,         setDeleting]         = useState(false);
+  const [error,            setError]            = useState('');
+  const [showToggleConfirm, setShowToggleConfirm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Form state
   const [name,                setName]                = useState('');
@@ -204,53 +207,28 @@ export default function ProductEditScreen() {
   }
 
   function confirmDeactivate() {
-    const action = isActive ? 'Deactivate' : 'Activate';
-    Alert.alert(
-      `${action} Product`,
-      isActive
-        ? `"${name}" will be hidden from the POS. Existing orders are unaffected.`
-        : `"${name}" will appear in the POS again.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: action,
-          style: isActive ? 'destructive' : 'default',
-          onPress: () => {
-            setIsActive((v) => !v);
-          },
-        },
-      ],
-    );
+    setShowToggleConfirm(true);
   }
 
   function confirmDelete() {
-    Alert.alert(
-      'Delete Product',
-      `Permanently delete "${name}"? This cannot be undone.\n\nAll past orders that included this product are preserved — only the product itself is removed from the menu.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            if (!productId) return;
-            setDeleting(true);
-            try {
-              await deleteProduct(productId);
-              navigation.goBack();
-            } catch (e: unknown) {
-              const code = (e as { code?: string }).code ?? '';
-              setError(
-                code === 'permission-denied'
-                  ? 'Permission denied.'
-                  : 'Failed to delete. Check your connection.',
-              );
-              setDeleting(false);
-            }
-          },
-        },
-      ],
-    );
+    setShowDeleteConfirm(true);
+  }
+
+  async function doDelete() {
+    if (!productId) return;
+    setDeleting(true);
+    try {
+      await deleteProduct(productId);
+      navigation.goBack();
+    } catch (e: unknown) {
+      const code = (e as { code?: string }).code ?? '';
+      setError(
+        code === 'permission-denied'
+          ? 'Permission denied.'
+          : 'Failed to delete. Check your connection.',
+      );
+      setDeleting(false);
+    }
   }
 
   if (loading) {
@@ -626,6 +604,30 @@ export default function ProductEditScreen() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <AppModal
+        visible={showToggleConfirm}
+        variant="confirm"
+        danger={isActive}
+        title={isActive ? 'Deactivate Product' : 'Activate Product'}
+        body={isActive
+          ? `"${name}" will be hidden from the POS. Existing orders are unaffected.`
+          : `"${name}" will appear in the POS again.`}
+        confirmText={isActive ? 'Deactivate' : 'Activate'}
+        onCancel={() => setShowToggleConfirm(false)}
+        onConfirm={() => { setShowToggleConfirm(false); setIsActive((v) => !v); }}
+      />
+
+      <AppModal
+        visible={showDeleteConfirm}
+        variant="confirm"
+        danger
+        title="Delete Product"
+        body={`Permanently delete "${name}"? This cannot be undone.\n\nAll past orders that included this product are preserved — only the product itself is removed from the menu.`}
+        confirmText="Delete"
+        onCancel={() => setShowDeleteConfirm(false)}
+        onConfirm={() => { setShowDeleteConfirm(false); doDelete(); }}
+      />
     </AdminLayout>
   );
 }

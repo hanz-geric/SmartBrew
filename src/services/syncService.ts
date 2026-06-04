@@ -94,7 +94,7 @@ export async function syncPendingOrders(
           const subtotal = item.payload.cart_snapshot.reduce(
             (s, i) => s + i.unit_price * i.quantity, 0,
           );
-          syncedCashTotal += Math.max(0, subtotal - (item.payload.discount_amount ?? 0));
+          syncedCashTotal += Math.ceil(Math.max(0, subtotal - (item.payload.discount_amount ?? 0)));
         }
       } catch (err) {
         await logError('syncService:syncPendingOrders', err, `Failed to sync order ${item.local_id}`);

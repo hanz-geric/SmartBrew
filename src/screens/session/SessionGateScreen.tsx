@@ -52,8 +52,9 @@ export default function SessionGateScreen({ navigation }: Props) {
           setFromCache(false);
           setGateState('open');
         } else {
-          // Session is genuinely open — update cache with live data
+          // Session is genuinely open — update cache with live data and clear offline flag
           setOpenSess(live);
+          setFromCache(false);
           saveSessionCache(live, user.uid, resumeIsDraft).catch(() => {});
         }
       })

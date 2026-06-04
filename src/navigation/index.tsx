@@ -1,11 +1,12 @@
 import { useEffect } from 'react';
-import { View, ActivityIndicator } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { onAuthChanged } from '../firebase/auth';
 import { useAuthStore } from '../store/authStore';
 import AuthStack    from './AuthStack';
 import CashierStack from './CashierStack';
 import AdminStack   from './AdminStack';
+import ErrorBoundary from '../components/ErrorBoundary';
+import { LoadingState } from '../components/ui';
 import { Colors } from '../constants/theme';
 
 export default function RootNavigator() {
@@ -17,11 +18,7 @@ export default function RootNavigator() {
   }, []);
 
   if (isLoading) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.green700 }}>
-        <ActivityIndicator size="large" color={Colors.white} />
-      </View>
-    );
+    return <LoadingState fill color={Colors.white} style={{ backgroundColor: Colors.green700 }} />;
   }
 
   let AppStack: React.ComponentType | null = null;
@@ -31,7 +28,9 @@ export default function RootNavigator() {
 
   return (
     <NavigationContainer>
-      {AppStack ? <AppStack /> : <AuthStack />}
+      <ErrorBoundary tag="AppStack">
+        {AppStack ? <AppStack /> : <AuthStack />}
+      </ErrorBoundary>
     </NavigationContainer>
   );
 }

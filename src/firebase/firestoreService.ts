@@ -1,8 +1,9 @@
 import {
-  query, where, orderBy, limit, getDocs, addDoc,
+  query, where, orderBy, limit, startAfter, getDocs, addDoc,
   updateDoc, getDoc, setDoc, DocumentData, increment,
   getAggregateFromServer, getCountFromServer, sum, count,
-  writeBatch, doc, arrayUnion,
+  writeBatch, doc, arrayUnion, deleteField,
+  QueryConstraint, QueryDocumentSnapshot,
 } from 'firebase/firestore';
 import { FirebaseError } from 'firebase/app';
 import { db, auth } from './config';
@@ -13,8 +14,8 @@ import {
 } from './collections';
 import {
   AuthUser, CartItem, CashierEvent, CashSession, Category, CheckoutPayload,
-  ModifierGroup, Order, OrderItem, Product, RosterEntry, Settings, StockItem,
-  StockStatus, UserProfile, UserRole,
+  ModifierGroup, Order, OrderItem, OrderType, PaymentMethod, Product, RosterEntry,
+  Settings, StockItem, StockStatus, UserProfile, UserRole,
 } from '../types';
 import { writeProductsCache, writeCategoriesCache, getCachedProducts, getCachedCategories } from '../db/queries/catalog';
 import { replaceStockCache } from '../db/queries/stockCache';
@@ -92,7 +93,7 @@ export async function openSession(
   const fbUser = await ensureAuthenticated();
   if (fbUser) {
     try {
-      await fbUser.getIdToken(true);
+      await fbUser.getIdToken();
     } catch (err) {
       logError('openSession:tokenRefresh', err, `uid=${fbUser.uid} token refresh failed`);
       throw err;
@@ -160,7 +161,7 @@ export async function closeSession(
   const fbUser = await ensureAuthenticated();
   if (fbUser) {
     try {
-      await fbUser.getIdToken(true);
+      await fbUser.getIdToken();
     } catch (err) {
       logError('closeSession:tokenRefresh', err, `uid=${fbUser.uid} token refresh failed`);
       throw err;
@@ -317,6 +318,12 @@ export async function createOrder(
   session:        CashSession,
   user:           AuthUser,
   idempotencyId?: string,   // When provided (offline sync), used as the Firestore doc ID
+  // deferSideEffects: when true, the order document is committed (awaited) but the
+  // non-fatal stock deduction + session-cash update run in the background and are
+  // NOT awaited. Used by the interactive checkout so the cashier only waits on the
+  // one write that must succeed. Leave false for offline sync, where the whole
+  // operation must finish before the queue entry is removed.
+  opts?:          { deferSideEffects?: boolean },
 ): Promise<Order> {
   const now        = new Date();
   const nowISO     = now.toISOString();
@@ -357,18 +364,23 @@ export async function createOrder(
     tracking_mode: item.tracking_mode ?? 'none',
     stock_item_id: item.stock_item_id ?? null,
     recipe_lines:  item.recipe_lines ?? [],
+    needs_kitchen: item.needs_kitchen ?? false,
   }));
+
+  const isPayLater     = payload.payment_method === 'pay_later';
+  const paymentStatus: 'unpaid' | 'paid' = isPayLater ? 'unpaid' : 'paid';
 
   const orderData = {
     order_number:    orderNumber,
     user_id:         user.uid,
     cashier_name:    user.full_name || user.username,
+    ...(payload.customer_name ? { customer_name: payload.customer_name } : {}),
     subtotal,
     discount_amount: discountAmount,
     total_amount:    totalAmount,
     profit_amount:   profitAmount,
     payment_method:  payload.payment_method,
-    payment_status:  'paid'      as const,
+    payment_status:  paymentStatus,
     status:          'completed' as const,
     order_type:      payload.order_type,
     table_number:    payload.table_number ?? null,
@@ -378,12 +390,14 @@ export async function createOrder(
     items,
   };
 
-  // Wait for Firebase Auth to restore its persisted session, then force-refresh
-  // the ID token to prevent stale-token permission rejections.
+  // Wait for Firebase Auth to restore its persisted session. getIdToken() (no
+  // force) returns the cached token instantly and auto-refreshes only when it is
+  // expired or about to be — covering the offline-recovery case without paying a
+  // network round-trip on every write.
   const fbUser = await ensureAuthenticated();
   if (fbUser) {
     try {
-      await fbUser.getIdToken(true);
+      await fbUser.getIdToken();
     } catch (err) {
       logError('createOrder:tokenRefresh', err, `uid=${fbUser.uid} token refresh failed`);
       throw err;
@@ -400,55 +414,67 @@ export async function createOrder(
   orderBatch.set(newRef, orderData, { merge: true });
   await orderBatch.commit();
 
-  // ── 2. Deduct stock (non-fatal: permission issues must not block the order) ─
-  try {
-    const stockBatch = writeBatch(db);
-    let hasStockOps  = false;
+  // ── 2 & 3. Non-fatal side effects: stock deduction + session cash ────────
+  // Both are wrapped so they can either be awaited (offline sync) or fired in
+  // the background (interactive checkout) without blocking the receipt.
+  const applySideEffects = async (): Promise<void> => {
+    // ── Deduct stock (non-fatal: permission issues must not block the order) ─
+    try {
+      const stockBatch = writeBatch(db);
+      let hasStockOps  = false;
 
-    for (const item of payload.cart_snapshot) {
-      if (item.tracking_mode === 'direct' && item.stock_item_id) {
-        stockBatch.update(stockDoc(item.stock_item_id), {
-          quantity_on_hand: increment(-item.quantity),
-        });
-        hasStockOps = true;
-      } else if (item.tracking_mode === 'recipe' && item.recipe_lines?.length) {
-        for (const line of item.recipe_lines) {
-          if (line.stock_item_id && line.quantity_required > 0) {
-            stockBatch.update(stockDoc(line.stock_item_id), {
-              quantity_on_hand: increment(-(line.quantity_required * item.quantity)),
-            });
-            hasStockOps = true;
+      for (const item of payload.cart_snapshot) {
+        if (item.tracking_mode === 'direct' && item.stock_item_id) {
+          stockBatch.update(stockDoc(item.stock_item_id), {
+            quantity_on_hand: increment(-item.quantity),
+          });
+          hasStockOps = true;
+        } else if (item.tracking_mode === 'recipe' && item.recipe_lines?.length) {
+          for (const line of item.recipe_lines) {
+            if (line.stock_item_id && line.quantity_required > 0) {
+              stockBatch.update(stockDoc(line.stock_item_id), {
+                quantity_on_hand: increment(-(line.quantity_required * item.quantity)),
+              });
+              hasStockOps = true;
+            }
+          }
+        }
+        for (const mod of item.modifiers) {
+          for (const line of (mod.recipe_lines ?? [])) {
+            if (line.stock_item_id && line.quantity_required > 0) {
+              stockBatch.update(stockDoc(line.stock_item_id), {
+                quantity_on_hand: increment(-(line.quantity_required * item.quantity)),
+              });
+              hasStockOps = true;
+            }
           }
         }
       }
-      for (const mod of item.modifiers) {
-        for (const line of (mod.recipe_lines ?? [])) {
-          if (line.stock_item_id && line.quantity_required > 0) {
-            stockBatch.update(stockDoc(line.stock_item_id), {
-              quantity_on_hand: increment(-(line.quantity_required * item.quantity)),
-            });
-            hasStockOps = true;
-          }
-        }
-      }
+
+      if (hasStockOps) await stockBatch.commit();
+    } catch (err) {
+      // Stock deduction failed (likely a Firestore rules issue on stock_items).
+      // The order is already saved — log for visibility but do not throw.
+      logError('createOrder:stockDeduction', err, `Order ${newRef.id} saved but stock deduction failed`);
     }
 
-    if (hasStockOps) await stockBatch.commit();
-  } catch (err) {
-    // Stock deduction failed (likely a Firestore rules issue on stock_items).
-    // The order is already saved — log for visibility but do not throw.
-    logError('createOrder:stockDeduction', err, `Order ${newRef.id} saved but stock deduction failed`);
-  }
+    // ── Update session cash collected (non-fatal) ──────────────────────────
+    // Skip if session.id is a draft UUID (contains hyphens) — the document
+    // doesn't exist in Firestore. syncPendingOrders handles the consolidated
+    // cash update for offline orders after reconciliation.
+    if (payload.payment_method === 'cash' && !session.id.includes('-')) {
+      await updateDoc(sessionDoc(session.id), {
+        cash_collected: increment(Math.ceil(totalAmount)),
+        expected_cash:  increment(Math.ceil(totalAmount)),
+      }).catch((err) => logError('createOrder:sessionCash', err, `Order ${newRef.id} cash update failed`));
+    }
+  };
 
-  // ── 3. Update session cash collected (non-fatal) ─────────────────────────
-  // Skip if session.id is a draft UUID (contains hyphens) — the document
-  // doesn't exist in Firestore. syncPendingOrders handles the consolidated
-  // cash update for offline orders after reconciliation.
-  if (payload.payment_method === 'cash' && !session.id.includes('-')) {
-    await updateDoc(sessionDoc(session.id), {
-      cash_collected: increment(totalAmount),
-      expected_cash:  increment(totalAmount),
-    }).catch((err) => logError('createOrder:sessionCash', err, `Order ${newRef.id} cash update failed`));
+  if (opts?.deferSideEffects) {
+    // Fire-and-forget: the cashier gets the receipt as soon as the order is saved.
+    void applySideEffects();
+  } else {
+    await applySideEffects();
   }
 
   return { id: newRef.id, ...orderData };
@@ -465,8 +491,8 @@ export async function voidOrder(orderId: string): Promise<void> {
   // Reverse cash collected on the session
   if (order.payment_method === 'cash' && order.session_id) {
     batch.update(sessionDoc(order.session_id), {
-      cash_collected: increment(-order.total_amount),
-      expected_cash:  increment(-order.total_amount),
+      cash_collected: increment(-Math.ceil(order.total_amount)),
+      expected_cash:  increment(-Math.ceil(order.total_amount)),
     });
   }
 
@@ -501,8 +527,54 @@ export async function voidOrder(orderId: string): Promise<void> {
   await batch.commit();
 }
 
+export async function getUnpaidOrdersBySession(sessionId: string): Promise<Order[]> {
+  const all = await getOrdersBySession(sessionId);
+  return all.filter(
+    (o) => o.payment_method === 'pay_later' && o.payment_status === 'unpaid',
+  );
+}
+
+export async function settlePaylaterOrder(
+  orderId:       string,
+  sessionId:     string,
+  paymentMethod: Exclude<PaymentMethod, 'pay_later'>,
+  cashReceived?: number,
+  referenceNumber?: string,
+): Promise<void> {
+  const now   = new Date().toISOString();
+  const snap  = await getDoc(orderDoc(orderId));
+  if (!snap.exists()) throw new Error('Order not found');
+  const order = { id: snap.id, ...(snap.data() as Omit<Order, 'id'>) };
+
+  const updates: Record<string, unknown> = {
+    payment_status: 'paid',
+    payment_method: paymentMethod,
+    completed_at:   now,
+  };
+  if (referenceNumber) updates.reference_number = referenceNumber;
+
+  const batch = writeBatch(db);
+  batch.update(orderDoc(orderId), updates);
+
+  if (paymentMethod === 'cash' && !sessionId.includes('-')) {
+    batch.update(sessionDoc(sessionId), {
+      cash_collected: increment(Math.ceil(order.total_amount)),
+      expected_cash:  increment(Math.ceil(order.total_amount)),
+    });
+  }
+
+  await batch.commit();
+}
+
+// All orders for one session. The session-detail screen needs the full set to
+// build its per-product and per-cashier breakdowns, so this isn't paginated —
+// but it's capped so a pathological session (e.g. a test drawer left open for
+// thousands of orders) can't pull an unbounded payload. A real shift is well
+// under this cap. Uses the single-field session_id index + in-memory sort.
+const SESSION_ORDERS_CAP = 2000;
+
 export async function getOrdersBySession(sessionId: string): Promise<Order[]> {
-  const q    = query(ordersCol(), where('session_id', '==', sessionId));
+  const q    = query(ordersCol(), where('session_id', '==', sessionId), limit(SESSION_ORDERS_CAP));
   const snap = await getDocs(q);
   return snap.docs
     .map((d) => ({ id: d.id, ...(d.data() as Omit<Order, 'id'>) }))
@@ -529,6 +601,92 @@ export async function getOrdersInRange(
   );
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Order, 'id'>) }));
+}
+
+// ─── Orders report: server-side summary + paginated list ──────────────────────
+// These back the admin Orders screen. The summary totals are computed by
+// Firestore (no documents downloaded), and the list is fetched one page at a
+// time. Both honor the active pay/type filters server-side. Order-number search
+// stays client-side over the loaded pages (Firestore has no substring search).
+//
+// NOTE: the pay/type-filtered variants require composite indexes — see
+// firestore.indexes.json. Deploy with `firebase deploy --only firestore:indexes`.
+
+export interface OrderFilters {
+  payment_method?: PaymentMethod;
+  order_type?:     OrderType;
+}
+
+export interface OrdersSummary {
+  activeCount: number;   // completed orders in range
+  voidedCount: number;   // cancelled orders in range
+  revenue:     number;   // sum(total_amount) of completed
+  profit:      number;   // sum(profit_amount) of completed
+}
+
+export interface OrdersPage {
+  orders:  Order[];
+  cursor:  QueryDocumentSnapshot<DocumentData> | null;
+  hasMore: boolean;
+}
+
+function rangeFilterConstraints(
+  startISO: string,
+  endISO:   string,
+  filters?: OrderFilters,
+): QueryConstraint[] {
+  const cs: QueryConstraint[] = [
+    where('created_at', '>=', startISO),
+    where('created_at', '<=', endISO),
+  ];
+  if (filters?.payment_method) cs.push(where('payment_method', '==', filters.payment_method));
+  if (filters?.order_type)     cs.push(where('order_type',     '==', filters.order_type));
+  return cs;
+}
+
+export async function getOrdersSummary(
+  startISO: string,
+  endISO:   string,
+  filters?: OrderFilters,
+): Promise<OrdersSummary> {
+  const base    = rangeFilterConstraints(startISO, endISO, filters);
+  const activeQ = query(ordersCol(), ...base, where('status', '==', 'completed'));
+  const voidedQ = query(ordersCol(), ...base, where('status', '==', 'cancelled'));
+
+  const [activeAgg, voidedAgg] = await Promise.all([
+    getAggregateFromServer(activeQ, {
+      revenue:     sum('total_amount'),
+      profit:      sum('profit_amount'),
+      activeCount: count(),
+    }),
+    getCountFromServer(voidedQ),
+  ]);
+
+  return {
+    activeCount: activeAgg.data().activeCount ?? 0,
+    voidedCount: voidedAgg.data().count       ?? 0,
+    revenue:     activeAgg.data().revenue      ?? 0,
+    profit:      activeAgg.data().profit       ?? 0,
+  };
+}
+
+export async function getOrdersPage(
+  startISO: string,
+  endISO:   string,
+  filters?: OrderFilters,
+  pageSize  = 50,
+  cursor?:  QueryDocumentSnapshot<DocumentData> | null,
+): Promise<OrdersPage> {
+  const constraints: QueryConstraint[] = [
+    ...rangeFilterConstraints(startISO, endISO, filters),
+    orderBy('created_at', 'desc'),
+    ...(cursor ? [startAfter(cursor)] : []),
+    limit(pageSize),
+  ];
+  const snap   = await getDocs(query(ordersCol(), ...constraints));
+  const orders = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Order, 'id'>) }));
+  const last   = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null;
+  return { orders, cursor: last, hasMore: snap.docs.length === pageSize };
 }
 
 // Admin: recent sessions (all cashiers), newest first
@@ -565,6 +723,20 @@ export async function getSettings(): Promise<Settings> {
 
 export async function saveSettings(settings: Settings): Promise<void> {
   await setDoc(settingsDoc(), settings, { merge: true });
+}
+
+// Removes a printer's saved configuration so it can be set up from scratch.
+// Uses deleteField() rather than writing empty values: with the project's
+// ignoreUndefinedProperties + merge, blanked-out fields would be skipped and
+// the old config would survive a reload.
+export async function clearPrinterSettings(target: 'receipt' | 'kitchen'): Promise<void> {
+  const keys = [
+    `${target}_printer_type`, `${target}_printer_ip`,   `${target}_printer_port`,
+    `${target}_printer_bt`,   `${target}_paper_width`,  `${target}_printer_model`,
+  ];
+  const patch: Record<string, ReturnType<typeof deleteField>> = {};
+  for (const k of keys) patch[k] = deleteField();
+  await setDoc(settingsDoc(), patch, { merge: true });
 }
 
 // ─── Products & Categories (POS — active only) ────────────────────────────────

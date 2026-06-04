@@ -1,7 +1,6 @@
-﻿import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
-  ActivityIndicator, Alert, FlatList, KeyboardAvoidingView,
-  Modal, Platform, ScrollView,
+  ActivityIndicator, FlatList,
   StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -60,8 +59,8 @@ export default function StockScreen() {
   const [search,  setSearch]  = useState('');
   const [filter,  setFilter]  = useState<StatusFilter>('all');
 
-  // Adjust modal state
-  const [adjustTarget, setAdjustTarget] = useState<StockItem | null>(null);
+  // Inline adjust dropdown state
+  const [expandedId,   setExpandedId]  = useState<string | null>(null);
   const [adjustDelta,  setAdjustDelta]  = useState('');
   const [adjustReason, setAdjustReason] = useState<Reason>(REASONS[0]);
   const [adjustNotes,  setAdjustNotes]  = useState('');
@@ -85,15 +84,20 @@ export default function StockScreen() {
   }
 
   function openAdjust(item: StockItem) {
-    setAdjustTarget(item);
+    if (expandedId === item.id) {
+      setExpandedId(null);
+      return;
+    }
+    setExpandedId(item.id);
     setAdjustDelta('');
     setAdjustReason(REASONS[0]);
     setAdjustNotes('');
     setAdjustError('');
+    setAdjusting(false);
   }
 
   function closeAdjust() {
-    setAdjustTarget(null);
+    setExpandedId(null);
     setAdjusting(false);
   }
 
@@ -103,6 +107,7 @@ export default function StockScreen() {
       setAdjustError('Enter a non-zero quantity (positive to add, negative to subtract).');
       return;
     }
+    const adjustTarget = items.find((i) => i.id === expandedId);
     if (!adjustTarget) return;
     setAdjusting(true);
     setAdjustError('');
@@ -204,6 +209,7 @@ export default function StockScreen() {
             data={displayed}
             keyExtractor={(i) => i.id}
             contentContainerStyle={s.listContent}
+            keyboardShouldPersistTaps="handled"
             ListEmptyComponent={
               <Text style={s.emptyText}>
                 {search || filter !== 'all' ? 'No items match your filter.' : 'No stock items yet.'}
@@ -211,6 +217,7 @@ export default function StockScreen() {
             }
             renderItem={({ item }) => {
               const sc = statusColors(item.stock_status);
+              const isExpanded = expandedId === item.id;
               return (
                 <View style={[s.card, !item.is_active && s.cardInactive]}>
                   <View style={s.cardMain}>
@@ -250,11 +257,11 @@ export default function StockScreen() {
 
                   <View style={s.cardActions}>
                     <TouchableOpacity
-                      style={s.adjustBtn}
+                      style={[s.adjustBtn, isExpanded && s.adjustBtnActive]}
                       onPress={() => openAdjust(item)}
                       activeOpacity={0.7}
                     >
-                      <Text style={s.adjustBtnText}>Adjust</Text>
+                      <Text style={s.adjustBtnText}>{isExpanded ? 'Adjust ▲' : 'Adjust ▼'}</Text>
                     </TouchableOpacity>
                     {isAdmin && (
                       <TouchableOpacity
@@ -266,117 +273,79 @@ export default function StockScreen() {
                       </TouchableOpacity>
                     )}
                   </View>
+
+                  {/* Inline adjust dropdown */}
+                  {isExpanded && (
+                    <View style={s.dropdown}>
+                      <Text style={s.dropLabel}>Quantity Change</Text>
+                      <Text style={s.dropHint}>Positive to add · Negative to subtract</Text>
+                      <TextInput
+                        style={s.dropInput}
+                        placeholder="e.g. 50 or -10"
+                        placeholderTextColor={Colors.gray400}
+                        keyboardType="numeric"
+                        value={adjustDelta}
+                        onChangeText={(t) => { setAdjustDelta(t); setAdjustError(''); }}
+                      />
+
+                      <Text style={[s.dropLabel, { marginTop: Spacing.sm }]}>Reason</Text>
+                      <View style={s.reasons}>
+                        {REASONS.map((r) => (
+                          <TouchableOpacity
+                            key={r}
+                            style={[s.reasonBtn, adjustReason === r && s.reasonBtnSel]}
+                            onPress={() => setAdjustReason(r)}
+                            activeOpacity={0.7}
+                          >
+                            <View style={[s.reasonDot, adjustReason === r && s.reasonDotSel]} />
+                            <Text style={[s.reasonText, adjustReason === r && s.reasonTextSel]}>{r}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+
+                      <Text style={[s.dropLabel, { marginTop: Spacing.sm }]}>
+                        Notes <Text style={s.optional}>(optional)</Text>
+                      </Text>
+                      <TextInput
+                        style={[s.dropInput, s.notesInput]}
+                        placeholder="e.g. Received from supplier"
+                        placeholderTextColor={Colors.gray400}
+                        multiline
+                        numberOfLines={2}
+                        value={adjustNotes}
+                        onChangeText={setAdjustNotes}
+                      />
+
+                      {!!adjustError && (
+                        <View style={s.errorBanner}>
+                          <Text style={s.errorBannerText}>{adjustError}</Text>
+                        </View>
+                      )}
+
+                      <View style={s.dropActions}>
+                        <TouchableOpacity style={s.cancelBtn} onPress={closeAdjust} disabled={adjusting}>
+                          <Text style={s.cancelText}>Cancel</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[s.applyBtn, adjusting && s.applyBtnOff]}
+                          onPress={handleAdjust}
+                          disabled={adjusting}
+                          activeOpacity={0.8}
+                        >
+                          {adjusting
+                            ? <ActivityIndicator color={Colors.white} size="small" />
+                            : <Text style={s.applyText}>Apply</Text>
+                          }
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
                 </View>
               );
             }}
           />
         )}
       </View>
-
-      {/* Adjust Modal */}
-      <Modal
-        visible={!!adjustTarget}
-        transparent
-        animationType="fade"
-        onRequestClose={closeAdjust}
-      >
-        <View style={m.overlay}>
-          <KeyboardAvoidingView
-            style={m.sheet}
-            behavior={Platform.OS === 'android' ? 'height' : 'padding'}
-          >
-            {/* Fixed header */}
-            <View style={m.modalHeader}>
-              <View style={m.modalHeaderTop}>
-                <Text style={m.title}>Adjust Stock</Text>
-                <TouchableOpacity onPress={closeAdjust} hitSlop={12} activeOpacity={0.7}>
-                  <Text style={m.closeX}>✕</Text>
-                </TouchableOpacity>
-              </View>
-              {adjustTarget && (
-                <View style={m.itemBox}>
-                  <Text style={m.itemName}>{adjustTarget.name}</Text>
-                  <Text style={m.itemCurrent}>
-                    Current: {adjustTarget.quantity_on_hand % 1 === 0
-                      ? adjustTarget.quantity_on_hand.toString()
-                      : adjustTarget.quantity_on_hand.toFixed(2)} {adjustTarget.unit}
-                  </Text>
-                </View>
-              )}
-            </View>
-
-            {/* Scrollable content */}
-            <ScrollView
-              style={m.scroll}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={m.scrollContent}
-            >
-              <Text style={m.label}>Quantity Change</Text>
-              <Text style={m.hint}>Positive to add · Negative to subtract</Text>
-              <TextInput
-                style={m.input}
-                placeholder="e.g. 50 or -10"
-                placeholderTextColor={Colors.gray400}
-                keyboardType="numeric"
-                value={adjustDelta}
-                onChangeText={(t) => { setAdjustDelta(t); setAdjustError(''); }}
-              />
-
-              <Text style={m.label}>Reason</Text>
-              <View style={m.reasons}>
-                {REASONS.map((r) => (
-                  <TouchableOpacity
-                    key={r}
-                    style={[m.reasonBtn, adjustReason === r && m.reasonBtnSel]}
-                    onPress={() => setAdjustReason(r)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={[m.reasonDot, adjustReason === r && m.reasonDotSel]} />
-                    <Text style={[m.reasonText, adjustReason === r && m.reasonTextSel]}>{r}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <Text style={m.label}>Notes <Text style={m.optional}>(optional)</Text></Text>
-              <TextInput
-                style={[m.input, m.notesInput]}
-                placeholder="e.g. Received from supplier"
-                placeholderTextColor={Colors.gray400}
-                multiline
-                numberOfLines={2}
-                value={adjustNotes}
-                onChangeText={setAdjustNotes}
-              />
-
-            </ScrollView>
-
-            {!!adjustError && (
-              <View style={m.errorBanner}>
-                <Text style={m.errorBannerText}>{adjustError}</Text>
-              </View>
-            )}
-
-            {/* Fixed footer */}
-            <View style={m.actions}>
-              <TouchableOpacity style={m.cancelBtn} onPress={closeAdjust} disabled={adjusting}>
-                <Text style={m.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[m.applyBtn, adjusting && m.applyBtnOff]}
-                onPress={handleAdjust}
-                disabled={adjusting}
-                activeOpacity={0.8}
-              >
-                {adjusting
-                  ? <ActivityIndicator color={Colors.white} size="small" />
-                  : <Text style={m.applyText}>Apply</Text>
-                }
-              </TouchableOpacity>
-            </View>
-          </KeyboardAvoidingView>
-        </View>
-      </Modal>
     </AdminLayout>
   );
 }
@@ -477,6 +446,9 @@ const s = StyleSheet.create({
     paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm,
     borderRadius: Radius.md, backgroundColor: Colors.green600,
   },
+  adjustBtnActive: {
+    backgroundColor: Colors.green700,
+  },
   adjustBtnText: { fontSize: FontSize.sm, fontWeight: FontWeight.bold, color: Colors.white },
   editBtn: {
     paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm,
@@ -484,54 +456,31 @@ const s = StyleSheet.create({
     backgroundColor: Colors.surface,
   },
   editBtnText: { fontSize: FontSize.sm, fontWeight: FontWeight.medium, color: Colors.gray700 },
-});
 
-const m = StyleSheet.create({
-  overlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'center', alignItems: 'center', padding: Spacing.lg,
-  },
-  sheet: {
-    width: '100%', maxWidth: 420, maxHeight: '88%',
-    backgroundColor: Colors.surface, borderRadius: Radius.xl,
-    overflow: 'hidden', ...Shadow.lg,
-  },
-  modalHeader: {
-    padding: Spacing.xl, paddingBottom: Spacing.md,
-    borderBottomWidth: 1, borderColor: Colors.border, gap: Spacing.sm,
-  },
-  modalHeaderTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  closeX: {
-    fontSize: FontSize.xl,
-    color: Colors.gray500,
-    fontWeight: FontWeight.bold,
-  },
-  scroll: { flex: 1 },
-  scrollContent: { gap: Spacing.md, padding: Spacing.xl, paddingTop: Spacing.md },
-  title:    { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: Colors.gray900 },
-  itemBox:  {
-    backgroundColor: Colors.green50, borderRadius: Radius.md,
-    padding: Spacing.md, gap: 2,
-  },
-  itemName:    { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: Colors.green700 },
-  itemCurrent: { fontSize: FontSize.sm, color: Colors.green600 },
-
-  label:    { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.gray700 },
-  hint:     { fontSize: FontSize.xs, color: Colors.gray400, marginTop: -Spacing.sm },
-  optional: { fontWeight: FontWeight.normal, color: Colors.gray400 },
-  input: {
-    borderWidth: 1.5, borderColor: Colors.border, borderRadius: Radius.md,
-    paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md,
-    fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.gray900,
+  // Inline dropdown
+  dropdown: {
+    borderTopWidth: 1, borderColor: Colors.border,
     backgroundColor: Colors.gray50,
+    padding: Spacing.lg,
+    gap: Spacing.xs,
+    borderBottomLeftRadius: Radius.lg,
+    borderBottomRightRadius: Radius.lg,
   },
-  notesInput: { fontSize: FontSize.base, fontWeight: FontWeight.normal, minHeight: 60, textAlignVertical: 'top' },
+  dropLabel: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.gray700 },
+  dropHint:  { fontSize: FontSize.xs, color: Colors.gray400 },
+  optional:  { fontWeight: FontWeight.normal, color: Colors.gray400 },
+  dropInput: {
+    borderWidth: 1.5, borderColor: Colors.border, borderRadius: Radius.md,
+    paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm,
+    fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.gray900,
+    backgroundColor: Colors.surface, marginTop: Spacing.xs,
+  },
+  notesInput: {
+    fontSize: FontSize.base, fontWeight: FontWeight.normal,
+    minHeight: 52, textAlignVertical: 'top',
+  },
 
-  reasons:       { gap: Spacing.xs },
+  reasons:    { gap: Spacing.xs, marginTop: Spacing.xs },
   reasonBtn: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
     paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md,
@@ -549,24 +498,24 @@ const m = StyleSheet.create({
 
   errorBanner: {
     backgroundColor: Colors.dangerBg,
-    borderTopWidth: 1,
+    borderRadius: Radius.md,
+    borderWidth: 1,
     borderColor: Colors.danger + '44',
-    paddingHorizontal: Spacing.xl,
+    paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
+    marginTop: Spacing.xs,
   },
   errorBannerText: {
-    fontSize: FontSize.sm,
-    color: Colors.danger,
-    fontWeight: FontWeight.medium,
+    fontSize: FontSize.sm, color: Colors.danger, fontWeight: FontWeight.medium,
   },
-  actions: {
-    flexDirection: 'row', gap: Spacing.sm,
-    padding: Spacing.xl, paddingTop: Spacing.md,
-    borderTopWidth: 1, borderColor: Colors.border,
+
+  dropActions: {
+    flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm,
   },
   cancelBtn: {
     flex: 1, paddingVertical: Spacing.md, borderRadius: Radius.md,
     borderWidth: 1, borderColor: Colors.border, alignItems: 'center',
+    backgroundColor: Colors.surface,
   },
   cancelText:  { fontSize: FontSize.base, color: Colors.gray600, fontWeight: FontWeight.medium },
   applyBtn: {

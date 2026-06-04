@@ -17,6 +17,22 @@ export class EscPos {
 
   init(): this  { return this.push(0x1B, 0x40); }
   cut(): this   { return this.push(0x1D, 0x56, 0x41, 0x03); }  // partial cut
+
+  // Fire the cash-drawer kick on connector pin 2 (ESC p 0 t1 t2).
+  // t1/t2 are pulse on/off durations in 2 ms units; 25 → 50 ms, a safe default
+  // that triggers every common drawer without risking a stuck solenoid.
+  kick(): this  { return this.push(0x1B, 0x70, 0x00, 0x19, 0x19); }
+
+  // Sound the printer's built-in buzzer (ESC B n t). Not every printer has a
+  // buzzer — most kitchen models do, most plain receipt printers don't. On a
+  // printer without one the bytes are simply ignored (no print, no error).
+  // n = number of beeps (1-9); t = length of each beep in ~100 ms units (1-9).
+  buzzer(times = 3, duration = 2): this {
+    const n = Math.max(1, Math.min(9, times));
+    const t = Math.max(1, Math.min(9, duration));
+    return this.push(0x1B, 0x42, n, t);
+  }
+
   feed(n = 1): this {
     for (let i = 0; i < n; i++) this.push(0x0A);
     return this;

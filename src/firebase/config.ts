@@ -37,9 +37,12 @@ export const auth: Auth = isFirstInit
   : getAuth(app);
 
 export const db: Firestore = isFirstInit
+  // Auto-detect long-polling: keeps the fast streaming transport when the
+  // network allows it and only falls back to long-polling when needed. Forcing
+  // long-polling slowed every online read/write and caused offline hangs.
   ? initializeFirestore(app, Platform.OS !== 'web'
-      ? { experimentalForceLongPolling: true }
-      : {})
+      ? { experimentalAutoDetectLongPolling: true, ignoreUndefinedProperties: true }
+      : { ignoreUndefinedProperties: true })
   : getFirestore(app);
 
 export const storage: FirebaseStorage = getStorage(app);

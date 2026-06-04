@@ -1,13 +1,19 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, FlatList, ScrollView, StyleSheet, Text,
-  TextInput, TouchableOpacity, View,
+  ActivityIndicator, FlatList, Modal, ScrollView, StyleSheet, Text,
+  TextInput, TouchableOpacity, View, useWindowDimensions,
 } from 'react-native';
 import AdminLayout from './AdminLayout';
-import { getOrdersInRange, voidOrder } from '../../firebase/firestoreService';
+import { AppModal, useToast } from '../../components/ui';
+import {
+  getOrdersPage, getOrdersSummary, getSettings, voidOrder,
+  OrderFilters, OrdersPage, OrdersSummary,
+} from '../../firebase/firestoreService';
+import { buildReceipt } from '../../utils/printerTemplates';
+import { printBytes } from '../../services/printerService';
 import { useAuthStore } from '../../store/authStore';
 import { useSyncEvents } from '../../context/SyncContext';
-import { Order, OrderType, PaymentMethod } from '../../types';
+import { Order, OrderType, PaymentMethod, Settings } from '../../types';
 import { exportCsv } from '../../utils/csvExport';
 import {
   Colors, FontSize, FontWeight, Radius, Shadow, Spacing,
@@ -58,6 +64,7 @@ const PAY_LABELS: Record<PaymentMethod, string> = {
   card:      'Card',
   qr:        'QR',
   gift_card: 'Gift',
+  pay_later: 'Pay Later',
 };
 
 const TYPE_LABELS: Record<string, string> = {
@@ -92,36 +99,74 @@ function buildOrdersCsv(orders: Order[], includeProfit: boolean): Parameters<typ
 // ─── Order History ────────────────────────────────────────────────────────────
 
 export default function OrderHistoryScreen() {
+  const { width: winW } = useWindowDimensions();
+  // Mirror AdminLayout's compact threshold so the dropdown overlay starts
+  // at the right edge of the sidebar, not the screen edge.
+  const sidebarW = winW < 960 ? 56 : Math.max(160, Math.round(winW * 0.2));
+
   const currentUser = useAuthStore((s) => s.user)!;
-  const canVoid     = currentUser.role === 'admin';
+  const canVoid     = currentUser.role === 'admin' || currentUser.role === 'manager';
   const isAdmin     = currentUser.role === 'admin';
+  const toast       = useToast();
+
+  const PAGE_SIZE = 50;
 
   const [period,        setPeriod]        = useState<Period>('today');
   const [orders,        setOrders]        = useState<Order[]>([]);
+  const [summary,       setSummary]       = useState<OrdersSummary | null>(null);
   const [loading,       setLoading]       = useState(true);
+  const [loadingMore,   setLoadingMore]   = useState(false);
+  const [hasMore,       setHasMore]       = useState(false);
   const [error,         setError]         = useState('');
   const [expanded,      setExpanded]      = useState<string | null>(null);
   const [voiding,       setVoiding]       = useState<string | null>(null);
+  const [voidTarget,    setVoidTarget]    = useState<Order | null>(null);
   const [payFilter,     setPayFilter]     = useState<PaymentMethod | 'all'>('all');
   const [typeFilter,    setTypeFilter]    = useState<OrderType | 'all'>('all');
+  const [openDropdown,  setOpenDropdown]  = useState<'pay' | 'type' | null>(null);
   const [search,        setSearch]        = useState('');
   const [exporting,     setExporting]     = useState(false);
-  const [displayLimit,  setDisplayLimit]  = useState(50);
   const [syncVersion,   setSyncVersion]   = useState(0);
+  const [settings,      setSettings]      = useState<Settings>({});
+  const [reprinting,    setReprinting]    = useState<string | null>(null);
+
+  // Opaque Firestore cursor for the next page (kept in a ref so it doesn't
+  // trigger re-renders and is never stale inside loadMore).
+  const cursorRef = useRef<OrdersPage['cursor']>(null);
 
   const { subscribe } = useSyncEvents();
   useEffect(() => { return subscribe(() => setSyncVersion((v) => v + 1)); }, []);
+  useEffect(() => { getSettings().then(setSettings).catch(() => {}); }, []);
 
-  useEffect(() => { loadOrders(); }, [period, syncVersion]);
-  useEffect(() => { setDisplayLimit(50); }, [orders, payFilter, typeFilter, search]);
+  // Pay/type filters and period drive the server query, so refetch page 1 +
+  // summary when any of them change. Order-number search is client-side.
+  useEffect(() => { load(); }, [period, payFilter, typeFilter, syncVersion]);
 
-  async function loadOrders() {
+  function buildFilters(): OrderFilters {
+    return {
+      payment_method: payFilter  !== 'all' ? payFilter  : undefined,
+      order_type:     typeFilter !== 'all' ? typeFilter : undefined,
+    };
+  }
+
+  async function load() {
     setLoading(true);
     setError('');
     setExpanded(null);
+    setSummary(null);
+    const { start, end } = getRange(period);
+    const filters = buildFilters();
+
+    // Summary runs concurrently but does not block the orders list — a missing
+    // composite index (or any aggregate failure) silently hides the summary bar
+    // rather than preventing orders from appearing.
+    getOrdersSummary(start, end, filters).then(setSummary).catch(() => {});
+
     try {
-      const { start, end } = getRange(period);
-      setOrders(await getOrdersInRange(start, end));
+      const page = await getOrdersPage(start, end, filters, PAGE_SIZE, null);
+      setOrders(page.orders);
+      cursorRef.current = page.cursor;
+      setHasMore(page.hasMore);
     } catch {
       setError('Failed to load orders.');
     } finally {
@@ -129,19 +174,24 @@ export default function OrderHistoryScreen() {
     }
   }
 
+  async function loadMore() {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    const { start, end } = getRange(period);
+    try {
+      const page = await getOrdersPage(start, end, buildFilters(), PAGE_SIZE, cursorRef.current);
+      setOrders((prev) => [...prev, ...page.orders]);
+      cursorRef.current = page.cursor;
+      setHasMore(page.hasMore);
+    } catch {
+      // Keep the pages we already have; the Load more button stays available.
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
   function confirmVoid(order: Order) {
-    Alert.alert(
-      'Void Order',
-      `Void order #${order.order_number}? This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Void Order',
-          style: 'destructive',
-          onPress: () => doVoid(order.id),
-        },
-      ],
-    );
+    setVoidTarget(order);
   }
 
   async function doVoid(orderId: string) {
@@ -155,32 +205,65 @@ export default function OrderHistoryScreen() {
             : o,
         ),
       );
+      // Revenue / voided totals changed — refresh the server-side summary.
+      const { start, end } = getRange(period);
+      getOrdersSummary(start, end, buildFilters()).then(setSummary).catch(() => {});
+      toast.success('Order voided');
     } catch {
-      Alert.alert('Error', 'Failed to void order. Check your connection.');
+      toast.error('Failed to void order. Check your connection.');
     } finally {
       setVoiding(null);
     }
   }
 
-  const filteredOrders = orders.filter((o) => {
-    if (payFilter  !== 'all' && o.payment_method !== payFilter)  return false;
-    if (typeFilter !== 'all' && o.order_type     !== typeFilter) return false;
-    const q = search.trim().toLowerCase();
-    if (q && !o.order_number.toLowerCase().includes(q)) return false;
-    return true;
-  });
-  const activeOrders  = filteredOrders.filter((o) => o.status !== 'cancelled');
-  const revenue       = activeOrders.reduce((s, o) => s + o.total_amount, 0);
-  const profit        = activeOrders.reduce((s, o) => s + (o.profit_amount ?? 0), 0);
-  const voidedCount   = filteredOrders.length - activeOrders.length;
+  async function handleReprint(order: Order) {
+    setReprinting(order.id);
+    try {
+      const bytes = buildReceipt(order, 0, settings);
+      await printBytes(bytes, {
+        type:     (settings.receipt_printer_type ?? 'wifi') as 'wifi' | 'bluetooth',
+        ip:       settings.receipt_printer_ip,
+        port:     settings.receipt_printer_port,
+        btDevice: settings.receipt_printer_bt,
+      });
+      toast.success('Receipt sent to printer');
+    } catch (e: unknown) {
+      toast.error((e as Error).message ?? 'Could not reach printer.');
+    } finally {
+      setReprinting(null);
+    }
+  }
+
+  // Pay/type filtering happens server-side; only order-number search is applied
+  // client-side, over the pages loaded so far.
+  const q = search.trim().toLowerCase();
+  const visibleOrders = q
+    ? orders.filter((o) => o.order_number.toLowerCase().includes(q))
+    : orders;
 
   async function handleExport() {
-    if (!filteredOrders.length) return;
     setExporting(true);
     try {
-      await exportCsv(...buildOrdersCsv(filteredOrders, isAdmin));
+      const { start, end } = getRange(period);
+      const filters = buildFilters();
+      // Page through the whole filtered range so the CSV is complete, not just
+      // the rows currently loaded on screen. Bounded to avoid a runaway export.
+      const all: Order[] = [];
+      let cursor: OrdersPage['cursor'] = null;
+      for (let i = 0; i < 200; i++) {
+        const page = await getOrdersPage(start, end, filters, 200, cursor);
+        all.push(...page.orders);
+        if (!page.hasMore) break;
+        cursor = page.cursor;
+      }
+      const rows = q ? all.filter((o) => o.order_number.toLowerCase().includes(q)) : all;
+      if (!rows.length) {
+        toast.info('No orders to export for this filter.');
+        return;
+      }
+      await exportCsv(...buildOrdersCsv(rows, isAdmin));
     } catch {
-      Alert.alert('Export Failed', 'Could not export CSV. Check storage permissions.');
+      toast.error('Could not export CSV. Check storage permissions.');
     } finally {
       setExporting(false);
     }
@@ -189,29 +272,13 @@ export default function OrderHistoryScreen() {
   return (
     <AdminLayout active="Orders">
       <View style={s.root}>
-        {/* Header */}
+        {/* Compact header: title + period tabs + actions in one bar */}
         <View style={s.header}>
-          <View style={s.titleRow}>
-            <Text style={s.title}>Orders</Text>
-            <View style={s.titleActions}>
-              {!loading && filteredOrders.length > 0 && (
-                <TouchableOpacity
-                  style={[s.exportBtn, exporting && s.exportBtnOff]}
-                  onPress={handleExport}
-                  disabled={exporting}
-                  activeOpacity={0.8}
-                >
-                  <Text style={s.exportBtnText}>{exporting ? 'Exporting…' : '⬇ Export'}</Text>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity style={s.refreshBtn} onPress={loadOrders} disabled={loading}>
-                <Text style={s.refreshText}>{loading ? '…' : '↻ Refresh'}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+          <Text style={s.title}>Orders</Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
+            style={s.periodScroll}
             contentContainerStyle={s.periodTabsContent}
           >
             {PERIODS.map((p) => (
@@ -226,53 +293,100 @@ export default function OrderHistoryScreen() {
               </TouchableOpacity>
             ))}
           </ScrollView>
+          <View style={s.titleActions}>
+            {!loading && visibleOrders.length > 0 && (
+              <TouchableOpacity
+                style={[s.exportBtn, exporting && s.exportBtnOff]}
+                onPress={handleExport}
+                disabled={exporting}
+                activeOpacity={0.8}
+              >
+                <Text style={s.exportBtnText}>{exporting ? '…' : '⬇ Export'}</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={s.refreshBtn} onPress={load} disabled={loading}>
+              <Text style={s.refreshText}>{loading ? '…' : '↻ Refresh'}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
-        {/* Filter chips — payment + type in one section */}
-        <View style={s.filterSection}>
-          <View style={s.filterRow}>
-            <Text style={s.filterRowLabel}>Pay</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={s.filterChipsContent}
-            >
-              {(['all', 'cash', 'card', 'qr', 'gift_card'] as const).map((m) => (
-                <TouchableOpacity
-                  key={m}
-                  style={[s.payChip, payFilter === m && s.payChipSel]}
-                  onPress={() => { setPayFilter(m); setExpanded(null); }}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[s.payChipText, payFilter === m && s.payChipTextSel]}>
-                    {m === 'all' ? 'All' : PAY_LABELS[m as PaymentMethod]}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-          <View style={s.filterRow}>
-            <Text style={s.filterRowLabel}>Type</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={s.filterChipsContent}
-            >
-              {(['all', 'dine_in', 'takeaway', 'delivery'] as const).map((t) => (
-                <TouchableOpacity
-                  key={t}
-                  style={[s.payChip, typeFilter === t && s.payChipSel]}
-                  onPress={() => { setTypeFilter(t); setExpanded(null); }}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[s.payChipText, typeFilter === t && s.payChipTextSel]}>
-                    {t === 'all' ? 'All' : TYPE_LABELS[t]}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
+        {/* Filter row: Pay + Type dropdowns */}
+        <View style={s.filterRow}>
+          {/* Pay dropdown */}
+          <TouchableOpacity
+            style={[s.dropdownBtn, payFilter !== 'all' && s.dropdownBtnSel]}
+            onPress={() => setOpenDropdown(openDropdown === 'pay' ? null : 'pay')}
+            activeOpacity={0.8}
+          >
+            <Text style={s.dropdownCategory}>Pay</Text>
+            <Text style={[s.dropdownLabel, payFilter !== 'all' && s.dropdownLabelSel]} numberOfLines={1}>
+              {payFilter === 'all' ? 'All' : PAY_LABELS[payFilter as PaymentMethod]}
+            </Text>
+            <Text style={s.dropdownChevron}>{openDropdown === 'pay' ? '▲' : '▼'}</Text>
+          </TouchableOpacity>
+
+          <View style={s.filterRowDivider} />
+
+          {/* Type dropdown */}
+          <TouchableOpacity
+            style={[s.dropdownBtn, typeFilter !== 'all' && s.dropdownBtnSel]}
+            onPress={() => setOpenDropdown(openDropdown === 'type' ? null : 'type')}
+            activeOpacity={0.8}
+          >
+            <Text style={s.dropdownCategory}>Type</Text>
+            <Text style={[s.dropdownLabel, typeFilter !== 'all' && s.dropdownLabelSel]} numberOfLines={1}>
+              {typeFilter === 'all' ? 'All' : TYPE_LABELS[typeFilter]}
+            </Text>
+            <Text style={s.dropdownChevron}>{openDropdown === 'type' ? '▲' : '▼'}</Text>
+          </TouchableOpacity>
         </View>
+
+        {/* Dropdown option list */}
+        {openDropdown !== null && (
+          <Modal
+            transparent
+            animationType="fade"
+            visible
+            onRequestClose={() => setOpenDropdown(null)}
+          >
+            <TouchableOpacity
+              style={[s.dropdownOverlay, { paddingLeft: sidebarW + Spacing.md }]}
+              activeOpacity={1}
+              onPress={() => setOpenDropdown(null)}
+            >
+              <View style={s.dropdownCard}>
+                {openDropdown === 'pay'
+                  ? (['all', 'cash', 'card', 'qr', 'gift_card', 'pay_later'] as const).map((m) => (
+                    <TouchableOpacity
+                      key={m}
+                      style={[s.dropdownItem, payFilter === m && s.dropdownItemSel]}
+                      onPress={() => { setPayFilter(m); setExpanded(null); setOpenDropdown(null); }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[s.dropdownItemText, payFilter === m && s.dropdownItemTextSel]}>
+                        {m === 'all' ? 'All' : PAY_LABELS[m as PaymentMethod]}
+                      </Text>
+                      {payFilter === m && <Text style={s.dropdownItemCheck}>✓</Text>}
+                    </TouchableOpacity>
+                  ))
+                  : (['all', 'dine_in', 'takeaway', 'delivery'] as const).map((t) => (
+                    <TouchableOpacity
+                      key={t}
+                      style={[s.dropdownItem, typeFilter === t && s.dropdownItemSel]}
+                      onPress={() => { setTypeFilter(t); setExpanded(null); setOpenDropdown(null); }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[s.dropdownItemText, typeFilter === t && s.dropdownItemTextSel]}>
+                        {t === 'all' ? 'All' : TYPE_LABELS[t]}
+                      </Text>
+                      {typeFilter === t && <Text style={s.dropdownItemCheck}>✓</Text>}
+                    </TouchableOpacity>
+                  ))
+                }
+              </View>
+            </TouchableOpacity>
+          </Modal>
+        )}
 
         {/* Search by order number */}
         <View style={s.searchRow}>
@@ -288,19 +402,19 @@ export default function OrderHistoryScreen() {
         </View>
 
         {/* Summary bar */}
-        {!loading && !error && (
+        {!loading && !error && summary && (
           <View style={s.summaryBar}>
             <Text style={s.summaryText}>
-              {activeOrders.length} order{activeOrders.length !== 1 ? 's' : ''}
-              {voidedCount > 0 ? ` · ${voidedCount} voided` : ''}
+              {summary.activeCount} order{summary.activeCount !== 1 ? 's' : ''}
+              {summary.voidedCount > 0 ? ` · ${summary.voidedCount} voided` : ''}
             </Text>
             <View style={s.summaryRight}>
               <Text style={s.summaryRevenue}>
-                ₱{revenue.toLocaleString('en-PH', { minimumFractionDigits: 2 })} revenue
+                ₱{summary.revenue.toLocaleString('en-PH', { minimumFractionDigits: 2 })} revenue
               </Text>
               {isAdmin && (
                 <Text style={s.summaryProfit}>
-                  ₱{profit.toLocaleString('en-PH', { minimumFractionDigits: 2 })} profit
+                  ₱{summary.profit.toLocaleString('en-PH', { minimumFractionDigits: 2 })} profit
                 </Text>
               )}
             </View>
@@ -318,22 +432,26 @@ export default function OrderHistoryScreen() {
           </View>
         ) : (
           <FlatList
-            data={filteredOrders.slice(0, displayLimit)}
+            data={visibleOrders}
             keyExtractor={(o) => o.id}
             contentContainerStyle={s.listContent}
+            onEndReachedThreshold={0.4}
+            onEndReached={() => { if (!search.trim()) loadMore(); }}
             ListEmptyComponent={
               <Text style={s.emptyText}>No orders for this period.</Text>
             }
             ListFooterComponent={
-              filteredOrders.length > displayLimit ? (
+              hasMore ? (
                 <TouchableOpacity
                   style={s.loadMoreBtn}
-                  onPress={() => setDisplayLimit((n) => n + 50)}
+                  onPress={loadMore}
+                  disabled={loadingMore}
                   activeOpacity={0.7}
                 >
-                  <Text style={s.loadMoreText}>
-                    Load more ({filteredOrders.length - displayLimit} remaining)
-                  </Text>
+                  {loadingMore
+                    ? <ActivityIndicator size="small" color={Colors.green700} />
+                    : <Text style={s.loadMoreText}>Load more</Text>
+                  }
                 </TouchableOpacity>
               ) : null
             }
@@ -352,16 +470,16 @@ export default function OrderHistoryScreen() {
                   <View style={s.orderRow}>
                     <View style={s.orderLeft}>
                       <View style={s.orderNumRow}>
-                        <Text style={[s.orderNum, isVoided && s.orderNumVoided]}>
+                        <Text style={[s.orderNum, isVoided && s.orderNumVoided]} numberOfLines={1}>
                           #{order.order_number}
                         </Text>
                         {isVoided && (
                           <View style={s.voidedBadge}>
-                            <Text style={s.voidedBadgeText}>Voided</Text>
+                            <Text style={s.voidedBadgeText} numberOfLines={1}>Voided</Text>
                           </View>
                         )}
                       </View>
-                      <Text style={s.orderMeta}>
+                      <Text style={s.orderMeta} numberOfLines={2}>
                         {fmtDateTime(order.created_at)}
                         {' · '}{TYPE_LABELS[order.order_type] ?? order.order_type}
                         {order.table_number ? ` · ${order.table_number}` : ''}
@@ -369,11 +487,11 @@ export default function OrderHistoryScreen() {
                       </Text>
                     </View>
                     <View style={s.orderRight}>
-                      <Text style={[s.orderTotal, isVoided && s.orderTotalVoided]}>
+                      <Text style={[s.orderTotal, isVoided && s.orderTotalVoided]} numberOfLines={1} adjustsFontSizeToFit>
                         ₱{order.total_amount.toFixed(2)}
                       </Text>
                       <View style={s.payBadge}>
-                        <Text style={s.payBadgeText}>
+                        <Text style={s.payBadgeText} numberOfLines={1}>
                           {PAY_LABELS[order.payment_method] ?? order.payment_method}
                         </Text>
                       </View>
@@ -404,24 +522,54 @@ export default function OrderHistoryScreen() {
                         </View>
                       )}
 
-                      {/* Void action */}
-                      {canVoid && !isVoided && (
+                      {/* Order actions */}
+                      <View style={s.actionRow}>
                         <TouchableOpacity
-                          style={[s.voidBtn, isVoiding && s.voidBtnDisabled]}
-                          onPress={() => confirmVoid(order)}
-                          disabled={isVoiding}
+                          style={[s.reprintBtn, (!!reprinting) && s.reprintBtnOff]}
+                          onPress={() => handleReprint(order)}
+                          disabled={!!reprinting}
                           activeOpacity={0.7}
                         >
-                          {isVoiding
-                            ? <ActivityIndicator size="small" color={Colors.danger} />
-                            : <Text style={s.voidBtnText}>Void Order</Text>
+                          {reprinting === order.id
+                            ? <ActivityIndicator size="small" color={Colors.green700} />
+                            : <Text style={s.reprintBtnText}>Reprint</Text>
                           }
                         </TouchableOpacity>
-                      )}
+                        {canVoid && !isVoided && (
+                          <TouchableOpacity
+                            style={[s.voidBtn, isVoiding && s.voidBtnDisabled]}
+                            onPress={() => confirmVoid(order)}
+                            disabled={isVoiding}
+                            activeOpacity={0.7}
+                          >
+                            {isVoiding
+                              ? <ActivityIndicator size="small" color={Colors.danger} />
+                              : <Text style={s.voidBtnText}>Void Order</Text>
+                            }
+                          </TouchableOpacity>
+                        )}
+                      </View>
                     </View>
                   )}
                 </TouchableOpacity>
               );
+            }}
+          />
+        )}
+
+        {voidTarget && (
+          <AppModal
+            visible
+            variant="confirm"
+            danger
+            title="Void Order"
+            body={`Void order #${voidTarget.order_number}? This cannot be undone.`}
+            confirmText="Void Order"
+            onCancel={() => setVoidTarget(null)}
+            onConfirm={() => {
+              const id = voidTarget.id;
+              setVoidTarget(null);
+              doVoid(id);
             }}
           />
         )}
@@ -436,28 +584,26 @@ const s = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: Spacing.xl,
-    paddingTop: Spacing.lg,
-    paddingBottom: Spacing.sm,
+    paddingVertical: Spacing.sm,
     backgroundColor: Colors.surface,
     borderBottomWidth: 1,
     borderColor: Colors.border,
     gap: Spacing.sm,
   },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
   titleActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
+    flexShrink: 0,
   },
   title: {
-    fontSize: FontSize.display,
+    fontSize: FontSize.xl,
     fontWeight: FontWeight.bold,
     color: Colors.gray900,
+    flexShrink: 0,
   },
   exportBtn: {
     borderWidth: 1.5,
@@ -480,16 +626,15 @@ const s = StyleSheet.create({
     borderColor: Colors.border,
   },
   refreshText: { fontSize: FontSize.sm, color: Colors.green700, fontWeight: FontWeight.semibold },
-  periodTabsContent: { flexDirection: 'row', gap: Spacing.xs },
+  periodScroll: { flex: 1 },
+  periodTabsContent: { flexDirection: 'row', gap: Spacing.xs, alignItems: 'center' },
   periodTab: {
     paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
+    paddingVertical: Spacing.xs,
     borderRadius: Radius.full,
     backgroundColor: Colors.gray100,
   },
-  periodTabSel: {
-    backgroundColor: Colors.green600,
-  },
+  periodTabSel: { backgroundColor: Colors.green600 },
   periodTabText: {
     fontSize: FontSize.sm,
     fontWeight: FontWeight.medium,
@@ -500,29 +645,87 @@ const s = StyleSheet.create({
     fontWeight: FontWeight.bold,
   },
 
-  filterSection: {
-    backgroundColor: Colors.surface,
-    borderBottomWidth: 1,
-    borderColor: Colors.border,
-    paddingVertical: Spacing.xs,
-  },
   filterRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderColor: Colors.border,
   },
-  filterRowLabel: {
-    width: 56,
-    paddingLeft: Spacing.xl,
+  filterRowDivider: {
+    width: 1,
+    alignSelf: 'stretch',
+    backgroundColor: Colors.border,
+  },
+  dropdownBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+  },
+  dropdownBtnSel: {
+    backgroundColor: Colors.green50,
+  },
+  dropdownCategory: {
     fontSize: FontSize.xs,
     fontWeight: FontWeight.bold,
     color: Colors.gray400,
-    flexShrink: 0,
   },
-  filterChipsContent: {
+  dropdownLabel: {
+    flex: 1,
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
+    color: Colors.gray700,
+  },
+  dropdownLabelSel: {
+    color: Colors.green700,
+  },
+  dropdownChevron: {
+    fontSize: FontSize.xs,
+    color: Colors.gray400,
+  },
+  dropdownOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    justifyContent: 'flex-start',
+    paddingTop: 120,
+    paddingRight: Spacing.xl,
+  },
+  dropdownCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    overflow: 'hidden',
+    ...Shadow.md,
+  },
+  dropdownItem: {
     flexDirection: 'row',
-    gap: Spacing.xs,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.sm,
+    alignItems: 'center',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderBottomWidth: 1,
+    borderColor: Colors.border,
+  },
+  dropdownItemSel: {
+    backgroundColor: Colors.green50,
+  },
+  dropdownItemText: {
+    flex: 1,
+    fontSize: FontSize.base,
+    color: Colors.gray700,
+    fontWeight: FontWeight.medium,
+  },
+  dropdownItemTextSel: {
+    color: Colors.green700,
+    fontWeight: FontWeight.bold,
+  },
+  dropdownItemCheck: {
+    fontSize: FontSize.sm,
+    color: Colors.green600,
+    fontWeight: FontWeight.bold,
   },
   searchRow: {
     paddingHorizontal: Spacing.xl,
@@ -540,27 +743,6 @@ const s = StyleSheet.create({
     fontSize: FontSize.sm,
     color: Colors.gray800,
     backgroundColor: Colors.white,
-  },
-  payChip: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.gray100,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  payChipSel: {
-    backgroundColor: Colors.green50,
-    borderColor: Colors.green600,
-  },
-  payChipText: {
-    fontSize: FontSize.sm,
-    fontWeight: FontWeight.medium,
-    color: Colors.gray600,
-  },
-  payChipTextSel: {
-    color: Colors.green700,
-    fontWeight: FontWeight.bold,
   },
 
   summaryBar: {
@@ -582,8 +764,10 @@ const s = StyleSheet.create({
   },
   summaryRight: {
     flexDirection: 'row',
-    gap: Spacing.md,
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
     alignItems: 'center',
+    justifyContent: 'flex-end',
   },
   summaryRevenue: {
     fontSize: FontSize.sm,
@@ -659,6 +843,7 @@ const s = StyleSheet.create({
   orderNumRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: Spacing.sm,
   },
   orderNum: {
@@ -691,6 +876,8 @@ const s = StyleSheet.create({
   orderRight: {
     alignItems: 'flex-end',
     gap: Spacing.xs,
+    maxWidth: '42%',
+    flexShrink: 0,
   },
   orderTotal: {
     fontSize: FontSize.lg,
@@ -706,6 +893,7 @@ const s = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: Radius.full,
     backgroundColor: Colors.gray100,
+    maxWidth: '100%',
   },
   payBadgeText: {
     fontSize: FontSize.xs,
@@ -770,8 +958,33 @@ const s = StyleSheet.create({
     fontWeight: FontWeight.bold,
   },
 
-  voidBtn: {
+  actionRow: {
     marginTop: Spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  reprintBtn: {
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: Radius.md,
+    borderWidth: 1.5,
+    borderColor: Colors.green600,
+    alignItems: 'center',
+    minWidth: 88,
+    minHeight: 36,
+    justifyContent: 'center',
+  },
+  reprintBtnOff: {
+    borderColor: Colors.gray300,
+    opacity: 0.5,
+  },
+  reprintBtnText: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.bold,
+    color: Colors.green700,
+  },
+  voidBtn: {
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.lg,
     borderRadius: Radius.md,

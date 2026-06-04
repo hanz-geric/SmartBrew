@@ -1,14 +1,18 @@
 import { Dimensions } from 'react-native';
 
-const { width: SCREEN_W } = Dimensions.get('window');
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
 export const BREAKPOINTS = {
   tablet:      768,
   tabletLarge: 1024,
 } as const;
 
-/** True when the app is running on a tablet-sized screen (>= 768 logical px wide). */
-export const isTablet = SCREEN_W >= BREAKPOINTS.tablet;
+/**
+ * True when the app is running on a tablet-sized screen.
+ * Uses the SHORT side so portrait 8.7" tablets (logical ~533px wide) are
+ * correctly detected — their short side is still >= 500px.
+ */
+export const isTablet = Math.min(SCREEN_W, SCREEN_H) >= 500;
 
 /**
  * Responsive scale — returns `value * factor` on tablet, plain `value` on phone.

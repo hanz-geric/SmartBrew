@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, FlatList,
+  ActivityIndicator, FlatList,
   StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
+import { AppModal } from '../../components/ui';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { CashierStackParamList } from '../../navigation/CashierStack';
 import { useAuthStore } from '../../store/authStore';
@@ -49,7 +50,7 @@ function syncStatusChip(retryCount: number): { label: string; bg: string; color:
 }
 
 const PAY_LABELS: Record<PaymentMethod, string> = {
-  cash: 'Cash', card: 'Card', qr: 'QR', gift_card: 'Gift Card',
+  cash: 'Cash', card: 'Card', qr: 'QR', gift_card: 'Gift Card', pay_later: 'Pay Later',
 };
 
 const TYPE_LABELS: Record<string, string> = {
@@ -161,8 +162,10 @@ export default function PendingOrdersScreen({ route, navigation }: Props) {
   const [loading,  setLoading]  = useState(true);
   const [syncing,  setSyncing]  = useState(false);
   const [retrying, setRetrying] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const [lastError, setLastError] = useState<LogEntry | null>(null);
+  const [expanded,        setExpanded]        = useState<string | null>(null);
+  const [lastError,       setLastError]       = useState<LogEntry | null>(null);
+  const [discardPendingId, setDiscardPendingId] = useState<string | null>(null);
+  const [discardFailedId,  setDiscardFailedId]  = useState<string | null>(null);
 
   const { subscribe, notifySynced } = useSyncEvents();
   const loadRef = useRef(loadAll);
@@ -217,21 +220,13 @@ export default function PendingOrdersScreen({ route, navigation }: Props) {
   }
 
   function handleDiscardPending(local_id: string) {
-    Alert.alert(
-      'Discard Order',
-      'Discard this offline order? It cannot be recovered.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Discard', style: 'destructive',
-          onPress: async () => {
-            await removePendingOrder(local_id);
-            setPending((prev) => prev.filter((o) => o.local_id !== local_id));
-            if (expanded === local_id) setExpanded(null);
-          },
-        },
-      ],
-    );
+    setDiscardPendingId(local_id);
+  }
+
+  async function doDiscardPending(local_id: string) {
+    await removePendingOrder(local_id);
+    setPending((prev) => prev.filter((o) => o.local_id !== local_id));
+    if (expanded === local_id) setExpanded(null);
   }
 
   async function handleRecover(order: FailedOrder) {
@@ -240,21 +235,13 @@ export default function PendingOrdersScreen({ route, navigation }: Props) {
   }
 
   function handleDiscardFailed(local_id: string) {
-    Alert.alert(
-      'Remove Failed Order',
-      'Remove this order from the failed list? This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove', style: 'destructive',
-          onPress: async () => {
-            await removeFailedOrder(local_id);
-            setFailed((prev) => prev.filter((o) => o.local_id !== local_id));
-            if (expanded === local_id) setExpanded(null);
-          },
-        },
-      ],
-    );
+    setDiscardFailedId(local_id);
+  }
+
+  async function doDiscardFailed(local_id: string) {
+    await removeFailedOrder(local_id);
+    setFailed((prev) => prev.filter((o) => o.local_id !== local_id));
+    if (expanded === local_id) setExpanded(null);
   }
 
   const renderPending = useCallback(({ item, index }: { item: PendingOrder; index: number }) => {
@@ -412,9 +399,39 @@ export default function PendingOrdersScreen({ route, navigation }: Props) {
           data={currentData as any[]}
           keyExtractor={(o) => o.local_id}
           contentContainerStyle={s.listContent}
-          renderItem={tab === 'pending' ? renderPending : renderFailed}
+          renderItem={(tab === 'pending' ? renderPending : renderFailed) as any}
         />
       )}
+
+      <AppModal
+        visible={discardPendingId !== null}
+        variant="confirm"
+        danger
+        title="Discard Order"
+        body="Discard this offline order? It cannot be recovered."
+        confirmText="Discard"
+        onCancel={() => setDiscardPendingId(null)}
+        onConfirm={() => {
+          const id = discardPendingId!;
+          setDiscardPendingId(null);
+          doDiscardPending(id);
+        }}
+      />
+
+      <AppModal
+        visible={discardFailedId !== null}
+        variant="confirm"
+        danger
+        title="Remove Failed Order"
+        body="Remove this order from the failed list? This cannot be undone."
+        confirmText="Remove"
+        onCancel={() => setDiscardFailedId(null)}
+        onConfirm={() => {
+          const id = discardFailedId!;
+          setDiscardFailedId(null);
+          doDiscardFailed(id);
+        }}
+      />
     </View>
   );
 }

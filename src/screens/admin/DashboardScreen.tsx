@@ -35,6 +35,7 @@ const PAY_LABELS: Record<PaymentMethod, string> = {
   card:      'Card',
   qr:        'QR',
   gift_card: 'Gift Card',
+  pay_later: 'Pay Later',
 };
 
 function fmtTime(iso: string): string {

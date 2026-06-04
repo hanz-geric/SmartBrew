@@ -21,8 +21,10 @@ export function buildTestPage(
   const name   = settings.business_name ?? 'SmartBrew POS';
   const label  = printer === 'receipt' ? 'Receipt Printer' : 'Kitchen Printer';
 
+  doc.init();
+  if (printer === 'kitchen') doc.buzzer();   // verify the kitchen buzzer here
+
   return doc
-    .init()
     .align('center')
     .bold(true).size(2, 1).line(name).size(1, 1).bold(false)
     .feed()
@@ -43,9 +45,10 @@ export function buildTestPage(
 // ─── Customer receipt ─────────────────────────────────────────────────────────
 
 export function buildReceipt(
-  order:    Order,
-  change:   number,
-  settings: Settings,
+  order:      Order,
+  change:     number,
+  settings:   Settings,
+  openDrawer: boolean = false,
 ): Uint8Array {
   const width   = (settings.receipt_paper_width ?? '80mm') as PaperWidth;
   const doc     = new EscPos(width);
@@ -54,8 +57,10 @@ export function buildReceipt(
   const phone   = settings.business_phone   ?? '';
   const footer  = settings.receipt_footer   ?? 'Thank you for visiting!';
 
-  // Header
-  doc.init().align('center')
+  // Header — kick the drawer first so it opens as the receipt starts printing.
+  doc.init();
+  if (openDrawer) doc.kick();
+  doc.align('center')
     .bold(true).size(2, 1).line(bizName).size(1, 1).bold(false);
   if (address) doc.line(address);
   if (phone)   doc.line(phone);
@@ -92,7 +97,7 @@ export function buildReceipt(
 
   // Payment
   const payLabel: Record<string, string> = {
-    cash: 'Cash', card: 'Card', qr: 'QR', gift_card: 'Gift Card',
+    cash: 'Cash', card: 'Card', qr: 'QR', gift_card: 'Gift Card', pay_later: 'Pay Later',
   };
   doc.row('Payment:', payLabel[order.payment_method] ?? order.payment_method);
   if (order.payment_method === 'cash' && change > 0) {
@@ -110,7 +115,8 @@ export function buildKitchenTicket(
   order:    Order,
   settings: Settings,
 ): Uint8Array {
-  const kitchenItems = (order.items ?? []);
+  // Only items flagged "Needs Kitchen Ticket" go to the kitchen printer.
+  const kitchenItems = (order.items ?? []).filter((i) => i.needs_kitchen);
   if (kitchenItems.length === 0) return new Uint8Array(0);
 
   const width = (settings.kitchen_paper_width ?? '80mm') as PaperWidth;
@@ -120,8 +126,8 @@ export function buildKitchenTicket(
     dine_in: 'DINE IN', takeaway: 'TAKEAWAY', delivery: 'DELIVERY',
   };
 
-  // Header
-  doc.init().align('center')
+  // Header — buzz first so staff hear the alert as the ticket starts printing.
+  doc.init().buzzer().align('center')
     .bold(true).size(2, 2).line('KITCHEN').size(1, 1).bold(false);
 
   if (order.order_type === 'dine_in' && order.table_number) {

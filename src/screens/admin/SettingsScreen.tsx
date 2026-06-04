@@ -1,14 +1,15 @@
 ﻿import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform,
+  ActivityIndicator, KeyboardAvoidingView, Linking, Modal, Platform,
   ScrollView, StyleSheet, Text, TextInput,
   TouchableOpacity, View,
 } from 'react-native';
+import { AppModal, useToast } from '../../components/ui';
 import AdminLayout from './AdminLayout';
-import { getSettings, saveSettings } from '../../firebase/firestoreService';
+import { getSettings, saveSettings, clearPrinterSettings } from '../../firebase/firestoreService';
 import { PaperWidth, Settings } from '../../types';
 import { buildTestPage } from '../../utils/printerTemplates';
-import { printBytes, scanWifiPrinters, scanBluetoothPrinters, DiscoveredPrinter } from '../../services/printerService';
+import { printBytes, scanWifiPrinters, scanBluetoothPrinters, disconnectBluetoothPrinter, BluetoothPreconditionError, DiscoveredPrinter } from '../../services/printerService';
 import {
   Colors, FontSize, FontWeight, Radius, Shadow, Spacing,
 } from '../../constants/theme';
@@ -42,10 +43,15 @@ const DEFAULT_PRINTER: PrinterState = {
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function SettingsScreen() {
+  const toast = useToast();
+
   const [loading,  setLoading]  = useState(true);
   const [saving,   setSaving]   = useState(false);
   const [saved,    setSaved]    = useState(false);
   const [error,    setError]    = useState('');
+
+  const [btAlert,            setBtAlert]            = useState<{ message: string; openSettings: () => void } | null>(null);
+  const [removePrinterTarget, setRemovePrinterTarget] = useState<'receipt' | 'kitchen' | null>(null);
 
   // Business info
   const [bizName,    setBizName]    = useState('');
@@ -155,6 +161,15 @@ export default function SettingsScreen() {
     }
   }
 
+  // ── Bluetooth precondition alert ───────────────────────────────────────────
+
+  function alertPrecondition(e: BluetoothPreconditionError) {
+    const openSettings = e.settingsIntent === 'app-settings'
+      ? () => Linking.openSettings()
+      : () => Linking.sendIntent(e.settingsIntent);
+    setBtAlert({ message: e.message, openSettings });
+  }
+
   // ── Scan modal ─────────────────────────────────────────────────────────────
 
   async function openScan(target: 'receipt' | 'kitchen') {
@@ -167,6 +182,10 @@ export default function SettingsScreen() {
         ? await scanWifiPrinters()
         : await scanBluetoothPrinters();
       setFoundPrinters(results);
+    } catch (e: unknown) {
+      setScanTarget(null);
+      if (e instanceof BluetoothPreconditionError) alertPrecondition(e);
+      else toast.error((e as Error).message ?? 'Scan failed. Unknown error.');
     } finally {
       setScanning(false);
     }
@@ -202,9 +221,30 @@ export default function SettingsScreen() {
         btDevice: printer.bt  || undefined,
       });
     } catch (e: unknown) {
-      Alert.alert('Print Test Failed', (e as Error).message ?? 'Unknown error.');
+      if (e instanceof BluetoothPreconditionError) alertPrecondition(e);
+      else toast.error((e as Error).message ?? 'Print test failed. Unknown error.');
     } finally {
       setTestTarget(null);
+    }
+  }
+
+  // ── Remove printer ─────────────────────────────────────────────────────────
+
+  function handleRemovePrinter(target: 'receipt' | 'kitchen') {
+    setRemovePrinterTarget(target);
+  }
+
+  async function doRemovePrinter(target: 'receipt' | 'kitchen') {
+    const printer = target === 'receipt' ? rcpt : kit;
+    if (printer.type === 'bluetooth' && printer.bt) {
+      await disconnectBluetoothPrinter(printer.bt);
+    }
+    try {
+      await clearPrinterSettings(target);
+      if (target === 'receipt') setRcpt(DEFAULT_PRINTER);
+      else                      setKit(DEFAULT_PRINTER);
+    } catch {
+      toast.error('Could not remove the printer. Check your connection and try again.');
     }
   }
 
@@ -316,6 +356,7 @@ export default function SettingsScreen() {
               onChange={setRcpt}
               onScan={() => openScan('receipt')}
               onTest={() => handlePrintTest('receipt')}
+              onRemove={() => handleRemovePrinter('receipt')}
               testing={testTarget === 'receipt'}
             />
           )}
@@ -328,6 +369,7 @@ export default function SettingsScreen() {
               onChange={setKit}
               onScan={() => openScan('kitchen')}
               onTest={() => handlePrintTest('kitchen')}
+              onRemove={() => handleRemovePrinter('kitchen')}
               testing={testTarget === 'kitchen'}
             />
           )}
@@ -343,6 +385,36 @@ export default function SettingsScreen() {
         onSelect={selectDiscoveredPrinter}
         onClose={() => setScanTarget(null)}
       />
+
+      {btAlert && (
+        <AppModal
+          visible
+          variant="confirm"
+          title="Bluetooth Unavailable"
+          body={btAlert.message}
+          confirmText="Open Settings"
+          cancelText="Cancel"
+          onCancel={() => setBtAlert(null)}
+          onConfirm={() => { setBtAlert(null); btAlert.openSettings(); }}
+        />
+      )}
+
+      {removePrinterTarget && (
+        <AppModal
+          visible
+          variant="confirm"
+          danger
+          title="Remove Printer"
+          body={`This clears the ${removePrinterTarget} printer configuration and disconnects it, so you can set it up from scratch.`}
+          confirmText="Remove"
+          onCancel={() => setRemovePrinterTarget(null)}
+          onConfirm={() => {
+            const t = removePrinterTarget;
+            setRemovePrinterTarget(null);
+            doRemovePrinter(t);
+          }}
+        />
+      )}
     </AdminLayout>
   );
 }
@@ -350,13 +422,14 @@ export default function SettingsScreen() {
 // ─── PrinterSection ───────────────────────────────────────────────────────────
 
 function PrinterSection({
-  title, printer, onChange, onScan, onTest, testing,
+  title, printer, onChange, onScan, onTest, onRemove, testing,
 }: {
   title:    string;
   printer:  PrinterState;
   onChange: (p: PrinterState) => void;
   onScan:   () => void;
   onTest:   () => void;
+  onRemove: () => void;
   testing:  boolean;
 }) {
   const set = (patch: Partial<PrinterState>) => onChange({ ...printer, ...patch });
@@ -456,6 +529,13 @@ function PrinterSection({
           : <Text style={ps.testBtnText}>🖨️ Print Test</Text>
         }
       </TouchableOpacity>
+
+      {/* Remove printer — only when something is configured */}
+      {configured ? (
+        <TouchableOpacity style={ps.removeBtn} onPress={onRemove} activeOpacity={0.8}>
+          <Text style={ps.removeBtnText}>Remove Printer</Text>
+        </TouchableOpacity>
+      ) : null}
     </Section>
   );
 }
@@ -760,6 +840,16 @@ const ps = StyleSheet.create({
   },
   testBtnOff:  { opacity: 0.6 },
   testBtnText: { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: Colors.gray700 },
+
+  removeBtn: {
+    borderWidth: 1.5,
+    borderColor: Colors.danger + '55',
+    borderRadius: Radius.md,
+    paddingVertical: Spacing.md,
+    alignItems: 'center',
+    backgroundColor: Colors.dangerBg,
+  },
+  removeBtnText: { fontSize: FontSize.base, fontWeight: FontWeight.semibold, color: Colors.danger },
 });
 
 const sm = StyleSheet.create({
@@ -768,7 +858,7 @@ const sm = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center', padding: Spacing.xl,
   },
   sheet: {
-    width: '100%', maxWidth: 520, maxHeight: '88%',
+    width: '100%', maxWidth: 520, height: '80%',
     backgroundColor: Colors.surface, borderRadius: Radius.xl,
     overflow: 'hidden', ...Shadow.lg,
   },

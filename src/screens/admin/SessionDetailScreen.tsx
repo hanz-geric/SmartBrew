@@ -19,7 +19,7 @@ type Route = RouteProp<AdminStackParamList, 'SessionDetail'>;
 type DrillTab = 'cashiers' | 'summary' | 'orders';
 
 const PAY_LABELS: Record<PaymentMethod, string> = {
-  cash: 'Cash', card: 'Card', qr: 'QR', gift_card: 'Gift',
+  cash: 'Cash', card: 'Card', qr: 'QR', gift_card: 'Gift', pay_later: 'Pay Later',
 };
 
 const TYPE_LABELS: Record<string, string> = {

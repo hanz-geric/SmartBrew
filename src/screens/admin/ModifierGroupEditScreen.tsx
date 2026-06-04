@@ -1,9 +1,10 @@
 ﻿import React, { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
+  ActivityIndicator, KeyboardAvoidingView, Platform,
   ScrollView, StyleSheet, Switch, Text, TextInput,
   TouchableOpacity, View,
 } from 'react-native';
+import { AppModal } from '../../components/ui';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AdminLayout from './AdminLayout';
@@ -39,10 +40,11 @@ export default function ModifierGroupEditScreen() {
   const { groupId } = route.params;
   const isNew = !groupId;
 
-  const [loading,    setLoading]    = useState(true);
-  const [saving,     setSaving]     = useState(false);
-  const [deleting,   setDeleting]   = useState(false);
-  const [error,      setError]      = useState('');
+  const [loading,       setLoading]       = useState(true);
+  const [saving,        setSaving]        = useState(false);
+  const [deleting,      setDeleting]      = useState(false);
+  const [error,         setError]         = useState('');
+  const [showDelConfirm, setShowDelConfirm] = useState(false);
   const [stockItems, setStockItems] = useState<StockItem[]>([]);
 
   // Group fields
@@ -153,14 +155,7 @@ export default function ModifierGroupEditScreen() {
   }
 
   function confirmDelete() {
-    Alert.alert(
-      'Delete Group',
-      `Delete "${name}"? This cannot be undone. Any products using this group will lose these modifier options.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: doDelete },
-      ],
-    );
+    setShowDelConfirm(true);
   }
 
   async function doDelete() {
@@ -201,30 +196,10 @@ export default function ModifierGroupEditScreen() {
         >
           {/* Header */}
           <View style={s.pageHeader}>
-            <View style={s.headerLeft}>
-              <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7}>
-                <Text style={s.backText}>‹ Back</Text>
-              </TouchableOpacity>
-              <Text style={s.pageTitle}>{isNew ? 'New Modifier Group' : 'Edit Modifier Group'}</Text>
-            </View>
-            <View style={s.headerRight}>
-              {!!error && (
-                <View style={s.errorInline}>
-                  <Text style={s.errorText}>{error}</Text>
-                </View>
-              )}
-              <TouchableOpacity
-                style={[s.saveBtn, (saving || deleting) && s.saveBtnOff]}
-                onPress={handleSave}
-                disabled={saving || deleting}
-                activeOpacity={0.8}
-              >
-                {saving
-                  ? <ActivityIndicator color={Colors.white} size="small" />
-                  : <Text style={s.saveBtnText}>{isNew ? 'Create' : 'Save Changes'}</Text>
-                }
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7}>
+              <Text style={s.backText}>‹ Back</Text>
+            </TouchableOpacity>
+            <Text style={s.pageTitle}>{isNew ? 'New Modifier Group' : 'Edit Modifier Group'}</Text>
           </View>
 
           {/* Group Settings */}
@@ -323,7 +298,38 @@ export default function ModifierGroupEditScreen() {
             </Section>
           )}
         </ScrollView>
+
+        {/* Footer — save button pinned to bottom */}
+        <View style={s.footer}>
+          {!!error && (
+            <View style={s.errorInline}>
+              <Text style={s.errorText}>{error}</Text>
+            </View>
+          )}
+          <TouchableOpacity
+            style={[s.saveBtn, (saving || deleting) && s.saveBtnOff]}
+            onPress={handleSave}
+            disabled={saving || deleting}
+            activeOpacity={0.8}
+          >
+            {saving
+              ? <ActivityIndicator color={Colors.white} size="small" />
+              : <Text style={s.saveBtnText}>{isNew ? 'Create' : 'Save Changes'}</Text>
+            }
+          </TouchableOpacity>
+        </View>
       </KeyboardAvoidingView>
+
+      <AppModal
+        visible={showDelConfirm}
+        variant="confirm"
+        danger
+        title="Delete Group"
+        body={`Delete "${name}"? This cannot be undone. Any products using this group will lose these modifier options.`}
+        confirmText="Delete"
+        onCancel={() => setShowDelConfirm(false)}
+        onConfirm={() => { setShowDelConfirm(false); doDelete(); }}
+      />
     </AdminLayout>
   );
 }
@@ -531,17 +537,17 @@ const s = StyleSheet.create({
   content:  { padding: Spacing.xl, gap: Spacing.xl, paddingBottom: Spacing.xxxl },
   center:   { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
-  pageHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    flexWrap: 'wrap',
-    gap: Spacing.md,
+  pageHeader: { gap: Spacing.xs },
+  backText:   { fontSize: FontSize.sm, color: Colors.green700, fontWeight: FontWeight.medium },
+  pageTitle:  { fontSize: FontSize.display, fontWeight: FontWeight.bold, color: Colors.gray900 },
+
+  footer: {
+    borderTopWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+    padding: Spacing.lg,
+    gap: Spacing.sm,
   },
-  headerLeft:  { gap: Spacing.xs },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, flexWrap: 'wrap' },
-  backText:    { fontSize: FontSize.sm, color: Colors.green700, fontWeight: FontWeight.medium },
-  pageTitle:   { fontSize: FontSize.display, fontWeight: FontWeight.bold, color: Colors.gray900 },
   errorInline: {
     backgroundColor: Colors.dangerBg,
     borderWidth: 1,
@@ -549,10 +555,8 @@ const s = StyleSheet.create({
     borderRadius: Radius.md,
     paddingHorizontal: Spacing.sm,
     paddingVertical: Spacing.xs,
-    maxWidth: 280,
-    flexShrink: 1,
   },
-  errorText:   { fontSize: FontSize.sm, color: Colors.danger, fontWeight: FontWeight.medium },
+  errorText: { fontSize: FontSize.sm, color: Colors.danger, fontWeight: FontWeight.medium },
 
   saveBtn: {
     backgroundColor: Colors.green600,

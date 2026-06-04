@@ -1,8 +1,9 @@
 ﻿import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
+  ActivityIndicator, KeyboardAvoidingView, Platform,
   ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
+import { AppModal } from '../../components/ui';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import AdminLayout from './AdminLayout';
 import { AdminStackParamList } from '../../navigation/AdminStack';
@@ -20,9 +21,10 @@ export default function StockEditScreen({ route, navigation }: Props) {
   const { itemId } = route.params;
   const isEdit = !!itemId;
 
-  const [loading,  setLoading]  = useState(isEdit);
-  const [saving,   setSaving]   = useState(false);
-  const [error,    setError]    = useState('');
+  const [loading,       setLoading]       = useState(isEdit);
+  const [saving,        setSaving]        = useState(false);
+  const [error,         setError]         = useState('');
+  const [showDelConfirm, setShowDelConfirm] = useState(false);
 
   // Form fields
   const [name,        setName]        = useState('');
@@ -153,27 +155,18 @@ export default function StockEditScreen({ route, navigation }: Props) {
   }
 
   function handleDelete() {
-    Alert.alert(
-      'Delete Stock Item',
-      `Delete "${name}"? This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            setSaving(true);
-            try {
-              await deleteStockItem(itemId!);
-              navigation.goBack();
-            } catch {
-              setError('Failed to delete. Check your connection.');
-              setSaving(false);
-            }
-          },
-        },
-      ],
-    );
+    setShowDelConfirm(true);
+  }
+
+  async function doDelete() {
+    setSaving(true);
+    try {
+      await deleteStockItem(itemId!);
+      navigation.goBack();
+    } catch {
+      setError('Failed to delete. Check your connection.');
+      setSaving(false);
+    }
   }
 
   if (loading) {
@@ -396,6 +389,17 @@ export default function StockEditScreen({ route, navigation }: Props) {
         )}
       </ScrollView>
     </KeyboardAvoidingView>
+
+      <AppModal
+        visible={showDelConfirm}
+        variant="confirm"
+        danger
+        title="Delete Stock Item"
+        body={`Delete "${name}"? This cannot be undone.`}
+        confirmText="Delete"
+        onCancel={() => setShowDelConfirm(false)}
+        onConfirm={() => { setShowDelConfirm(false); doDelete(); }}
+      />
     </AdminLayout>
   );
 }

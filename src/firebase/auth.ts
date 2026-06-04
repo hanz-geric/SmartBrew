@@ -8,8 +8,9 @@ import {
 } from 'firebase/auth';
 import { deleteApp, initializeApp } from 'firebase/app';
 import { getDoc, setDoc } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { auth, firebaseConfig } from './config';
+import { auth, app, firebaseConfig } from './config';
 import { userDoc } from './collections';
 import { clearSessionCache } from '../db/queries/sessionCache';
 import { saveCredentials, verifyOfflineCredentials } from '../db/queries/credentialsCache';
@@ -227,6 +228,15 @@ export async function logout(): Promise<void> {
       logError('logout:clearSessionCache', err, `uid=${uid}`),
     );
   }
+}
+
+export async function resetUserPassword(uid: string, newPassword: string): Promise<void> {
+  const functions = getFunctions(app);
+  const fn = httpsCallable<{ uid: string; newPassword: string }, { success: boolean }>(
+    functions,
+    'resetUserPassword',
+  );
+  await fn({ uid, newPassword });
 }
 
 export function onAuthChanged(

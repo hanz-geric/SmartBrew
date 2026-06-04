@@ -1,15 +1,16 @@
 ﻿import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
+  ActivityIndicator, KeyboardAvoidingView, Platform,
   ScrollView, StyleSheet, Switch, Text, TextInput,
   TouchableOpacity, View,
 } from 'react-native';
+import { AppModal } from '../../components/ui';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AdminLayout from './AdminLayout';
 import { AdminStackParamList } from '../../navigation/AdminStack';
 import { listUsers, updateUserProfile } from '../../firebase/firestoreService';
-import { createUserAccount } from '../../firebase/auth';
+import { createUserAccount, resetUserPassword } from '../../firebase/auth';
 import { useAuthStore } from '../../store/authStore';
 import { UserRole } from '../../types';
 import {
@@ -28,15 +29,17 @@ export default function UserEditScreen() {
   const isNew       = !userId;
   const currentUser = useAuthStore((s) => s.user)!;
 
-  const [loading,  setLoading]  = useState(!isNew);
-  const [saving,   setSaving]   = useState(false);
-  const [error,    setError]    = useState('');
+  const [loading,          setLoading]          = useState(!isNew);
+  const [saving,           setSaving]           = useState(false);
+  const [error,            setError]            = useState('');
+  const [showToggleConfirm, setShowToggleConfirm] = useState(false);
 
-  const [username,  setUsername]  = useState('');
-  const [fullName,  setFullName]  = useState('');
-  const [password,  setPassword]  = useState('');
-  const [role,      setRole]      = useState<UserRole>('cashier');
-  const [isActive,  setIsActive]  = useState(true);
+  const [username,    setUsername]    = useState('');
+  const [fullName,    setFullName]    = useState('');
+  const [password,    setPassword]    = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [role,        setRole]        = useState<UserRole>('cashier');
+  const [isActive,    setIsActive]    = useState(true);
 
   useEffect(() => {
     if (!isNew) load();
@@ -68,6 +71,10 @@ export default function UserEditScreen() {
     if (!/^[a-z0-9_]+$/.test(uname)) { setError('Username: only letters, numbers, and underscores.'); return; }
     if (!fname)  { setError('Full name is required.'); return; }
     if (isNew && password.length < 6) { setError('Password must be at least 6 characters.'); return; }
+    if (!isNew && newPassword.length > 0 && newPassword.length < 6) {
+      setError('New password must be at least 6 characters.');
+      return;
+    }
 
     // Prevent admin from deactivating themselves
     if (!isNew && userId === currentUser.uid && !isActive) {
@@ -81,6 +88,9 @@ export default function UserEditScreen() {
         await createUserAccount(uname, password, fname, role);
       } else {
         await updateUserProfile(userId!, { full_name: fname, role, is_active: isActive });
+        if (newPassword.length >= 6) {
+          await resetUserPassword(userId!, newPassword);
+        }
       }
       navigation.goBack();
     } catch (e: unknown) {
@@ -102,20 +112,7 @@ export default function UserEditScreen() {
       setError('You cannot deactivate your own account.');
       return;
     }
-    Alert.alert(
-      isActive ? 'Deactivate User' : 'Activate User',
-      isActive
-        ? `"${fullName}" will no longer be able to log in.`
-        : `"${fullName}" will be able to log in again.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: isActive ? 'Deactivate' : 'Activate',
-          style: isActive ? 'destructive' : 'default',
-          onPress: () => setIsActive((v) => !v),
-        },
-      ],
-    );
+    setShowToggleConfirm(true);
   }
 
   if (loading) {
@@ -201,11 +198,16 @@ export default function UserEditScreen() {
             )}
 
             {!isNew && (
-              <View style={s.infoBox}>
-                <Text style={s.infoText}>
-                  Password changes must be done through the Firebase Console. Username cannot be changed.
-                </Text>
-              </View>
+              <Field label="New Password" hint="Leave blank to keep the current password">
+                <TextInput
+                  style={s.input}
+                  value={newPassword}
+                  onChangeText={setNewPassword}
+                  placeholder="••••••••"
+                  placeholderTextColor={Colors.gray400}
+                  secureTextEntry
+                />
+              </Field>
             )}
           </Section>
 
@@ -264,6 +266,19 @@ export default function UserEditScreen() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <AppModal
+        visible={showToggleConfirm}
+        variant="confirm"
+        danger={isActive}
+        title={isActive ? 'Deactivate User' : 'Activate User'}
+        body={isActive
+          ? `"${fullName}" will no longer be able to log in.`
+          : `"${fullName}" will be able to log in again.`}
+        confirmText={isActive ? 'Deactivate' : 'Activate'}
+        onCancel={() => setShowToggleConfirm(false)}
+        onConfirm={() => { setShowToggleConfirm(false); setIsActive((v) => !v); }}
+      />
     </AdminLayout>
   );
 }

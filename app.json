@@ -17,10 +17,9 @@
         "hidden": true
       },
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#ffffff",
         "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "backgroundImage": "./assets/android-icon-background.png"
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.smartbrew.pos",
@@ -48,7 +47,22 @@
       "expo-sqlite",
       "expo-secure-store",
       "expo-sharing",
-      "expo-image-picker"
+      "expo-image-picker",
+      [
+        "with-rn-bluetooth-classic",
+        {
+          "peripheralUsageDescription": "SmartBrew POS connects to nearby Bluetooth receipt printers.",
+          "alwaysUsageDescription": "SmartBrew POS uses Bluetooth to print receipts and kitchen tickets."
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#15803d",
+          "image": "./assets/splash-icon.png",
+          "resizeMode": "cover"
+        }
+      ]
     ],
     "updates": {
       "url": "https://u.expo.dev/c8f75f66-476b-46eb-a12f-773a1f349458",

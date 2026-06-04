@@ -86,6 +86,14 @@ jest.mock('firebase/app', () => ({
   deleteApp:     jest.fn().mockResolvedValue(undefined),
 }));
 
+// ── Firebase Functions ────────────────────────────────────────────────────────
+// auth.ts imports firebase/functions (resetUserPassword). Without this mock the
+// real module loads and Jest chokes on @firebase/util's untransformed .mjs.
+jest.mock('firebase/functions', () => ({
+  getFunctions:  jest.fn(() => ({})),
+  httpsCallable: jest.fn(() => jest.fn().mockResolvedValue({ data: { success: true } })),
+}));
+
 // ── Firebase auth restore ─────────────────────────────────────────────────────
 jest.mock('./src/firebase/authRestore', () => ({
   ensureAuthenticated: jest.fn().mockResolvedValue({

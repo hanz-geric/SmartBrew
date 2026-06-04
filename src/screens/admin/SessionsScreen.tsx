@@ -162,29 +162,13 @@ export default function SessionsScreen() {
   return (
     <AdminLayout active="Sessions">
       <View style={s.root}>
-        {/* Header */}
+        {/* Compact header: title + period tabs + actions in one bar */}
         <View style={s.header}>
-          <View style={s.titleRow}>
-            <Text style={s.title}>Cash Sessions</Text>
-            <View style={s.titleActions}>
-              {!loading && filteredSessions.length > 0 && (
-                <TouchableOpacity
-                  style={[s.exportBtn, exporting && s.exportBtnOff]}
-                  onPress={handleExport}
-                  disabled={exporting}
-                  activeOpacity={0.8}
-                >
-                  <Text style={s.exportBtnText}>{exporting ? 'Exporting…' : '⬇ Export'}</Text>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity style={s.refreshBtn} onPress={load} disabled={loading}>
-                <Text style={s.refreshText}>{loading ? '…' : '↻ Refresh'}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+          <Text style={s.title}>Cash Sessions</Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
+            style={s.periodScroll}
             contentContainerStyle={s.periodTabsContent}
           >
             {SESSION_PERIODS.map((p) => (
@@ -199,27 +183,40 @@ export default function SessionsScreen() {
               </TouchableOpacity>
             ))}
           </ScrollView>
-        </View>
-
-        {/* Cashier search */}
-        <View style={s.searchRow}>
-          <TextInput
-            style={s.searchInput}
-            placeholder="Search by cashier name…"
-            placeholderTextColor={Colors.gray400}
-            value={cashierSearch}
-            onChangeText={setCashierSearch}
-            returnKeyType="search"
-          />
-          {!!cashierSearch && (
-            <TouchableOpacity onPress={() => setCashierSearch('')} style={s.searchClear} hitSlop={8}>
-              <Text style={s.searchClearText}>✕</Text>
+          <View style={s.titleActions}>
+            {!loading && filteredSessions.length > 0 && (
+              <TouchableOpacity
+                style={[s.exportBtn, exporting && s.exportBtnOff]}
+                onPress={handleExport}
+                disabled={exporting}
+                activeOpacity={0.8}
+              >
+                <Text style={s.exportBtnText}>{exporting ? '…' : '⬇ Export'}</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={s.refreshBtn} onPress={load} disabled={loading}>
+              <Text style={s.refreshText}>{loading ? '…' : '↻ Refresh'}</Text>
             </TouchableOpacity>
-          )}
+          </View>
         </View>
 
-        {/* Status filter chips */}
-        <View style={s.statusFilterRow}>
+        {/* Search + status chips in one compact row */}
+        <View style={s.searchFilterRow}>
+          <View style={s.searchWrap}>
+            <TextInput
+              style={s.searchInput}
+              placeholder="Search by cashier name…"
+              placeholderTextColor={Colors.gray400}
+              value={cashierSearch}
+              onChangeText={setCashierSearch}
+              returnKeyType="search"
+            />
+            {!!cashierSearch && (
+              <TouchableOpacity onPress={() => setCashierSearch('')} style={s.searchClear} hitSlop={8}>
+                <Text style={s.searchClearText}>✕</Text>
+              </TouchableOpacity>
+            )}
+          </View>
           {(['all', 'open', 'closed'] as const).map((f) => (
             <TouchableOpacity
               key={f}
@@ -360,34 +357,32 @@ function CashCell({ label, value }: { label: string; value: string }) {
 const s = StyleSheet.create({
   root:    { flex: 1, backgroundColor: Colors.background },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: Spacing.xl,
-    paddingTop: Spacing.lg,
-    paddingBottom: Spacing.sm,
+    paddingVertical: Spacing.sm,
     backgroundColor: Colors.surface,
     borderBottomWidth: 1,
     borderColor: Colors.border,
     gap: Spacing.sm,
   },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
   titleActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
+    flexShrink: 0,
   },
-  title: { fontSize: FontSize.display, fontWeight: FontWeight.bold, color: Colors.gray900 },
+  title: { fontSize: FontSize.xl, fontWeight: FontWeight.bold, color: Colors.gray900, flexShrink: 0 },
   exportBtn: {
     borderWidth: 1.5, borderColor: Colors.green600,
     borderRadius: Radius.md, paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs,
   },
   exportBtnOff: { opacity: 0.5 },
   exportBtnText: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.green700 },
-  periodTabsContent: { flexDirection: 'row', gap: Spacing.xs },
+  periodScroll: { flex: 1 },
+  periodTabsContent: { flexDirection: 'row', gap: Spacing.xs, alignItems: 'center' },
   periodTab: {
-    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs,
     borderRadius: Radius.full, backgroundColor: Colors.gray100,
   },
   periodTabSel:     { backgroundColor: Colors.green600 },
@@ -400,29 +395,33 @@ const s = StyleSheet.create({
   },
   refreshText: { fontSize: FontSize.sm, color: Colors.green700, fontWeight: FontWeight.semibold },
 
-  searchRow: {
-    flexDirection: 'row', alignItems: 'center',
-    marginHorizontal: Spacing.xl, marginTop: Spacing.sm, marginBottom: Spacing.sm,
-    backgroundColor: Colors.surface, borderRadius: Radius.md,
-    borderWidth: 1, borderColor: Colors.border, ...Shadow.sm,
-  },
-  searchInput: {
-    flex: 1, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm,
-    fontSize: FontSize.base, color: Colors.gray800, textAlignVertical: 'center',
-  },
-  searchClear: { paddingHorizontal: Spacing.md },
-  searchClearText: { fontSize: FontSize.sm, color: Colors.gray400 },
-
-  statusFilterRow: {
+  searchFilterRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.xs,
+    alignItems: 'center',
+    gap: Spacing.sm,
     paddingHorizontal: Spacing.xl,
     paddingVertical: Spacing.sm,
     backgroundColor: Colors.surface,
     borderBottomWidth: 1,
     borderColor: Colors.border,
   },
+  searchWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.white,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    ...Shadow.sm,
+  },
+  searchInput: {
+    flex: 1, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm,
+    fontSize: FontSize.sm, color: Colors.gray800, textAlignVertical: 'center',
+  },
+  searchClear: { paddingHorizontal: Spacing.md },
+  searchClearText: { fontSize: FontSize.sm, color: Colors.gray400 },
+
   statusChip: {
     paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs,
     borderRadius: Radius.full, backgroundColor: Colors.gray100,

@@ -6,6 +6,8 @@ import './src/firebase/config';
 import { initDb } from './src/db/schema';
 import { logError } from './src/utils/logger';
 import RootNavigator from './src/navigation';
+import ErrorBoundary from './src/components/ErrorBoundary';
+import { ToastProvider } from './src/components/ui';
 import { SyncProvider } from './src/context/SyncContext';
 import { NetworkProvider } from './src/context/NetworkContext';
 
@@ -26,13 +28,17 @@ export default function App() {
   if (!dbReady) return null;
 
   return (
-    <NetworkProvider>
-      <SyncProvider>
-        <SafeAreaProvider>
-          <StatusBar style="light" hidden={true} />
-          <RootNavigator />
-        </SafeAreaProvider>
-      </SyncProvider>
-    </NetworkProvider>
+    <ErrorBoundary tag="App">
+      <NetworkProvider>
+        <SyncProvider>
+          <SafeAreaProvider>
+            <StatusBar style="light" hidden={true} />
+            <ToastProvider>
+              <RootNavigator />
+            </ToastProvider>
+          </SafeAreaProvider>
+        </SyncProvider>
+      </NetworkProvider>
+    </ErrorBoundary>
   );
 }

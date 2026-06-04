@@ -14,10 +14,11 @@ import { useCartStore } from '../../store/cartStore';
 import {
   getProducts, getCategories,
   addCashierToRoster, clockOutCashierEntry, switchActiveCashier,
+  getUnpaidOrdersBySession,
 } from '../../firebase/firestoreService';
 import { switchCashierAuth, verifyManagerAuth } from '../../firebase/auth';
 import { savePendingCashierSync, loadPendingCashierSync } from '../../db/queries/sessionCache';
-import CashierRosterBar from '../../components/CashierRosterBar';
+import { AppModal } from '../../components/ui';
 import { pendingCount } from '../../db/queries/queue';
 import { syncPendingOrders, reconcileDraftSession, syncPendingClose } from '../../services/syncService';
 import { useSyncEvents } from '../../context/SyncContext';
@@ -35,9 +36,13 @@ import {
 type Props = NativeStackScreenProps<CashierStackParamList, 'POS'>;
 
 
-const GRID_COLS_KEY     = 'pos_grid_cols';
-const GRID_COLS_OPTIONS = [2, 3, 4, 5] as const;
-type GridCols = typeof GRID_COLS_OPTIONS[number];
+const CARD_TARGET_WIDTH = 100; // dp — target card width for dynamic column calculation
+
+function rosterInitials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
 
 // ─── Modifier Modal ───────────────────────────────────────────────────────────
 
@@ -502,19 +507,32 @@ function AddCashierPanel({ onClose, onSuccess, isOnline }: AddCashierPanelProps)
 interface ProductCardProps {
   product: Product;
   onPress: (p: Product) => void;
-  cols: GridCols;
+  cols: number;
+}
+
+function GridIcon({ size, color }: { size: number; color: string }) {
+  const d = Math.floor(size * 0.38);
+  const g = Math.floor(size * 0.14);
+  const box = { width: d, height: d, backgroundColor: color, borderRadius: 1.5 };
+  const row = { flexDirection: 'row' as const, gap: g };
+  return (
+    <View style={{ width: size, height: size, justifyContent: 'center', alignItems: 'center', gap: g }}>
+      <View style={row}><View style={box} /><View style={box} /></View>
+      <View style={row}><View style={box} /><View style={box} /></View>
+    </View>
+  );
 }
 
 function ProductCard({ product, onPress, cols }: ProductCardProps) {
   const isOut = product.stock_status === 'out';
   const isLow = product.stock_status === 'low';
 
-  const imageRatio  = cols === 2 ? 1.4 : cols === 5 ? 0.8 : 1;
-  const nameLines   = cols === 2 ? 3 : cols === 5 ? 1 : 2;
-  const nameFontSz  = cols <= 2 ? FontSize.base : cols === 5 ? FontSize.xs : FontSize.sm;
-  const priceFontSz = cols <= 2 ? FontSize.md   : cols === 5 ? FontSize.xs : FontSize.sm;
-  const emojiSz     = cols <= 2 ? 36 : cols === 5 ? 20 : 28;
-  const infoPad     = cols === 5 ? Spacing.xs : Spacing.sm;
+  const imageRatio  = cols <= 2 ? 1.4 : cols <= 4 ? 1 : 0.8;
+  const nameLines   = cols <= 2 ? 4 : cols <= 4 ? 3 : 2;
+  const nameFontSz  = cols <= 2 ? FontSize.base : cols <= 4 ? FontSize.sm : FontSize.xs;
+  const priceFontSz = cols <= 2 ? FontSize.md   : cols <= 4 ? FontSize.sm : FontSize.xs;
+  const emojiSz     = cols <= 2 ? 36 : cols <= 4 ? 28 : cols <= 6 ? 20 : 16;
+  const infoPad     = cols >= 5 ? Spacing.xs : Spacing.sm;
 
   return (
     <TouchableOpacity
@@ -530,7 +548,12 @@ function ProductCard({ product, onPress, cols }: ProductCardProps) {
         }
       </View>
       <View style={[pc.info, { padding: infoPad }]}>
-        <Text style={[pc.name, isOut && pc.nameOut, { fontSize: nameFontSz }]} numberOfLines={nameLines}>
+        <Text
+          style={[pc.name, isOut && pc.nameOut, { fontSize: nameFontSz }]}
+          numberOfLines={nameLines}
+          adjustsFontSizeToFit
+          minimumFontScale={0.7}
+        >
           {product.name}
         </Text>
         <Text style={[pc.price, { fontSize: priceFontSz }]}>₱{product.price.toFixed(2)}</Text>
@@ -538,66 +561,6 @@ function ProductCard({ product, onPress, cols }: ProductCardProps) {
         {cols <= 4 && isOut && <Text style={pc.out}>Out of stock</Text>}
       </View>
     </TouchableOpacity>
-  );
-}
-
-// ─── Info Modal ───────────────────────────────────────────────────────────────
-
-interface InfoModalProps {
-  title:   string;
-  body:    string;
-  onClose: () => void;
-}
-
-function InfoModal({ title, body, onClose }: InfoModalProps) {
-  return (
-    <Modal transparent animationType="fade" onRequestClose={onClose}>
-      <View style={so.overlay}>
-        <View style={so.sheet}>
-          <Text style={so.title}>{title}</Text>
-          <Text style={so.body}>{body}</Text>
-          <TouchableOpacity style={so.confirmBtn} onPress={onClose} activeOpacity={0.8}>
-            <Text style={so.confirmText}>OK</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-// ─── Confirm Modal ────────────────────────────────────────────────────────────
-
-interface ConfirmModalProps {
-  title:       string;
-  body:        string;
-  confirmText: string;
-  danger?:     boolean;
-  onCancel:    () => void;
-  onConfirm:   () => void;
-}
-
-function ConfirmModal({ title, body, confirmText, danger, onCancel, onConfirm }: ConfirmModalProps) {
-  return (
-    <Modal transparent animationType="fade" onRequestClose={onCancel}>
-      <View style={so.overlay}>
-        <View style={so.sheet}>
-          <Text style={so.title}>{title}</Text>
-          <Text style={so.body}>{body}</Text>
-          <View style={so.actions}>
-            <TouchableOpacity style={so.cancelBtn} onPress={onCancel} activeOpacity={0.7}>
-              <Text style={so.cancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[so.confirmBtn, danger && so.confirmBtnDanger]}
-              onPress={onConfirm}
-              activeOpacity={0.8}
-            >
-              <Text style={so.confirmText}>{confirmText}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
   );
 }
 
@@ -618,19 +581,26 @@ export default function POSScreen({ route, navigation }: Props) {
   const clearCart    = useCartStore((s) => s.clearCart);
 
   const { width: windowWidth } = useWindowDimensions();
+  const [colOverride,     setColOverride]    = useState<number | null>(null);
+  const [colPickerOpen,   setColPickerOpen]  = useState(false);
 
-  const defaultCols: GridCols = windowWidth >= BREAKPOINTS.tabletLarge ? 4
-    : windowWidth >= BREAKPOINTS.tablet ? 3 : 2;
-  const [gridCols, setGridCols] = useState<GridCols>(defaultCols);
+  const gridCols = useMemo(() => {
+    if (colOverride !== null) return colOverride;
+    const rightApprox = Math.min(Math.floor(windowWidth / 3), isTablet ? 340 : 280);
+    const leftApprox  = windowWidth - rightApprox;
+    return Math.max(2, Math.min(8, Math.floor(leftApprox / CARD_TARGET_WIDTH)));
+  }, [windowWidth, colOverride]);
 
   const [products,    setProducts]   = useState<Product[]>([]);
   const [categories,  setCategories] = useState<Category[]>([]);
   const [loading,     setLoading]    = useState(true);
   const [loadError,   setLoadError]  = useState(false);
   const [selCat,      setSelCat]     = useState<string | null>(null);
-  const [search,      setSearch]     = useState('');
+  const [search,          setSearch]         = useState('');
+  const [searchExpanded,  setSearchExpanded] = useState(false);
   const [modProduct,  setModProduct] = useState<Product | null>(null);
   const [queueCount,    setQueueCount]    = useState(0);
+  const [payLaterCount, setPayLaterCount] = useState(0);
   const [syncing,       setSyncing]       = useState(false);
   const [catalogStale,  setCatalogStale]  = useState(false);
   const { notifySynced, subscribe } = useSyncEvents();
@@ -644,7 +614,7 @@ export default function POSScreen({ route, navigation }: Props) {
   const [discountNonce,  setDiscountNonce]  = useState<string | null>(null);
   const [discountType,   setDiscountType]   = useState<'percent' | 'amount'>('percent');
   const [discountInput,  setDiscountInput]  = useState('20');
-  const [showDiscountModal,  setShowDiscountModal]  = useState(false);
+  const [showDiscountModal,   setShowDiscountModal]   = useState(false);
   const [showAddCashierPanel, setShowAddCashierPanel] = useState(false);
   const [infoModal,    setInfoModal]    = useState<{ title: string; body: string } | null>(null);
   const [confirmModal, setConfirmModal] = useState<{
@@ -683,17 +653,6 @@ export default function POSScreen({ route, navigation }: Props) {
   // React state `syncing` check before the re-render propagates.
   const syncingRef    = useRef(false);
 
-  useEffect(() => {
-    AsyncStorage.getItem(GRID_COLS_KEY).then((v) => {
-      const n = parseInt(v ?? '', 10) as GridCols;
-      if (GRID_COLS_OPTIONS.includes(n)) setGridCols(n);
-    });
-  }, []);
-
-  function changeGridCols(n: GridCols) {
-    setGridCols(n);
-    AsyncStorage.setItem(GRID_COLS_KEY, String(n));
-  }
 
   // Keep refs current every render
   useEffect(() => {
@@ -725,18 +684,27 @@ export default function POSScreen({ route, navigation }: Props) {
   useEffect(() => {
     loadData();
     refreshQueueCount();
+    refreshPayLaterCount();
 
     // On foreground: refresh count and sync if online + has pending orders
     const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
       if (appState.current !== 'active' && next === 'active') {
         refreshQueueCount();
+        refreshPayLaterCount();
         if (isOnlineRef.current) {
           doSyncRef.current();
         }
       }
       appState.current = next;
     });
-    return () => sub.remove();
+
+    // Refresh pay-later count whenever this screen comes back into focus
+    // (e.g. returning from PayLaterScreen after settling an order)
+    const focusSub = navigation.addListener('focus', () => {
+      refreshPayLaterCount();
+    });
+
+    return () => { sub.remove(); focusSub(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -745,10 +713,12 @@ export default function POSScreen({ route, navigation }: Props) {
     setLoading(true);
     try {
       const [prods, cats] = await Promise.all([getProducts(), getCategories()]);
+      console.log('[loadData] products:', prods.length, 'categories:', cats.length);
       setProducts(prods);
       setCategories(cats);
       setCatalogStale(false);
-    } catch {
+    } catch (err) {
+      console.error('[loadData] ERROR:', err);
       setLoadError(true);
       // Check if stale cache was used (getProducts falls back silently; flag here)
       const age = await getCatalogAge();
@@ -760,6 +730,15 @@ export default function POSScreen({ route, navigation }: Props) {
 
   async function refreshQueueCount() {
     setQueueCount(await pendingCount());
+  }
+
+  async function refreshPayLaterCount() {
+    try {
+      const unpaid = await getUnpaidOrdersBySession(currentSession.id);
+      setPayLaterCount(unpaid.length);
+    } catch {
+      // non-fatal — badge just won't show
+    }
   }
 
   async function reconcileAndSync() {
@@ -877,18 +856,41 @@ export default function POSScreen({ route, navigation }: Props) {
 
   function handleAddCashierSuccess(newUser: AuthUser) {
     const existing = roster.find((e) => e.uid === newUser.uid);
-    if (existing) {
+
+    if (existing?.status === 'active') {
       setShowAddCashierPanel(false);
       setInfoModal({
         title: 'Already on Shift',
-        body:  existing.status === 'active'
-          ? `${newUser.full_name} is already the active cashier on this shift.`
-          : `${newUser.full_name} is already on this shift. Tap their chip in the roster bar to re-activate them.`,
+        body:  `${newUser.full_name} is already the active cashier on this shift.`,
       });
       return;
     }
 
     const now = new Date().toISOString();
+
+    if (existing?.status === 'clocked_out') {
+      // Re-clock them in and make them active
+      const logEvents: CashierEvent[] = [
+        { uid: user.uid, username: user.username, full_name: user.full_name, role: user.role, action: 'switch_out', at: now },
+        { uid: newUser.uid, username: newUser.username, full_name: newUser.full_name, role: newUser.role, action: 'clock_in', at: now },
+      ];
+      const updatedRoster = roster.map((e) =>
+        e.uid === newUser.uid
+          ? { ...e, clock_out_at: null, status: 'active' as const, clock_in_at: now }
+          : e,
+      );
+      persistRoster(updatedRoster, newUser.uid, newUser.full_name, logEvents);
+      setUser(newUser);
+      clearDiscount();
+      setShowAddCashierPanel(false);
+
+      const prevUser = user;
+      addCashierToRoster(currentSession.id, newUser, prevUser, roster).catch((err) =>
+        logError('POSScreen:handleAddCashierSuccess', err, 'Failed to sync re-clock-in to Firestore'),
+      );
+      return;
+    }
+
     const logEvents: CashierEvent[] = [
       { uid: user.uid, username: user.username, full_name: user.full_name, role: user.role, action: 'switch_out', at: now },
       { uid: newUser.uid, username: newUser.username, full_name: newUser.full_name, role: newUser.role, action: 'clock_in', at: now },
@@ -905,7 +907,6 @@ export default function POSScreen({ route, navigation }: Props) {
     clearDiscount();
     setShowAddCashierPanel(false);
 
-    // Best-effort Firestore write — skipped for draft sessions, fails silently offline
     const prevUser = user;
     addCashierToRoster(currentSession.id, newUser, prevUser, roster).catch((err) =>
       logError('POSScreen:handleAddCashierSuccess', err, 'Failed to sync new cashier to Firestore'),
@@ -1002,6 +1003,25 @@ export default function POSScreen({ route, navigation }: Props) {
     );
   }
 
+  function handleRosterChipPress(entry: RosterEntry) {
+    if (entry.uid === activeUid) {
+      const activeCount = roster.filter((e) => e.status === 'active').length;
+      if (activeCount <= 1) {
+        setInfoModal({ title: 'Cannot Clock Out', body: 'Add another cashier before clocking out.' });
+        return;
+      }
+      setConfirmModal({
+        title: `Clock Out ${entry.full_name}?`,
+        body: 'This will record your clock-out time. Another cashier must take over.',
+        confirmText: 'Clock Out',
+        danger: true,
+        onConfirm: () => handleRosterClockOut(entry),
+      });
+    } else {
+      handleRosterSwitch(entry);
+    }
+  }
+
   const rawDiscountNum   = parseFloat(discountInput) || 0;
   const computedDiscount = (canDiscountFreely || !!discountNonce)
     ? discountType === 'percent'
@@ -1029,26 +1049,55 @@ export default function POSScreen({ route, navigation }: Props) {
       <View style={s.left}>
         {/* Top bar */}
         <View style={s.topBar}>
-          <View style={s.topBarLeft}>
-            <View style={s.topBarLogoCircle}>
-              <Image
-                source={require('../../../assets/images/SmartBrew_logo.jpg')}
-                style={s.topBarLogo}
-                resizeMode="cover"
-              />
-            </View>
-            <View style={s.topBarInfo}>
-              {isDraft && <Text style={s.draftBadge}>DRAFT</Text>}
-              <Text style={s.sessionInfo}>
-                {user.full_name} · Started{' '}
-                {new Date(currentSession.start_time).toLocaleTimeString('en-PH', {
-                  hour: 'numeric', minute: '2-digit', hour12: true,
-                })}
-                {' '}· ₱{currentSession.starting_cash.toFixed(2)} opening cash
-                {isDraft ? ' · reconnect to sync' : ''}
-              </Text>
-            </View>
+          {/* Session info */}
+          <View style={s.topBarInfo}>
+            {isDraft && <Text style={s.draftBadge}>DRAFT</Text>}
+            <Text style={s.sessionInfo} numberOfLines={1}>
+              {user.full_name} · {new Date(currentSession.start_time).toLocaleTimeString('en-PH', {
+                hour: 'numeric', minute: '2-digit', hour12: true,
+              })} · ₱{currentSession.starting_cash.toFixed(2)}
+              {isDraft ? ' · offline' : ''}
+            </Text>
           </View>
+
+          {/* Roster chips */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={s.rosterScroll}
+            contentContainerStyle={s.rosterScrollContent}
+          >
+            {roster.filter((e) => e.status !== 'clocked_out').map((entry) => {
+              const isActive = entry.uid === activeUid;
+              return (
+                <TouchableOpacity
+                  key={entry.uid}
+                  style={[s.rosterChip, isActive && s.rosterChipActive]}
+                  onPress={() => handleRosterChipPress(entry)}
+                  activeOpacity={0.75}
+                >
+                  <View style={[s.rosterAvatar, isActive && s.rosterAvatarActive]}>
+                    <Text style={[s.rosterAvatarText, isActive && s.rosterAvatarTextActive]}>
+                      {rosterInitials(entry.full_name)}
+                    </Text>
+                  </View>
+                  <Text style={[s.rosterChipName, isActive && s.rosterChipNameActive]} numberOfLines={1}>
+                    {entry.full_name.split(' ')[0]}
+                  </Text>
+                  {isActive && <View style={s.rosterActiveDot} />}
+                </TouchableOpacity>
+              );
+            })}
+            <TouchableOpacity
+              style={s.rosterAddChip}
+              onPress={() => setShowAddCashierPanel(true)}
+              activeOpacity={0.75}
+            >
+              <Text style={s.rosterAddChipText}>+ Add</Text>
+            </TouchableOpacity>
+          </ScrollView>
+
+          {/* Action buttons */}
           <View style={s.topBarActions}>
             {queueCount > 0 && (
               <TouchableOpacity
@@ -1058,8 +1107,26 @@ export default function POSScreen({ route, navigation }: Props) {
               >
                 {syncing
                   ? <ActivityIndicator size="small" color={Colors.warning} />
-                  : <Text style={s.syncBadgeText}>⚠ {queueCount} pending</Text>
+                  : <Text style={s.syncBadgeText}>⚠ {queueCount}</Text>
                 }
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={s.endShiftBtn}
+              onPress={() => navigation.navigate('SessionOrders', { session: currentSession })}
+              activeOpacity={0.7}
+            >
+              <Text style={s.endShiftText}>Orders</Text>
+            </TouchableOpacity>
+            {payLaterCount > 0 && (
+              <TouchableOpacity
+                style={[s.endShiftBtn, s.payLaterBtnActive]}
+                onPress={() => navigation.navigate('PayLater', { session: currentSession })}
+                activeOpacity={0.7}
+              >
+                <Text style={[s.endShiftText, s.payLaterBtnActiveText]}>
+                  Pay Later ({payLaterCount})
+                </Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity
@@ -1103,16 +1170,6 @@ export default function POSScreen({ route, navigation }: Props) {
           />
         ) : (
           <>
-            {/* Cashier roster bar */}
-            <CashierRosterBar
-              roster={roster}
-              activeUid={activeUid}
-              onAddPress={() => setShowAddCashierPanel(true)}
-              onSwitchPress={handleRosterSwitch}
-              onClockOut={handleRosterClockOut}
-              disabled={false}
-            />
-
             {/* Offline banner */}
             {!isOnline && (
               <View style={s.offlineBanner}>
@@ -1132,58 +1189,102 @@ export default function POSScreen({ route, navigation }: Props) {
               </View>
             )}
 
-            {/* Category tabs */}
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={s.catScroll}
-              contentContainerStyle={s.catContent}
-            >
-              <TouchableOpacity
-                style={[s.catTab, selCat === null && s.catTabSel]}
-                onPress={() => setSelCat(null)}
+            {/* Category tabs + search + column picker — merged row */}
+            <View style={s.filterRow}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={s.catScrollInline}
+                contentContainerStyle={s.catContentInline}
               >
-                <Text style={[s.catTabText, selCat === null && s.catTabTextSel]}>All</Text>
-              </TouchableOpacity>
-              {categories.map((cat) => (
                 <TouchableOpacity
-                  key={cat.id}
-                  style={[s.catTab, selCat === cat.id && s.catTabSel]}
-                  onPress={() => setSelCat(cat.id)}
+                  style={[s.catTab, selCat === null && s.catTabSel]}
+                  onPress={() => setSelCat(null)}
                 >
-                  <Text style={[s.catTabText, selCat === cat.id && s.catTabTextSel]}>
-                    {cat.name}
-                  </Text>
+                  <Text style={[s.catTabText, selCat === null && s.catTabTextSel]}>All</Text>
                 </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            {/* Search + column picker */}
-            <View style={s.searchRow}>
-              <TextInput
-                style={s.searchInput}
-                placeholder="Search products…"
-                placeholderTextColor={Colors.gray400}
-                value={search}
-                onChangeText={setSearch}
-                returnKeyType="search"
-              />
-              {!!search && (
-                <TouchableOpacity style={s.searchClear} onPress={() => setSearch('')}>
-                  <Text style={s.searchClearText}>✕</Text>
-                </TouchableOpacity>
-              )}
-              <View style={s.colPicker}>
-                {GRID_COLS_OPTIONS.map((n) => (
+                {categories.map((cat) => (
                   <TouchableOpacity
-                    key={n}
-                    style={[s.colBtn, gridCols === n && s.colBtnSel]}
-                    onPress={() => changeGridCols(n)}
-                    activeOpacity={0.7}
+                    key={cat.id}
+                    style={[s.catTab, selCat === cat.id && s.catTabSel]}
+                    onPress={() => setSelCat(cat.id)}
                   >
-                    <Text style={[s.colBtnText, gridCols === n && s.colBtnTextSel]}>{n}</Text>
+                    <Text style={[s.catTabText, selCat === cat.id && s.catTabTextSel]}>
+                      {cat.name}
+                    </Text>
                   </TouchableOpacity>
                 ))}
+              </ScrollView>
+
+              <View style={s.filterDivider} />
+
+              <View style={s.filterRight}>
+                {/* Column preset picker */}
+                {colPickerOpen ? (
+                  <View style={s.colPickerInner}>
+                    {([null, 2, 3, 4, 5] as Array<number | null>).map((n) => (
+                      <TouchableOpacity
+                        key={n ?? 'auto'}
+                        style={[s.colPickerPill, colOverride === n && s.colPickerPillSel]}
+                        onPress={() => { setColOverride(n); setColPickerOpen(false); }}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[s.colPickerPillText, colOverride === n && s.colPickerPillTextSel]}>
+                          {n ?? 'A'}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                    <TouchableOpacity
+                      style={s.searchIconBtn}
+                      onPress={() => setColPickerOpen(false)}
+                      activeOpacity={0.7}
+                    >
+                      <GridIcon size={18} color={Colors.green600} />
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={s.searchIconBtn}
+                    onPress={() => { setColPickerOpen(true); setSearchExpanded(false); setSearch(''); }}
+                    activeOpacity={0.7}
+                  >
+                    <GridIcon size={18} color={colOverride !== null ? Colors.green600 : Colors.gray500} />
+                    {colOverride !== null && <View style={s.searchActiveDot} />}
+                  </TouchableOpacity>
+                )}
+
+                {/* Search — hidden while col picker is open */}
+                {!colPickerOpen && (
+                  searchExpanded ? (
+                    <View style={s.searchInner}>
+                      <TextInput
+                        style={s.searchInputCompact}
+                        placeholder="Search…"
+                        placeholderTextColor={Colors.gray400}
+                        value={search}
+                        onChangeText={setSearch}
+                        returnKeyType="search"
+                        autoFocus
+                        onBlur={() => { if (!search) setSearchExpanded(false); }}
+                      />
+                      <TouchableOpacity
+                        style={s.searchClear}
+                        onPress={() => { setSearch(''); setSearchExpanded(false); }}
+                      >
+                        <Text style={s.searchClearText}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      style={s.searchIconBtn}
+                      onPress={() => setSearchExpanded(true)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={s.searchIconText}>⌕</Text>
+                      {!!search && <View style={s.searchActiveDot} />}
+                    </TouchableOpacity>
+                  )
+                )}
               </View>
             </View>
 
@@ -1233,11 +1334,7 @@ export default function POSScreen({ route, navigation }: Props) {
       </View>
 
       {/* ── Right Panel (Cart) ── */}
-      <KeyboardAvoidingView
-        style={s.right}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={0}
-      >
+      <View style={s.right}>
         {/* Cart header */}
         <View style={s.cartHeader}>
           <Text style={s.cartTitle}>
@@ -1419,7 +1516,7 @@ export default function POSScreen({ route, navigation }: Props) {
             </Text>
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
+      </View>
 
       {/* Modifier Modal */}
       {modProduct && (
@@ -1432,7 +1529,9 @@ export default function POSScreen({ route, navigation }: Props) {
 
       {/* Generic Info Modal */}
       {infoModal && (
-        <InfoModal
+        <AppModal
+          visible
+          variant="info"
           title={infoModal.title}
           body={infoModal.body}
           onClose={() => setInfoModal(null)}
@@ -1441,7 +1540,9 @@ export default function POSScreen({ route, navigation }: Props) {
 
       {/* Generic Confirm Modal */}
       {confirmModal && (
-        <ConfirmModal
+        <AppModal
+          visible
+          variant="confirm"
           title={confirmModal.title}
           body={confirmModal.body}
           confirmText={confirmModal.confirmText}
@@ -1473,34 +1574,87 @@ const s = StyleSheet.create({
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     backgroundColor: Colors.green700,
-    paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.md,
-    gap: Spacing.md,
-  },
-  topBarLeft: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-    minWidth: 0,
-  },
-  topBarLogoCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    overflow: 'hidden',
-    backgroundColor: Colors.white,
-    flexShrink: 0,
-  },
-  topBarLogo: {
-    width: 52,
-    height: 52,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    gap: Spacing.sm,
   },
   topBarInfo: {
     flex: 1,
     minWidth: 0,
+  },
+  rosterScroll: {
+    flexShrink: 1,
+    flexGrow: 0,
+    maxWidth: '35%',
+  },
+  rosterScrollContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    paddingVertical: Spacing.xs,
+  },
+  rosterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: Radius.full,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+  },
+  rosterChipActive: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderColor: 'rgba(255,255,255,0.6)',
+  },
+  rosterAvatar: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rosterAvatarActive: {
+    backgroundColor: Colors.white,
+  },
+  rosterAvatarText: {
+    fontSize: 8,
+    fontWeight: FontWeight.bold,
+    color: 'rgba(255,255,255,0.9)',
+  },
+  rosterAvatarTextActive: {
+    color: Colors.green700,
+  },
+  rosterChipName: {
+    fontSize: FontSize.xs,
+    color: 'rgba(255,255,255,0.8)',
+    maxWidth: 52,
+  },
+  rosterChipNameActive: {
+    color: Colors.white,
+    fontWeight: FontWeight.semibold,
+  },
+  rosterActiveDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: Colors.green200,
+  },
+  rosterAddChip: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.4)',
+    borderStyle: 'dashed',
+  },
+  rosterAddChipText: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.semibold,
+    color: 'rgba(255,255,255,0.85)',
   },
   draftBadge: {
     fontSize: FontSize.xs,
@@ -1560,6 +1714,13 @@ const s = StyleSheet.create({
   endShiftBtnDisabled: {
     opacity: 0.4,
   },
+  payLaterBtnActive: {
+    backgroundColor: Colors.warning,
+    borderColor: Colors.warning,
+  },
+  payLaterBtnActiveText: {
+    fontWeight: FontWeight.bold,
+  },
   endShiftText: {
     fontSize: FontSize.sm,
     color: Colors.white,
@@ -1612,6 +1773,47 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  filterRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderColor: Colors.border,
+    flexShrink: 0,
+  },
+  catScrollInline: {
+    flex: 1,
+  },
+  catContentInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+  },
+  filterDivider: {
+    width: 1,
+    backgroundColor: Colors.border,
+  },
+  filterRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
+    flexShrink: 0,
+  },
+  searchInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: 130,
+  },
+  searchInputCompact: {
+    flex: 1,
+    fontSize: FontSize.sm,
+    color: Colors.gray800,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+  },
   catTab: {
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
@@ -1658,35 +1860,53 @@ const s = StyleSheet.create({
     color: Colors.gray400,
   },
 
-  colPicker: {
+  searchIconBtn: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  searchIconText: {
+    fontSize: 20,
+    color: Colors.gray500,
+    lineHeight: 22,
+  },
+  searchActiveDot: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.green600,
+  },
+
+  colPickerInner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
-    paddingHorizontal: Spacing.sm,
-    borderLeftWidth: 1,
-    borderColor: Colors.border,
+    gap: Spacing.xs,
   },
-  colBtn: {
-    width: isTablet ? 30 : 26,
-    height: isTablet ? 30 : 26,
-    borderRadius: Radius.sm,
-    backgroundColor: Colors.gray100,
-    alignItems: 'center',
-    justifyContent: 'center',
+  colPickerPill: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     borderWidth: 1,
-    borderColor: 'transparent',
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  colBtnSel: {
-    backgroundColor: Colors.green50,
+  colPickerPillSel: {
+    backgroundColor: Colors.green600,
     borderColor: Colors.green600,
   },
-  colBtnText: {
+  colPickerPillText: {
     fontSize: FontSize.xs,
-    fontWeight: FontWeight.bold,
-    color: Colors.gray500,
+    fontWeight: FontWeight.semibold,
+    color: Colors.gray600,
   },
-  colBtnTextSel: {
-    color: Colors.green700,
+  colPickerPillTextSel: {
+    color: Colors.white,
   },
 
   gridContent: {
@@ -2392,74 +2612,5 @@ const ap = StyleSheet.create({
     fontSize: FontSize.sm,
     color: Colors.green700,
     fontWeight: FontWeight.medium,
-  },
-});
-
-// ─── Sign Out Modal Styles ────────────────────────────────────────────────────
-
-const so = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: Spacing.xxl,
-  },
-  sheet: {
-    width: '100%',
-    maxWidth: 400,
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.xl,
-    padding: Spacing.xl,
-    gap: Spacing.md,
-    ...Shadow.lg,
-  },
-  title: {
-    fontSize: FontSize.xl,
-    fontWeight: FontWeight.bold,
-    color: Colors.gray900,
-  },
-  warning: {
-    fontSize: FontSize.sm,
-    fontWeight: FontWeight.semibold,
-    color: Colors.warning,
-  },
-  body: {
-    fontSize: FontSize.base,
-    color: Colors.gray600,
-    lineHeight: 22,
-  },
-  actions: {
-    flexDirection: 'row',
-    gap: Spacing.md,
-    marginTop: Spacing.sm,
-  },
-  cancelBtn: {
-    flex: 1,
-    paddingVertical: Spacing.md,
-    borderRadius: Radius.md,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-    alignItems: 'center',
-  },
-  cancelText: {
-    fontSize: FontSize.base,
-    fontWeight: FontWeight.semibold,
-    color: Colors.gray600,
-  },
-  confirmBtn: {
-    flex: 1,
-    paddingVertical: Spacing.md,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.green600,
-    alignItems: 'center',
-  },
-  confirmBtnDanger: {
-    backgroundColor: Colors.danger,
-  },
-  confirmText: {
-    fontSize: FontSize.base,
-    fontWeight: FontWeight.bold,
-    color: Colors.white,
   },
 });

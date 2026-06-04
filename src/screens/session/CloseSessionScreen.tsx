@@ -219,7 +219,7 @@ export default function CloseSessionScreen({ route, navigation }: Props) {
               {hasPendingCash && !forceClose && (
                 <View style={s.offlineWarn}>
                   <Text style={s.offlineWarnTitle}>
-                    ⚠ {offlineCashCount} unsynced cash order{offlineCashCount !== 1 ? 's' : ''} (₱{offlineCashAmount.toFixed(2)})
+                    ⚠ {offlineCashCount} unsynced cash order{offlineCashCount !== 1 ? 's' : ''}
                   </Text>
                   <Text style={s.offlineWarnBody}>
                     These orders are saved offline and haven't reached the server yet.
@@ -246,31 +246,6 @@ export default function CloseSessionScreen({ route, navigation }: Props) {
 
               {canClose && (
                 <>
-                  <View style={s.divider} />
-
-                  {/* Expected cash breakdown */}
-                  <Text style={s.sectionLabel}>Expected Cash</Text>
-                  <View style={s.infoGrid}>
-                    <InfoRow label="Starting Cash" value={`₱${session.starting_cash.toFixed(2)}`} />
-                    <InfoRow label="Synced Orders" value={`+₱${(session.cash_collected ?? 0).toFixed(2)}`} />
-                    {offlineCashAmount > 0 && (
-                      <InfoRow
-                        label={`Offline Orders (${offlineCashCount})`}
-                        value={`+₱${offlineCashAmount.toFixed(2)}`}
-                        note
-                      />
-                    )}
-                    <InfoRow label="Expected Total" value={`₱${expectedCash.toFixed(2)}`} highlight />
-                  </View>
-
-                  {offlineCashAmount > 0 && (
-                    <View style={s.offlineNote}>
-                      <Text style={s.offlineNoteText}>
-                        ℹ Offline orders are included above. They will sync automatically when connected.
-                      </Text>
-                    </View>
-                  )}
-
                   <View style={s.divider} />
                   <Text style={s.sectionLabel}>Count Your Drawer</Text>
                   <Text style={s.inputHint}>

@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>SmartBrew Menu Image Identifier</title>
+<style>
+  body { font-family: monospace; background: #111; color: #eee; margin: 20px; }
+  .grid { display: flex; flex-wrap: wrap; gap: 20px; }
+  .card { background: #222; padding: 10px; border-radius: 8px; width: 300px; }
+  .card img { width: 100%; cursor: crosshair; border: 2px solid #444; }
+  .card img:hover { border-color: #0af; }
+  .label { font-size: 11px; color: #aaa; margin-top: 5px; word-break: break-all; }
+  .coords { color: #0f0; font-size: 13px; min-height: 20px; }
+  h1 { color: #0af; }
+  .info { background: #1a3a1a; padding: 10px; border-radius: 6px; margin-bottom: 20px; }
+</style>
+</head>
+<body>
+<h1>SmartBrew Menu Image Identifier</h1>
+<div class="info">
+  Click any image to see its coordinates. Hover to see crop areas.<br>
+  Use these to map UUID filenames to menu categories.
+</div>
+<div class="grid">
+
+  <div class="card">
+    <div class="label">#1 &nbsp; 0f22ece3-e416-4395-9188-223e86a8527f.jpg</div>
+    <img src="0f22ece3-e416-4395-9188-223e86a8527f.jpg" onclick="showCoords(event, this, '0f22ece3-e416-4395-9188-223e86a8527f.jpg')" title="0f22ece3-e416-4395-9188-223e86a8527f.jpg">
+    <div class="coords" id="c_0">click image for coords</div>
+  </div>
+
+  <div class="card">
+    <div class="label">#2 &nbsp; 134f76a1-2b28-411d-b6d5-d597b3dc9123.jpg</div>
+    <img src="134f76a1-2b28-411d-b6d5-d597b3dc9123.jpg" onclick="showCoords(event, this, '134f76a1-2b28-411d-b6d5-d597b3dc9123.jpg')" title="134f76a1-2b28-411d-b6d5-d597b3dc9123.jpg">
+    <div class="coords" id="c_1">click image for coords</div>
+  </div>
+
+  <div class="card">
+    <div class="label">#3 &nbsp; 1ed4c0fe-a429-47c0-8045-5e72480739eb.jpg</div>
+    <img src="1ed4c0fe-a429-47c0-8045-5e72480739eb.jpg" onclick="showCoords(event, this, '1ed4c0fe-a429-47c0-8045-5e72480739eb.jpg')" title="1ed4c0fe-a429-47c0-8045-5e72480739eb.jpg">
+    <div class="coords" id="c_2">click image for coords</div>
+  </div>
+
+  <div class="card">
+    <div class="label">#4 &nbsp; 4b512a01-8a83-4e12-b5a2-a435854a4e8e.jpg</div>
+    <img src="4b512a01-8a83-4e12-b5a2-a435854a4e8e.jpg" onclick="showCoords(event, this, '4b512a01-8a83-4e12-b5a2-a435854a4e8e.jpg')" title="4b512a01-8a83-4e12-b5a2-a435854a4e8e.jpg">
+    <div class="coords" id="c_3">click image for coords</div>
+  </div>
+
+  <div class="card">
+    <div class="label">#5 &nbsp; 69edb679-9cd5-484b-9ea4-86b834173170.jpg</div>
+    <img src="69edb679-9cd5-484b-9ea4-86b834173170.jpg" onclick="showCoords(event, this, '69edb679-9cd5-484b-9ea4-86b834173170.jpg')" title="69edb679-9cd5-484b-9ea4-86b834173170.jpg">
+    <div class="coords" id="c_4">click image for coords</div>
+  </div>
+
+  <div class="card">
+    <div class="label">#6 &nbsp; 79fe3f64-ae9a-4a2d-a20d-fc5cb5e9f9bf.jpg</div>
+    <img src="79fe3f64-ae9a-4a2d-a20d-fc5cb5e9f9bf.jpg" onclick="showCoords(event, this, '79fe3f64-ae9a-4a2d-a20d-fc5cb5e9f9bf.jpg')" title="79fe3f64-ae9a-4a2d-a20d-fc5cb5e9f9bf.jpg">
+    <div class="coords" id="c_5">click image for coords</div>
+  </div>
+
+  <div class="card">
+    <div class="label">#7 &nbsp; 8a022499-a573-4722-86de-f0e644417473.jpg</div>
+    <img src="8a022499-a573-4722-86de-f0e644417473.jpg" onclick="showCoords(event, this, '8a022499-a573-4722-86de-f0e644417473.jpg')" title="8a022499-a573-4722-86de-f0e644417473.jpg">
+    <div class="coords" id="c_6">click image for coords</div>
+  </div>
+
+  <div class="card">
+    <div class="label">#8 &nbsp; 92c05847-98ff-4c31-9771-917c8e25e664.jpg</div>
+    <img src="92c05847-98ff-4c31-9771-917c8e25e664.jpg" onclick="showCoords(event, this, '92c05847-98ff-4c31-9771-917c8e25e664.jpg')" title="92c05847-98ff-4c31-9771-917c8e25e664.jpg">
+    <div class="coords" id="c_7">click image for coords</div>
+  </div>
+
+  <div class="card">
+    <div class="label">#9 &nbsp; 93d50d75-a11e-4f3c-b416-65bb49d6f13c.jpg</div>
+    <img src="93d50d75-a11e-4f3c-b416-65bb49d6f13c.jpg" onclick="showCoords(event, this, '93d50d75-a11e-4f3c-b416-65bb49d6f13c.jpg')" title="93d50d75-a11e-4f3c-b416-65bb49d6f13c.jpg">
+    <div class="coords" id="c_8">click image for coords</div>
+  </div>
+
+  <div class="card">
+    <div class="label">#10 &nbsp; c029a780-25cd-4d7f-a1ce-edc13077b021.jpg</div>
+    <img src="c029a780-25cd-4d7f-a1ce-edc13077b021.jpg" onclick="showCoords(event, this, 'c029a780-25cd-4d7f-a1ce-edc13077b021.jpg')" title="c029a780-25cd-4d7f-a1ce-edc13077b021.jpg">
+    <div class="coords" id="c_9">click image for coords</div>
+  </div>
+
+  <div class="card">
+    <div class="label">#11 &nbsp; dca9c8f7-b3b9-4442-ae0d-87a3aad04482.jpg</div>
+    <img src="dca9c8f7-b3b9-4442-ae0d-87a3aad04482.jpg" onclick="showCoords(event, this, 'dca9c8f7-b3b9-4442-ae0d-87a3aad04482.jpg')" title="dca9c8f7-b3b9-4442-ae0d-87a3aad04482.jpg">
+    <div class="coords" id="c_10">click image for coords</div>
+  </div>
+
+  <div class="card">
+    <div class="label">#12 &nbsp; e7759eab-f147-4db4-85c7-36e129bcb516.jpg</div>
+    <img src="e7759eab-f147-4db4-85c7-36e129bcb516.jpg" onclick="showCoords(event, this, 'e7759eab-f147-4db4-85c7-36e129bcb516.jpg')" title="e7759eab-f147-4db4-85c7-36e129bcb516.jpg">
+    <div class="coords" id="c_11">click image for coords</div>
+  </div>
+
+  <div class="card">
+    <div class="label">#13 &nbsp; f62486af-dbb9-4a92-a920-d56f7a728181.jpg</div>
+    <img src="f62486af-dbb9-4a92-a920-d56f7a728181.jpg" onclick="showCoords(event, this, 'f62486af-dbb9-4a92-a920-d56f7a728181.jpg')" title="f62486af-dbb9-4a92-a920-d56f7a728181.jpg">
+    <div class="coords" id="c_12">click image for coords</div>
+  </div>
+
+</div>
+<script>
+function showCoords(e, img, fname) {
+  const rect = img.getBoundingClientRect();
+  const scaleX = img.naturalWidth / rect.width;
+  const scaleY = img.naturalHeight / rect.height;
+  const x = Math.round((e.clientX - rect.left) * scaleX);
+  const y = Math.round((e.clientY - rect.top) * scaleY);
+  const idx = img.parentElement.querySelector('.coords').id.replace('c_','');
+  document.getElementById('c_' + idx).textContent = ;
+  console.log();
+}
+</script>
+</body></html>

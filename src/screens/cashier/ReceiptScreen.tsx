@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator, Alert, FlatList, Image, ScrollView,
+  ActivityIndicator, FlatList, Image, ScrollView,
   StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
+import { useToast } from '../../components/ui';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { CashierStackParamList } from '../../navigation/CashierStack';
 import { useCartStore } from '../../store/cartStore';
@@ -21,6 +22,7 @@ const PAY_LABELS: Record<string, string> = {
   card:      'Card',
   qr:        'QR',
   gift_card: 'Gift Card',
+  pay_later: 'Pay Later',
 };
 
 const TYPE_LABELS: Record<string, string> = {
@@ -32,6 +34,7 @@ const TYPE_LABELS: Record<string, string> = {
 export default function ReceiptScreen({ route, navigation }: Props) {
   const { order, change, session, printWarnings } = route.params;
   const clearCart = useCartStore((s) => s.clearCart);
+  const toast = useToast();
 
   const [settings,  setSettings]  = useState<Settings>({});
   const [printing,  setPrinting]  = useState(false);
@@ -48,7 +51,9 @@ export default function ReceiptScreen({ route, navigation }: Props) {
   async function handlePrint() {
     setPrinting(true);
     try {
-      const bytes = buildReceipt(order, change, settings);
+      // Cash sales pop the drawer; card/QR/gift-card receipts print without it.
+      const openDrawer = order.payment_method === 'cash';
+      const bytes = buildReceipt(order, change, settings, openDrawer);
       await printBytes(bytes, {
         type:     (settings.receipt_printer_type ?? 'wifi') as 'wifi' | 'bluetooth',
         ip:       settings.receipt_printer_ip,
@@ -56,7 +61,7 @@ export default function ReceiptScreen({ route, navigation }: Props) {
         btDevice: settings.receipt_printer_bt,
       });
     } catch (e: unknown) {
-      Alert.alert('Print Failed', (e as Error).message ?? 'Could not reach printer.');
+      toast.error((e as Error).message ?? 'Could not reach printer.');
     } finally {
       setPrinting(false);
     }
@@ -99,6 +104,9 @@ export default function ReceiptScreen({ route, navigation }: Props) {
           <View style={s.typeBadge}>
             <Text style={s.typeBadgeText}>{TYPE_LABELS[order.order_type] ?? order.order_type}</Text>
           </View>
+          {order.customer_name ? (
+            <Text style={s.tableText}>Customer: {order.customer_name}</Text>
+          ) : null}
           {order.table_number && (
             <Text style={s.tableText}>Table: {order.table_number}</Text>
           )}
@@ -150,7 +158,13 @@ export default function ReceiptScreen({ route, navigation }: Props) {
         <View style={s.paySection}>
           <View style={s.totalsRow}>
             <Text style={s.totalsLabel}>Payment</Text>
-            <Text style={s.totalsValue}>{PAY_LABELS[order.payment_method]}</Text>
+            <Text style={[
+              s.totalsValue,
+              order.payment_status === 'unpaid' && { color: Colors.warning },
+            ]}>
+              {PAY_LABELS[order.payment_method] ?? order.payment_method}
+              {order.payment_status === 'unpaid' ? ' (pending)' : ''}
+            </Text>
           </View>
           {order.payment_method === 'cash' && change > 0 && (
             <View style={s.changeBox}>
@@ -170,7 +184,10 @@ export default function ReceiptScreen({ route, navigation }: Props) {
 
       {/* ── Actions ── */}
       <View style={s.actions}>
-        <Text style={s.successBanner}>✓ Order Completed</Text>
+        {order.payment_status === 'unpaid'
+          ? <Text style={[s.successBanner, s.pendingBanner]}>🕐 Payment Pending</Text>
+          : <Text style={s.successBanner}>✓ Order Completed</Text>
+        }
 
         <TouchableOpacity style={s.newOrderBtn} onPress={handleNewOrder} activeOpacity={0.8}>
           <Text style={s.newOrderText}>New Order</Text>
@@ -402,6 +419,9 @@ const s = StyleSheet.create({
     color: Colors.green700,
     textAlign: 'center',
     marginBottom: Spacing.md,
+  },
+  pendingBanner: {
+    color: Colors.warning,
   },
   newOrderBtn: {
     backgroundColor: Colors.green600,

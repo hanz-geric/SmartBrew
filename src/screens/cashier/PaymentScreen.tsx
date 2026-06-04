@@ -13,7 +13,7 @@ import { useCartStore } from '../../store/cartStore';
 import { useNetwork } from '../../context/NetworkContext';
 import { logError } from '../../utils/logger';
 import { createOrder, getSettings } from '../../firebase/firestoreService';
-import { enqueueOrder } from '../../db/queries/queue';
+import { enqueueOrder, pendingCount } from '../../db/queries/queue';
 import { syncPendingOrders } from '../../services/syncService';
 import { useSyncEvents } from '../../context/SyncContext';
 import { deductStock } from '../../db/queries/stockCache';
@@ -41,6 +41,7 @@ const PAY_METHODS: { value: PaymentMethod; label: string; icon: string }[] = [
   { value: 'card',      label: 'Card',      icon: '💳' },
   { value: 'qr',        label: 'QR',        icon: '📱' },
   { value: 'gift_card', label: 'Gift Card', icon: '🎁' },
+  { value: 'pay_later', label: 'Pay Later', icon: '🕐' },
 ];
 
 // Build a local Order from a payload so receipt can display offline orders
@@ -67,18 +68,20 @@ function buildOfflineOrder(
     subtotal:     i.unit_price * i.quantity,
     notes:        i.notes || null,
     modifiers:    i.modifiers,
+    needs_kitchen: i.needs_kitchen ?? false,
   }));
   return {
     id:              localId,
     order_number:    payload.order_number ?? `OFFLINE-${localId.slice(-6).toUpperCase()}`,
     user_id:         user.uid,
     cashier_name:    user.full_name || user.username,
+    ...(payload.customer_name ? { customer_name: payload.customer_name } : {}),
     subtotal,
     discount_amount: discountAmount,
     total_amount:    subtotal - discountAmount,
     profit_amount:   profitAmount,
     payment_method:  payload.payment_method,
-    payment_status:  'paid',
+    payment_status:  payload.payment_method === 'pay_later' ? 'unpaid' : 'paid',
     status:          'completed',
     order_type:      payload.order_type,
     table_number:    payload.table_number ?? null,
@@ -86,7 +89,7 @@ function buildOfflineOrder(
     created_at:      now,
     completed_at:    now,
     items,
-  };
+  } as Order;
 }
 
 function quickAmounts(ceilTotal: number): number[] {
@@ -110,6 +113,7 @@ export default function PaymentScreen({ route, navigation }: Props) {
   const [payMethod,    setPayMethod]    = useState<PaymentMethod>('cash');
   const [cashReceived, setCashReceived] = useState('');
   const [reference,    setReference]   = useState('');
+  const [customerName, setCustomerName] = useState('');
   const [submitting,   setSubmitting]  = useState(false);
   const [error,        setError]       = useState('');
   const [settings,     setSettings]    = useState<Settings>({});
@@ -128,9 +132,9 @@ export default function PaymentScreen({ route, navigation }: Props) {
     ? parseFloat(Math.max(0, cashNum - ceilTotal).toFixed(2))
     : 0;
   const canPay    =
-    payMethod !== 'cash'
-      ? true
-      : cashNum >= ceilTotal;
+    payMethod === 'pay_later' ? true
+    : payMethod !== 'cash'   ? true
+    : cashNum >= ceilTotal;
 
   async function handleConfirm() {
     if (submittingRef.current) return; // Block double-tap synchronously
@@ -152,6 +156,7 @@ export default function PaymentScreen({ route, navigation }: Props) {
       discount_amount:     discountAmount,
       discount_auth_nonce: discountNonce,
       cart_snapshot:       cartItems,
+      customer_name:       payMethod === 'pay_later' ? customerName || undefined : undefined,
     };
 
     let order: Order;
@@ -196,9 +201,19 @@ export default function PaymentScreen({ route, navigation }: Props) {
       }
     } else {
       try {
-        order = await createOrder(payload, session, user);
-        syncPendingOrders(session, user)
-          .then(({ synced }) => { if (synced > 0) notifySynced(); })
+        // deferSideEffects: only the order write is awaited; stock + session-cash
+        // updates run in the background so the receipt appears immediately.
+        order = await createOrder(payload, session, user, undefined, { deferSideEffects: true });
+        // Only sweep the offline queue if something is actually waiting in it —
+        // skip the SQLite read + sync machinery on the common empty-queue path.
+        pendingCount()
+          .then((n) => {
+            if (n > 0) {
+              syncPendingOrders(session, user)
+                .then(({ synced }) => { if (synced > 0) notifySynced(); })
+                .catch(() => {});
+            }
+          })
           .catch(() => {});
         printKitchenIfNeeded(order);
       } catch (firestoreErr) {
@@ -324,7 +339,7 @@ export default function PaymentScreen({ route, navigation }: Props) {
             <TouchableOpacity
               key={m.value}
               style={[s.methodCard, payMethod === m.value && s.methodCardSel]}
-              onPress={() => { setPayMethod(m.value); setCashReceived(''); setReference(''); }}
+              onPress={() => { setPayMethod(m.value); setCashReceived(''); setReference(''); setCustomerName(''); }}
               activeOpacity={0.7}
             >
               <Text style={s.methodIcon}>{m.icon}</Text>
@@ -386,7 +401,7 @@ export default function PaymentScreen({ route, navigation }: Props) {
         )}
 
         {/* Card / QR / Gift Card reference */}
-        {payMethod !== 'cash' && (
+        {payMethod !== 'cash' && payMethod !== 'pay_later' && (
           <>
             <Text style={s.sectionTitle}>
               Reference No.{payMethod !== 'gift_card' ? ' (optional)' : ''}
@@ -398,6 +413,27 @@ export default function PaymentScreen({ route, navigation }: Props) {
               value={reference}
               onChangeText={setReference}
               returnKeyType="done"
+            />
+          </>
+        )}
+
+        {/* Pay Later — customer name */}
+        {payMethod === 'pay_later' && (
+          <>
+            <View style={s.payLaterNote}>
+              <Text style={s.payLaterNoteText}>
+                Order will be placed and stock reserved. Customer pays later.
+              </Text>
+            </View>
+            <Text style={s.sectionTitle}>Customer / Tab Name (optional)</Text>
+            <TextInput
+              style={s.input}
+              placeholder="e.g. John, Table 3"
+              placeholderTextColor={Colors.gray400}
+              value={customerName}
+              onChangeText={setCustomerName}
+              returnKeyType="done"
+              autoCapitalize="words"
             />
           </>
         )}
@@ -424,7 +460,9 @@ export default function PaymentScreen({ route, navigation }: Props) {
           >
             {submitting
               ? <ActivityIndicator color={Colors.white} />
-              : <Text style={s.confirmBtnText}>Confirm Payment</Text>
+              : <Text style={s.confirmBtnText}>
+                  {payMethod === 'pay_later' ? 'Place Order' : 'Confirm Payment'}
+                </Text>
             }
           </TouchableOpacity>
         </View>
@@ -700,6 +738,20 @@ const s = StyleSheet.create({
     fontSize: FontSize.xxl,
     fontWeight: FontWeight.extrabold,
     color: Colors.danger,
+  },
+
+  payLaterNote: {
+    backgroundColor: Colors.warningBg,
+    borderWidth: 1,
+    borderColor: Colors.warning + '55',
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+  },
+  payLaterNoteText: {
+    fontSize: FontSize.sm,
+    color: Colors.warning,
+    fontWeight: FontWeight.medium,
   },
 
   errorContainer: {
