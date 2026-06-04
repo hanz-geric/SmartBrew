@@ -10,3 +10,5 @@ export { default as Input } from './Input';
 export { default as AppModal } from './AppModal';
 export { ToastProvider, useToast } from './Toast';
 export type { ToastType } from './Toast';
+export { default as PinKeypad } from './PinKeypad';
+export { default as UsernameDropdown } from './UsernameDropdown';

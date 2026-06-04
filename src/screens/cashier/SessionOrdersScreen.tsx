@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, FlatList, Modal, RefreshControl,
-  StyleSheet, Text, TextInput, TouchableOpacity, View,
+  ActivityIndicator, FlatList, Modal, RefreshControl, ScrollView,
+  StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
-import { AppModal, useToast } from '../../components/ui';
+import { AppModal, PinKeypad, UsernameDropdown, useToast } from '../../components/ui';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { CashierStackParamList } from '../../navigation/CashierStack';
 import { getOrdersBySession, getSettings, voidOrder } from '../../firebase/firestoreService';
@@ -53,7 +53,7 @@ export default function SessionOrdersScreen({ route, navigation }: Props) {
   const [voiding,           setVoiding]           = useState<string | null>(null);
   const [showOverride,      setShowOverride]       = useState(false);
   const [overrideUsername,  setOverrideUsername]  = useState('');
-  const [overridePassword,  setOverridePassword]  = useState('');
+  const [overridePin,       setOverridePin]       = useState('');
   const [overrideError,     setOverrideError]     = useState('');
   const [overrideVerifying, setOverrideVerifying] = useState(false);
   const overrideAttempts = useRef(0);
@@ -100,7 +100,7 @@ export default function SessionOrdersScreen({ route, navigation }: Props) {
     if (currentUser.role === 'cashier') {
       overrideAttempts.current = 0;
       setOverrideUsername('');
-      setOverridePassword('');
+      setOverridePin('');
       setOverrideError('');
       setShowOverride(true);
     }
@@ -111,16 +111,18 @@ export default function SessionOrdersScreen({ route, navigation }: Props) {
     setVoidTarget(null);
   }
 
-  async function handleOverrideSubmit() {
+  async function handleOverrideSubmit(completedPin?: string) {
     if (!voidTarget) return;
+    const pwd = completedPin ?? overridePin;
     setOverrideError('');
-    if (!overrideUsername.trim() || !overridePassword) {
-      setOverrideError('Enter username and password.');
+    if (!overrideUsername.trim() || pwd.length < 6) {
+      setOverrideError('Enter username and 6-digit PIN.');
+      setOverridePin('');
       return;
     }
     setOverrideVerifying(true);
     try {
-      await verifyManagerAuth(overrideUsername.trim(), overridePassword, isOnline);
+      await verifyManagerAuth(overrideUsername.trim(), pwd, isOnline);
       const id = voidTarget.id;
       setShowOverride(false);
       setVoidTarget(null);
@@ -135,7 +137,7 @@ export default function SessionOrdersScreen({ route, navigation }: Props) {
       setOverrideError(
         `${(e as Error).message || 'Verification failed.'} (${overrideAttempts.current}/${MAX_OVERRIDE_ATTEMPTS})`,
       );
-      setOverridePassword('');
+      setOverridePin('');
     } finally {
       setOverrideVerifying(false);
     }
@@ -301,62 +303,60 @@ export default function SessionOrdersScreen({ route, navigation }: Props) {
           onRequestClose={closeOverride}
         >
           <View style={s.overlayBg}>
-            <View style={s.overrideCard}>
-              <Text style={s.overrideTitle}>Manager Authorisation</Text>
-              <Text style={s.overrideSubtitle}>
-                A manager or admin must approve voiding order #{voidTarget.order_number}.
-              </Text>
+            <View style={[s.overrideCard, { maxHeight: '90%' }]}>
+              <ScrollView
+                bounces={false}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
+                <Text style={s.overrideTitle}>Manager Authorisation</Text>
+                <Text style={s.overrideSubtitle}>
+                  A manager or admin must approve voiding order #{voidTarget.order_number}.
+                </Text>
 
-              <Text style={s.overrideLabel}>Username</Text>
-              <TextInput
-                style={s.overrideInput}
-                value={overrideUsername}
-                onChangeText={setOverrideUsername}
-                placeholder="manager username"
-                placeholderTextColor={Colors.gray400}
-                autoCapitalize="none"
-                autoCorrect={false}
-                editable={!overrideVerifying}
-              />
-
-              <Text style={s.overrideLabel}>Password</Text>
-              <TextInput
-                style={s.overrideInput}
-                value={overridePassword}
-                onChangeText={setOverridePassword}
-                placeholder="password"
-                placeholderTextColor={Colors.gray400}
-                secureTextEntry
-                editable={!overrideVerifying}
-                onSubmitEditing={handleOverrideSubmit}
-                returnKeyType="done"
-              />
-
-              {!!overrideError && (
-                <Text style={s.overrideError}>{overrideError}</Text>
-              )}
-
-              <View style={s.overrideBtnRow}>
-                <TouchableOpacity
-                  style={s.overrideCancelBtn}
-                  onPress={closeOverride}
+                <Text style={s.overrideLabel}>Username</Text>
+                <UsernameDropdown
+                  value={overrideUsername}
+                  onChange={(u) => { setOverrideUsername(u); setOverridePin(''); }}
+                  roles={['manager', 'admin']}
                   disabled={overrideVerifying}
-                  activeOpacity={0.7}
-                >
-                  <Text style={s.overrideCancelText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[s.overrideConfirmBtn, overrideVerifying && s.overrideBtnOff]}
-                  onPress={handleOverrideSubmit}
+                  placeholder="Select manager"
+                />
+
+                <Text style={s.overrideLabel}>PIN</Text>
+                <PinKeypad
+                  pin={overridePin}
+                  onChange={setOverridePin}
+                  onComplete={handleOverrideSubmit}
                   disabled={overrideVerifying}
-                  activeOpacity={0.7}
-                >
-                  {overrideVerifying
-                    ? <ActivityIndicator size="small" color={Colors.white} />
-                    : <Text style={s.overrideConfirmText}>Void Order</Text>
-                  }
-                </TouchableOpacity>
-              </View>
+                />
+
+                {!!overrideError && (
+                  <Text style={[s.overrideError, { marginTop: Spacing.sm }]}>{overrideError}</Text>
+                )}
+
+                <View style={s.overrideBtnRow}>
+                  <TouchableOpacity
+                    style={s.overrideCancelBtn}
+                    onPress={closeOverride}
+                    disabled={overrideVerifying}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={s.overrideCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[s.overrideConfirmBtn, (overrideVerifying || overridePin.length < 6) && s.overrideBtnOff]}
+                    onPress={() => handleOverrideSubmit()}
+                    disabled={overrideVerifying || overridePin.length < 6}
+                    activeOpacity={0.7}
+                  >
+                    {overrideVerifying
+                      ? <ActivityIndicator size="small" color={Colors.white} />
+                      : <Text style={s.overrideConfirmText}>Void Order</Text>
+                    }
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
             </View>
           </View>
         </Modal>
@@ -586,17 +586,6 @@ const s = StyleSheet.create({
     fontWeight: FontWeight.semibold,
     color: Colors.gray700,
     marginBottom: Spacing.xs,
-  },
-  overrideInput: {
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: Radius.md,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    fontSize: FontSize.base,
-    color: Colors.gray800,
-    backgroundColor: Colors.white,
-    marginBottom: Spacing.md,
   },
   overrideError: {
     fontSize: FontSize.sm,

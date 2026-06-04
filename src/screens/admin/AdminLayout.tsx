@@ -1,10 +1,12 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AdminStackParamList } from '../../navigation/AdminStack';
 import { useAuthStore } from '../../store/authStore';
 import { logout } from '../../firebase/auth';
+import { useIdleTimeout } from '../../hooks/useIdleTimeout';
+import { ADMIN_IDLE_TIMEOUT_MS } from '../../constants/config';
 import {
   Colors, FontSize, FontWeight, Radius, Spacing, isTablet, rs,
 } from '../../constants/theme';
@@ -36,12 +38,15 @@ export default function AdminLayout({ active, children }: Props) {
   const { width }  = useWindowDimensions();
   const compact    = width < 960;
 
-  async function handleLogout() {
-    await logout();
-  }
+  const handleLogout = useCallback(() => { logout(); }, []);
+
+  const resetIdleTimer = useIdleTimeout(ADMIN_IDLE_TIMEOUT_MS, handleLogout);
 
   return (
-    <View style={s.root}>
+    <View
+      style={s.root}
+      onStartShouldSetResponderCapture={() => { resetIdleTimer(); return false; }}
+    >
       {/* ── Sidebar ── */}
       <View style={[s.sidebar, compact && s.sidebarCompact]}>
         <View style={[s.brand, compact && s.brandCompact]}>

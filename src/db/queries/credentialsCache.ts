@@ -1,5 +1,40 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { AuthUser } from '../../types';
+
+const CACHED_USERS_KEY = 'smartbrew_cached_users_v1';
+
+export interface CachedUserEntry {
+  username:  string;
+  role:      string;
+  full_name: string;
+}
+
+export async function listCachedUsers(): Promise<CachedUserEntry[]> {
+  try {
+    const raw = await AsyncStorage.getItem(CACHED_USERS_KEY);
+    return raw ? (JSON.parse(raw) as CachedUserEntry[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function upsertCachedUser(username: string, user: AuthUser): Promise<void> {
+  try {
+    const list = await listCachedUsers();
+    const next = list.filter(e => e.username !== username);
+    next.push({ username, role: user.role, full_name: user.full_name });
+    await AsyncStorage.setItem(CACHED_USERS_KEY, JSON.stringify(next));
+  } catch {}
+}
+
+async function removeCachedUser(username: string): Promise<void> {
+  try {
+    const list = await listCachedUsers();
+    const next = list.filter(e => e.username !== username);
+    await AsyncStorage.setItem(CACHED_USERS_KEY, JSON.stringify(next));
+  } catch {}
+}
 
 // SecureStore keys must be alphanumeric + underscores/hyphens only
 function credsKey(username: string): string {
@@ -18,6 +53,7 @@ export async function saveCredentials(
 ): Promise<void> {
   const entry: StoredCredentials = { password, user };
   await SecureStore.setItemAsync(credsKey(username), JSON.stringify(entry));
+  upsertCachedUser(username, user).catch(() => {});
 }
 
 // Returns the cached AuthUser if the password matches, null otherwise
@@ -38,6 +74,7 @@ export async function verifyOfflineCredentials(
 
 export async function clearCredentials(username: string): Promise<void> {
   await SecureStore.deleteItemAsync(credsKey(username));
+  removeCachedUser(username).catch(() => {});
 }
 
 // Returns the stored Firebase email + password for a username, used for

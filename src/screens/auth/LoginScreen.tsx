@@ -1,6 +1,6 @@
-﻿import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity,
+  View, Text,
   StyleSheet, KeyboardAvoidingView, Platform,
   ActivityIndicator, ScrollView, Image,
 } from 'react-native';
@@ -9,22 +9,25 @@ import { useAuthStore } from '../../store/authStore';
 import { useNetwork } from '../../context/NetworkContext';
 import { saveCredentials, verifyOfflineCredentials } from '../../db/queries/credentialsCache';
 import { getProducts, getCategories } from '../../firebase/firestoreService';
+import { PinKeypad, UsernameDropdown } from '../../components/ui';
 import { Colors, Spacing, Radius, FontSize, FontWeight, Shadow } from '../../constants/theme';
 
 export default function LoginScreen() {
   const { setUser }             = useAuthStore();
   const { isOnline }            = useNetwork();
   const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [pin,      setPin]      = useState('');
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState('');
 
   // No auto-login from cache here — auth.currentUser would be null without a
   // real Firebase session, causing permission-denied on all Firestore writes.
 
-  async function handleLogin() {
-    if (!username.trim() || !password) {
-      setError('Enter username and password.');
+  async function handleLogin(completedPin?: string) {
+    const pwd = completedPin ?? pin;
+    if (!username.trim() || pwd.length < 6) {
+      setError('Enter your username and 6-digit PIN.');
+      setPin('');
       return;
     }
 
@@ -34,14 +37,16 @@ export default function LoginScreen() {
     if (!isOnline) {
       // Offline — verify against locally stored credentials
       try {
-        const user = await verifyOfflineCredentials(username.trim().toLowerCase(), password);
+        const user = await verifyOfflineCredentials(username.trim().toLowerCase(), pwd);
         if (user) {
           saveAuthCache(user).catch(() => {});
           setUser(user);
         } else {
+          setPin('');
           setError('Incorrect credentials, or this account has not been used on this device while online.');
         }
       } catch {
+        setPin('');
         setError('Offline sign-in failed. Try again.');
       } finally {
         setLoading(false);
@@ -51,14 +56,15 @@ export default function LoginScreen() {
 
     // Online — normal Firebase login
     try {
-      const user = await loginWithUsername(username.trim(), password);
+      const user = await loginWithUsername(username.trim(), pwd);
       // Save credentials to device for future offline logins
-      saveCredentials(username.trim().toLowerCase(), password, user).catch(() => {});
+      saveCredentials(username.trim().toLowerCase(), pwd, user).catch(() => {});
       // Pre-cache the product catalog so the POS works on the next offline launch
       getProducts().catch(() => {});
       getCategories().catch(() => {});
       setUser(user);
     } catch (e: unknown) {
+      setPin('');
       setError(e instanceof Error ? e.message : 'Login failed.');
     } finally {
       setLoading(false);
@@ -77,11 +83,6 @@ export default function LoginScreen() {
       >
       <View style={styles.card}>
         <View style={styles.header}>
-          <Image
-            source={require('../../../assets/images/SmartBrew_logo.jpg')}
-            style={styles.logo}
-            resizeMode="contain"
-          />
           <Text style={styles.tagline}>Sign in to continue</Text>
         </View>
 
@@ -101,45 +102,30 @@ export default function LoginScreen() {
 
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Username</Text>
-          <TextInput
-            style={styles.input}
+          <UsernameDropdown
             value={username}
-            onChangeText={setUsername}
-            autoCapitalize="none"
-            autoCorrect={false}
-            placeholder="Enter username"
-            placeholderTextColor={Colors.gray400}
-            returnKeyType="next"
-            editable={!loading}
+            onChange={(u) => { setUsername(u); setPin(''); }}
+            disabled={loading}
+            placeholder="Select username"
           />
         </View>
 
         <View style={styles.fieldGroup}>
-          <Text style={styles.label}>Password</Text>
-          <TextInput
-            style={styles.input}
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            placeholder="Enter password"
-            placeholderTextColor={Colors.gray400}
-            returnKeyType="done"
-            onSubmitEditing={handleLogin}
-            editable={!loading}
+          <Text style={styles.label}>PIN</Text>
+          <PinKeypad
+            pin={pin}
+            onChange={setPin}
+            onComplete={handleLogin}
+            disabled={loading}
           />
         </View>
 
-        <TouchableOpacity
-          style={[styles.loginBtn, loading && styles.loginBtnDisabled]}
-          onPress={handleLogin}
-          disabled={loading}
-          activeOpacity={0.8}
-        >
-          {loading
-            ? <ActivityIndicator color={Colors.white} />
-            : <Text style={styles.loginBtnText}>Sign In</Text>
-          }
-        </TouchableOpacity>
+        {loading && (
+          <View style={styles.loadingRow}>
+            <ActivityIndicator color={Colors.green600} />
+            <Text style={styles.loadingText}>Signing in…</Text>
+          </View>
+        )}
       </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -168,11 +154,6 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     marginBottom: Spacing.xxl,
-  },
-  logo: {
-    width: 180,
-    height: 90,
-    marginBottom: Spacing.sm,
   },
   tagline: {
     fontSize: FontSize.sm,
@@ -218,28 +199,15 @@ const styles = StyleSheet.create({
     color: Colors.gray500,
     marginBottom: Spacing.xs,
   },
-  input: {
-    borderWidth: 1.5,
-    borderColor: Colors.gray200,
-    borderRadius: Radius.md,
-    padding: Spacing.md,
-    fontSize: FontSize.md,
-    color: Colors.gray800,
-    backgroundColor: Colors.gray50,
-  },
-  loginBtn: {
-    backgroundColor: Colors.green600,
-    borderRadius: Radius.md,
-    padding: Spacing.lg,
+  loadingRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: Spacing.sm,
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    marginTop: Spacing.md,
   },
-  loginBtnDisabled: {
-    opacity: 0.6,
-  },
-  loginBtnText: {
-    color: Colors.white,
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.bold,
+  loadingText: {
+    fontSize: FontSize.sm,
+    color: Colors.gray500,
   },
 });

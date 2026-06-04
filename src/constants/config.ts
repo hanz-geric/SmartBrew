@@ -13,6 +13,9 @@ export const USER_KEY  = 'smartbrew_user';
 export const MAX_SYNC_RETRIES = 5;
 export const SYNC_INTERVAL_MS = 30_000;
 
+// Admin / manager idle auto-logout (10 minutes)
+export const ADMIN_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
+
 // Printer
 export const PRINTER_PORT    = 9100;
 export const PRINTER_TIMEOUT = 5_000;

@@ -18,7 +18,7 @@ import {
 } from '../../firebase/firestoreService';
 import { switchCashierAuth, verifyManagerAuth } from '../../firebase/auth';
 import { savePendingCashierSync, loadPendingCashierSync } from '../../db/queries/sessionCache';
-import { AppModal } from '../../components/ui';
+import { AppModal, PinKeypad, UsernameDropdown } from '../../components/ui';
 import { pendingCount } from '../../db/queries/queue';
 import { syncPendingOrders, reconcileDraftSession, syncPendingClose } from '../../services/syncService';
 import { useSyncEvents } from '../../context/SyncContext';
@@ -250,7 +250,7 @@ function DiscountAuthPanel({
   initialDiscountType, initialDiscountInput, cartSubtotal,
 }: DiscountAuthPanelProps) {
   const [username,     setUsername]     = useState('');
-  const [password,     setPassword]     = useState('');
+  const [pin,          setPin]          = useState('');
   const [verifying,    setVerifying]    = useState(false);
   const [authError,    setAuthError]    = useState('');
   const [attempts,     setAttempts]     = useState(0);
@@ -263,15 +263,17 @@ function DiscountAuthPanel({
     ? Math.min((rawNum / 100) * cartSubtotal, cartSubtotal)
     : Math.min(rawNum, cartSubtotal);
 
-  async function handleVerify() {
+  async function handleVerify(completedPin?: string) {
+    const pwd = completedPin ?? pin;
     setAuthError('');
-    if (!username.trim() || !password) {
-      setAuthError('Enter username and password.');
+    if (!username.trim() || pwd.length < 6) {
+      setAuthError('Enter username and 6-digit PIN.');
+      setPin('');
       return;
     }
     setVerifying(true);
     try {
-      const nonce = await verifyManagerAuth(username.trim(), password, isOnline);
+      const nonce = await verifyManagerAuth(username.trim(), pwd, isOnline);
       onSuccess(nonce, discountType, discountAmt);
     } catch (e: unknown) {
       const next = attempts + 1;
@@ -281,7 +283,7 @@ function DiscountAuthPanel({
         return;
       }
       setAuthError(`${(e as Error).message || 'Verification failed.'} (${next}/${MAX_AUTH_ATTEMPTS})`);
-      setPassword('');
+      setPin('');
     } finally {
       setVerifying(false);
     }
@@ -342,24 +344,20 @@ function DiscountAuthPanel({
       )}
 
       <Text style={ap.fieldLabel}>Username</Text>
-      <TextInput
-        style={ap.input}
+      <UsernameDropdown
         value={username}
-        onChangeText={setUsername}
-        placeholder="manager username"
-        placeholderTextColor={Colors.gray400}
-        autoCapitalize="none"
-        autoCorrect={false}
+        onChange={(u) => { setUsername(u); setPin(''); }}
+        roles={['manager', 'admin']}
+        disabled={verifying}
+        placeholder="Select manager"
       />
 
-      <Text style={ap.fieldLabel}>Password</Text>
-      <TextInput
-        style={ap.input}
-        value={password}
-        onChangeText={setPassword}
-        placeholder="••••••••"
-        placeholderTextColor={Colors.gray400}
-        secureTextEntry
+      <Text style={ap.fieldLabel}>PIN</Text>
+      <PinKeypad
+        pin={pin}
+        onChange={setPin}
+        onComplete={handleVerify}
+        disabled={verifying}
       />
 
       {!!authError && (
@@ -378,9 +376,9 @@ function DiscountAuthPanel({
           <Text style={ap.cancelText}>Cancel</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[ap.verifyBtn, verifying && ap.verifyBtnOff]}
-          onPress={handleVerify}
-          disabled={verifying}
+          style={[ap.verifyBtn, (verifying || pin.length < 6) && ap.verifyBtnOff]}
+          onPress={() => handleVerify()}
+          disabled={verifying || pin.length < 6}
           activeOpacity={0.8}
         >
           {verifying
@@ -403,22 +401,24 @@ interface AddCashierPanelProps {
 
 function AddCashierPanel({ onClose, onSuccess, isOnline }: AddCashierPanelProps) {
   const [username,  setUsername]  = useState('');
-  const [password,  setPassword]  = useState('');
+  const [pin,       setPin]       = useState('');
   const [verifying, setVerifying] = useState(false);
   const [authError, setAuthError] = useState('');
   const [attempts,  setAttempts]  = useState(0);
 
   const attemptsLeft = MAX_AUTH_ATTEMPTS - attempts;
 
-  async function handleAdd() {
+  async function handleAdd(completedPin?: string) {
+    const pwd = completedPin ?? pin;
     setAuthError('');
-    if (!username.trim() || !password) {
-      setAuthError('Enter username and password.');
+    if (!username.trim() || pwd.length < 6) {
+      setAuthError('Enter username and 6-digit PIN.');
+      setPin('');
       return;
     }
     setVerifying(true);
     try {
-      const newUser = await switchCashierAuth(username.trim(), password, isOnline);
+      const newUser = await switchCashierAuth(username.trim(), pwd, isOnline);
       onSuccess(newUser);
     } catch (e: unknown) {
       const next = attempts + 1;
@@ -428,7 +428,7 @@ function AddCashierPanel({ onClose, onSuccess, isOnline }: AddCashierPanelProps)
         return;
       }
       setAuthError(`${(e as Error).message || 'Verification failed.'} (${next}/${MAX_AUTH_ATTEMPTS})`);
-      setPassword('');
+      setPin('');
     } finally {
       setVerifying(false);
     }
@@ -451,24 +451,20 @@ function AddCashierPanel({ onClose, onSuccess, isOnline }: AddCashierPanelProps)
       <Text style={ap.subtitle}>Sign in once to add this cashier to the session roster.</Text>
 
       <Text style={ap.fieldLabel}>Username</Text>
-      <TextInput
-        style={ap.input}
+      <UsernameDropdown
         value={username}
-        onChangeText={setUsername}
-        placeholder="cashier username"
-        placeholderTextColor={Colors.gray400}
-        autoCapitalize="none"
-        autoCorrect={false}
+        onChange={(u) => { setUsername(u); setPin(''); }}
+        roles={['cashier']}
+        disabled={verifying}
+        placeholder="Select cashier"
       />
 
-      <Text style={ap.fieldLabel}>Password</Text>
-      <TextInput
-        style={ap.input}
-        value={password}
-        onChangeText={setPassword}
-        placeholder="••••••••"
-        placeholderTextColor={Colors.gray400}
-        secureTextEntry
+      <Text style={ap.fieldLabel}>PIN</Text>
+      <PinKeypad
+        pin={pin}
+        onChange={setPin}
+        onComplete={handleAdd}
+        disabled={verifying}
       />
 
       {!!authError && (
@@ -487,9 +483,9 @@ function AddCashierPanel({ onClose, onSuccess, isOnline }: AddCashierPanelProps)
           <Text style={ap.cancelText}>Cancel</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[ap.verifyBtn, verifying && ap.verifyBtnOff]}
-          onPress={handleAdd}
-          disabled={verifying}
+          style={[ap.verifyBtn, (verifying || pin.length < 6) && ap.verifyBtnOff]}
+          onPress={() => handleAdd()}
+          disabled={verifying || pin.length < 6}
           activeOpacity={0.8}
         >
           {verifying
@@ -508,6 +504,7 @@ interface ProductCardProps {
   product: Product;
   onPress: (p: Product) => void;
   cols: number;
+  containerWidth: number;
 }
 
 function GridIcon({ size, color }: { size: number; color: string }) {
@@ -523,7 +520,7 @@ function GridIcon({ size, color }: { size: number; color: string }) {
   );
 }
 
-function ProductCard({ product, onPress, cols }: ProductCardProps) {
+function ProductCard({ product, onPress, cols, containerWidth }: ProductCardProps) {
   const isOut = product.stock_status === 'out';
   const isLow = product.stock_status === 'low';
 
@@ -534,9 +531,13 @@ function ProductCard({ product, onPress, cols }: ProductCardProps) {
   const emojiSz     = cols <= 2 ? 36 : cols <= 4 ? 28 : cols <= 6 ? 20 : 16;
   const infoPad     = cols >= 5 ? Spacing.xs : Spacing.sm;
 
+  const cardWidth = containerWidth > 0
+    ? (containerWidth - Spacing.sm * 2) / cols - Spacing.xs * 2
+    : undefined;
+
   return (
     <TouchableOpacity
-      style={[pc.card, isOut && pc.cardOut]}
+      style={[pc.card, cardWidth != null && { width: cardWidth }, isOut && pc.cardOut]}
       onPress={() => onPress(product)}
       disabled={isOut}
       activeOpacity={0.75}
@@ -581,7 +582,8 @@ export default function POSScreen({ route, navigation }: Props) {
   const clearCart    = useCartStore((s) => s.clearCart);
 
   const { width: windowWidth } = useWindowDimensions();
-  const [colOverride,     setColOverride]    = useState<number | null>(null);
+  const [colOverride,     setColOverride]    = useState<number | null>(5);
+  const [gridContainerWidth, setGridContainerWidth] = useState(0);
   const [colPickerOpen,   setColPickerOpen]  = useState(false);
 
   const gridCols = useMemo(() => {
@@ -1319,8 +1321,9 @@ export default function POSScreen({ route, navigation }: Props) {
                 numColumns={gridCols}
                 key={gridCols}
                 contentContainerStyle={s.gridContent}
+                onLayout={(e) => setGridContainerWidth(e.nativeEvent.layout.width)}
                 renderItem={({ item }) => (
-                  <ProductCard product={item} onPress={handleProductPress} cols={gridCols} />
+                  <ProductCard product={item} onPress={handleProductPress} cols={gridCols} containerWidth={gridContainerWidth} />
                 )}
                 ListEmptyComponent={
                   <View style={s.emptyBox}>
@@ -2217,7 +2220,6 @@ const s = StyleSheet.create({
 
 const pc = StyleSheet.create({
   card: {
-    flex: 1,
     margin: Spacing.xs,
     backgroundColor: Colors.surface,
     borderRadius: Radius.lg,

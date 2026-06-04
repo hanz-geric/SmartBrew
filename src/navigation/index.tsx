@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
-import { onAuthChanged } from '../firebase/auth';
+import { onAuthChanged, logout } from '../firebase/auth';
 import { useAuthStore } from '../store/authStore';
 import AuthStack    from './AuthStack';
 import CashierStack from './CashierStack';
@@ -13,7 +13,19 @@ export default function RootNavigator() {
   const { user, isLoading, setUser } = useAuthStore();
 
   useEffect(() => {
-    const unsubscribe = onAuthChanged(setUser);
+    let coldStart = true;
+    const unsubscribe = onAuthChanged((user) => {
+      // On the very first auth event (cold launch / app killed + restarted),
+      // admin and manager sessions must not auto-restore — require fresh login.
+      // Cashier sessions are allowed to persist for offline/register continuity.
+      if (coldStart && user && user.role !== 'cashier') {
+        coldStart = false;
+        logout(); // clears auth cache + Firebase session → next event fires with null
+        return;
+      }
+      coldStart = false;
+      setUser(user);
+    });
     return unsubscribe;
   }, []);
 
