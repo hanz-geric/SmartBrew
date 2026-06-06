@@ -8,6 +8,7 @@ import Orders from '@/screens/Orders'
 import Sessions from '@/screens/Sessions'
 import Products from '@/screens/Products'
 import Modifiers from '@/screens/Modifiers'
+import Stock from '@/screens/Stock'
 
 function Soon({ label }: { label: string }) {
   return (
@@ -37,7 +38,7 @@ export default function App() {
           <Route path="/products"   element={<Protected><Products /></Protected>} />
           <Route path="/categories" element={<Protected><Products /></Protected>} />
           <Route path="/modifiers"  element={<Protected><Modifiers /></Protected>} />
-          <Route path="/stock"      element={<Protected><Soon label="Stock" /></Protected>} />
+          <Route path="/stock"      element={<Protected><Stock /></Protected>} />
           <Route path="/users"      element={<Protected><Soon label="Users" /></Protected>} />
           <Route path="/settings"   element={<Protected><Soon label="Settings" /></Protected>} />
           <Route path="*"           element={<Navigate to="/dashboard" replace />} />
