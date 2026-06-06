@@ -1,8 +1,13 @@
-import { signInWithEmailAndPassword, signOut as firebaseSignOut } from 'firebase/auth'
-import { getDoc } from 'firebase/firestore'
-import { auth } from './config'
+import {
+  signInWithEmailAndPassword, signOut as firebaseSignOut,
+  createUserWithEmailAndPassword, getAuth,
+} from 'firebase/auth'
+import { getDoc, setDoc, updateDoc } from 'firebase/firestore'
+import { initializeApp, deleteApp } from 'firebase/app'
+import { getFunctions, httpsCallable } from 'firebase/functions'
+import { auth, app, firebaseConfig } from './config'
 import { userDoc } from './collections'
-import type { AuthUser } from '@/types'
+import type { AuthUser, UserRole } from '@/types'
 
 const DOMAIN = '@smartbrew.app'
 
@@ -55,4 +60,39 @@ export async function buildAuthUser(uid: string): Promise<AuthUser> {
 
 export function logout(): Promise<void> {
   return firebaseSignOut(auth)
+}
+
+// Creates a new Firebase Auth + Firestore user without signing out the current admin.
+// Uses a secondary app instance so the main auth session is unaffected.
+export async function createUserAccount(
+  username:  string,
+  password:  string,
+  full_name: string,
+  role:      UserRole,
+): Promise<void> {
+  const email     = usernameToEmail(username)
+  const secondary = initializeApp(firebaseConfig, `secondary_${Date.now()}`)
+  const secAuth   = getAuth(secondary)
+  try {
+    const credential = await createUserWithEmailAndPassword(secAuth, email, password)
+    await setDoc(userDoc(credential.user.uid), { username, full_name, role, is_active: true })
+  } finally {
+    await deleteApp(secondary)
+  }
+}
+
+export async function resetUserPassword(uid: string, newPassword: string): Promise<void> {
+  const functions = getFunctions(app)
+  const fn = httpsCallable<{ uid: string; newPassword: string }, { success: boolean }>(
+    functions,
+    'resetUserPassword',
+  )
+  await fn({ uid, newPassword })
+}
+
+export async function updateUserProfile(
+  uid:  string,
+  data: { full_name?: string; role?: UserRole; is_active?: boolean },
+): Promise<void> {
+  await updateDoc(userDoc(uid), data)
 }

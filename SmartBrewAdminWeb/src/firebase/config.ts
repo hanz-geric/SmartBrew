@@ -3,7 +3,7 @@ import { getAuth } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore'
 import { getStorage } from 'firebase/storage'
 
-const firebaseConfig = {
+export const firebaseConfig = {
   apiKey:            'AIzaSyBg5-qNyy7n6YfdJEaWQCLaQhubDsnldEM',
   authDomain:        'smartbrew-pos.firebaseapp.com',
   projectId:         'smartbrew-pos',
@@ -12,8 +12,7 @@ const firebaseConfig = {
   appId:             '1:346008013930:web:059f839b3698c304918e13',
 }
 
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0]
-
-export const auth = getAuth(app)
-export const db   = getFirestore(app)
+export const app     = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0]
+export const auth    = getAuth(app)
+export const db      = getFirestore(app)
 export const storage = getStorage(app)
