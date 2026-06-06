@@ -108,7 +108,7 @@ export default function AppLayout({ children }: Props) {
       </aside>
 
       {/* ── Main content ── */}
-      <main className="flex-1 overflow-y-auto" style={{ background: 'var(--color-background)' }}>
+      <main className="flex-1 overflow-y-auto bg-[#f9fafb]">
         {children}
       </main>
     </div>
