@@ -1,0 +1,18 @@
+# Dependencies
+SmartBrewApp/node_modules/
+SmartBrewAdminWeb/node_modules/
+functions/node_modules/
+
+# Build output
+SmartBrewApp/dist/
+SmartBrewApp/.expo/
+SmartBrewAdminWeb/dist/
+
+# Environment files
+.env
+.env.local
+*.env
+
+# OS
+.DS_Store
+Thumbs.db
