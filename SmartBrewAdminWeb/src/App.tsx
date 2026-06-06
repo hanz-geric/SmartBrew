@@ -10,6 +10,7 @@ import Products from '@/screens/Products'
 import Modifiers from '@/screens/Modifiers'
 import Stock from '@/screens/Stock'
 import Users from '@/screens/Users'
+import SettingsPage from '@/screens/Settings'
 
 function Soon({ label }: { label: string }) {
   return (
@@ -41,7 +42,7 @@ export default function App() {
           <Route path="/modifiers"  element={<Protected><Modifiers /></Protected>} />
           <Route path="/stock"      element={<Protected><Stock /></Protected>} />
           <Route path="/users"      element={<Protected><Users /></Protected>} />
-          <Route path="/settings"   element={<Protected><Soon label="Settings" /></Protected>} />
+          <Route path="/settings"   element={<Protected><SettingsPage /></Protected>} />
           <Route path="*"           element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </AuthProvider>
