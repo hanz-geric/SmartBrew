@@ -4,6 +4,7 @@ import ProtectedRoute from '@/components/ProtectedRoute'
 import AppLayout from '@/components/AppLayout'
 import Login from '@/screens/Login'
 import Dashboard from '@/screens/Dashboard'
+import Orders from '@/screens/Orders'
 
 function Soon({ label }: { label: string }) {
   return (
@@ -28,7 +29,7 @@ export default function App() {
         <Routes>
           <Route path="/login"      element={<Login />} />
           <Route path="/dashboard"  element={<Protected><Dashboard /></Protected>} />
-          <Route path="/orders"     element={<Protected><Soon label="Orders" /></Protected>} />
+          <Route path="/orders"     element={<Protected><Orders /></Protected>} />
           <Route path="/sessions"   element={<Protected><Soon label="Sessions" /></Protected>} />
           <Route path="/products"   element={<Protected><Soon label="Menu" /></Protected>} />
           <Route path="/categories" element={<Protected><Soon label="Categories" /></Protected>} />
