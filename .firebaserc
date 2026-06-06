@@ -1,5 +1,12 @@
 {
   "projects": {
     "default": "smartbrew-pos"
+  },
+  "targets": {
+    "smartbrew-pos": {
+      "hosting": {
+        "admin": ["smartbrew-pos"]
+      }
+    }
   }
 }
