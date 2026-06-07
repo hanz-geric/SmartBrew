@@ -40,11 +40,6 @@ interface HourBucket {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const GRANULARITIES: { value: Granularity; label: string }[] = [
-  { value: 'daily',   label: 'Daily (30d)'   },
-  { value: 'weekly',  label: 'Weekly (12w)'  },
-  { value: 'monthly', label: 'Monthly (12m)' },
-]
 
 const PAY_LABELS: Record<string, string> = {
   cash: 'Cash', card: 'Card', qr: 'QR', gift_card: 'Gift Card', pay_later: 'Pay Later',
@@ -409,9 +404,9 @@ export default function Reports() {
     <AppLayout>
       {/* ── Sticky header ── */}
       <div className="sticky top-0 z-10 bg-white" style={{ borderBottom: '1px solid #e5e7eb' }}>
-        <div className="flex items-center gap-3 px-6 py-3">
-          <h1 className="text-xl font-bold shrink-0" style={{ color: '#111827' }}>Reports</h1>
-          <div className="flex rounded-md overflow-hidden ml-4" style={{ border: '1px solid #e5e7eb' }}>
+        {/* Tabs + export in one row */}
+        <div className="flex items-center justify-between px-4 pt-3 pb-2 gap-2">
+          <div className="flex rounded-md overflow-hidden shrink-0" style={{ border: '1px solid #e5e7eb' }}>
             {([
               { value: 'analytics', label: 'Analytics' },
               { value: 'sessions',  label: 'Sessions'  },
@@ -420,7 +415,7 @@ export default function Reports() {
               <button
                 key={t.value}
                 onClick={() => setTab(t.value)}
-                className="px-4 py-1.5 text-sm font-semibold transition-colors"
+                className="px-3 py-1.5 text-sm font-semibold transition-colors"
                 style={{
                   background: tab === t.value ? '#166534' : '#ffffff',
                   color:      tab === t.value ? '#ffffff'  : '#374151',
@@ -430,36 +425,39 @@ export default function Reports() {
               </button>
             ))}
           </div>
-          <div className="flex-1" />
-        </div>
-        {tab === 'analytics' && (
-          <div className="flex items-center gap-3 px-6 py-2.5" style={{ borderTop: '1px solid #f3f4f6' }}>
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs font-bold" style={{ color: '#9ca3af' }}>RANGE</span>
-              <div className="flex rounded-md overflow-hidden" style={{ border: '1px solid #e5e7eb' }}>
-                {GRANULARITIES.map(g => (
-                  <button
-                    key={g.value}
-                    onClick={() => setGranularity(g.value)}
-                    className="px-3 py-1 text-sm font-semibold transition-colors"
-                    style={{
-                      background: granularity === g.value ? '#166534' : '#ffffff',
-                      color:      granularity === g.value ? '#ffffff'  : '#374151',
-                    }}
-                  >
-                    {g.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="flex-1" />
+          {tab === 'analytics' && (
             <button
               onClick={() => downloadCsv(buckets, topProducts, granularity, isAdmin)}
               disabled={loading}
-              className="px-3 py-1.5 rounded-md text-sm font-semibold disabled:opacity-40"
-              style={{ border: '1px solid #e5e7eb', color: '#374151' }}>
-              ↓ Export CSV
+              className="w-8 h-8 flex items-center justify-center rounded-md text-base font-bold disabled:opacity-40"
+              style={{ border: '1px solid #e5e7eb', color: '#374151' }}
+              title="Export CSV">
+              ↓
             </button>
+          )}
+        </div>
+        {/* Granularity row — analytics tab only */}
+        {tab === 'analytics' && (
+          <div className="px-4 pb-2.5" style={{ borderTop: '1px solid #f3f4f6' }}>
+            <div className="flex rounded-md overflow-hidden" style={{ border: '1px solid #e5e7eb' }}>
+              {([
+                { value: 'daily',   label: '30 days'  },
+                { value: 'weekly',  label: '12 weeks' },
+                { value: 'monthly', label: '12 months' },
+              ] as { value: Granularity; label: string }[]).map(g => (
+                <button
+                  key={g.value}
+                  onClick={() => setGranularity(g.value)}
+                  className="flex-1 py-1 text-sm font-semibold transition-colors"
+                  style={{
+                    background: granularity === g.value ? '#166534' : '#ffffff',
+                    color:      granularity === g.value ? '#ffffff'  : '#374151',
+                  }}
+                >
+                  {g.label}
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>
