@@ -274,7 +274,7 @@ export default function OrdersPanel() {
       <div className="sticky top-0 z-10 bg-white" style={{ borderBottom: '1px solid #e5e7eb' }}>
         {/* Filter rows */}
         <div className="px-4 pt-2.5 pb-2 flex flex-col gap-2">
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
             <select
               value={period}
               onChange={e => { setPeriod(e.target.value as Period); setExpanded(null) }}
@@ -317,12 +317,11 @@ export default function OrdersPanel() {
               <option value="takeaway">Takeaway</option>
               <option value="delivery">Delivery</option>
             </select>
-            <div className="flex-1" />
             {!loading && visible.length > 0 && (
               <button
                 onClick={handleExport}
                 disabled={exporting}
-                className="w-8 h-8 flex items-center justify-center rounded-md text-base font-bold transition-opacity disabled:opacity-50 shrink-0"
+                className="ml-auto w-8 h-8 flex items-center justify-center rounded-md text-base font-bold transition-opacity disabled:opacity-50 shrink-0"
                 style={{ border: '1.5px solid #16a34a', color: '#15803d' }}
                 title="Export CSV"
               >
