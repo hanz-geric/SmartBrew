@@ -44,83 +44,88 @@ export default function AppLayout({ children }: Props) {
 
   return (
     <div className="flex h-screen overflow-hidden">
+
+      {/* ── Reopen tab (visible only when collapsed) ── */}
+      {collapsed && (
+        <button
+          onClick={() => setCollapsed(false)}
+          className="fixed left-0 top-4 z-50 flex items-center justify-center w-7 h-9 rounded-r-lg text-sm font-bold text-white shadow-md transition-colors hover:opacity-90"
+          style={{ background: '#166534' }}
+          title="Open sidebar"
+        >
+          ›
+        </button>
+      )}
+
       {/* ── Sidebar ── */}
       <aside
-        className="flex flex-col shrink-0 overflow-hidden transition-all duration-200"
+        className="flex flex-col shrink-0 overflow-hidden"
         style={{
-          width:      collapsed ? 56 : 220,
+          width:      collapsed ? 0 : 220,
+          transition: 'width 200ms ease',
           background: '#166534',
         }}
       >
-        {/* Brand + toggle button */}
+        {/* Brand + collapse button */}
         <div
-          className="flex items-center gap-2 px-2 py-4"
-          style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}
+          className="flex items-center gap-2 px-3 py-4 shrink-0"
+          style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', minWidth: 220 }}
         >
-          {!collapsed && (
-            <div className="flex-1 min-w-0 pl-1">
-              <span className="text-white font-bold text-sm block truncate">SmartBrew</span>
-              <span
-                className="text-xs font-medium uppercase tracking-widest block truncate"
-                style={{ color: '#bbf7d0', letterSpacing: '0.08em' }}
-              >
-                {user?.role}
-              </span>
-            </div>
-          )}
+          <div className="flex-1 min-w-0">
+            <span className="text-white font-bold text-sm block truncate">SmartBrew</span>
+            <span
+              className="text-xs font-medium uppercase tracking-widest block truncate"
+              style={{ color: '#bbf7d0', letterSpacing: '0.08em' }}
+            >
+              {user?.role}
+            </span>
+          </div>
           <button
-            onClick={() => setCollapsed(c => !c)}
-            className="shrink-0 w-8 h-8 flex items-center justify-center rounded-md transition-colors"
+            onClick={() => setCollapsed(true)}
+            className="shrink-0 w-8 h-8 flex items-center justify-center rounded-md font-bold text-sm transition-colors"
             style={{ color: '#bbf7d0' }}
             onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.1)')}
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title="Collapse sidebar"
           >
-            <span className="text-base">{collapsed ? '☰' : '✕'}</span>
+            ‹‹
           </button>
         </div>
 
         {/* Nav items */}
-        <nav className="flex-1 overflow-y-auto py-2">
+        <nav className="flex-1 overflow-y-auto py-2" style={{ minWidth: 220 }}>
           {visibleItems.map((item) => (
             <NavLink
               key={item.path}
               to={item.path}
               className={({ isActive }) =>
                 [
-                  'flex items-center gap-3 mx-1.5 my-0.5 rounded-lg text-sm font-medium transition-colors',
-                  collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5',
+                  'flex items-center gap-3 mx-1.5 my-0.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
                   isActive
                     ? 'bg-white/15 text-white'
                     : 'text-green-200 hover:bg-white/10 hover:text-white',
                 ].join(' ')
               }
-              title={collapsed ? item.label : undefined}
             >
               <span className="text-base shrink-0">{item.icon}</span>
-              {!collapsed && <span className="truncate">{item.label}</span>}
+              <span className="truncate">{item.label}</span>
             </NavLink>
           ))}
         </nav>
 
         {/* Footer */}
         <div
-          className="px-2 py-4 flex flex-col gap-1"
-          style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }}
+          className="px-3 py-4 flex flex-col gap-1 shrink-0"
+          style={{ borderTop: '1px solid rgba(255,255,255,0.1)', minWidth: 220 }}
         >
-          {!collapsed && (
-            <>
-              <span className="text-white text-xs font-semibold truncate px-1">{user?.full_name}</span>
-              <span className="text-xs truncate px-1" style={{ color: '#bbf7d0' }}>@{user?.username}</span>
-            </>
-          )}
+          <span className="text-white text-xs font-semibold truncate">{user?.full_name}</span>
+          <span className="text-xs truncate" style={{ color: '#bbf7d0' }}>@{user?.username}</span>
           <button
             onClick={handleLogout}
-            className="mt-1 w-full py-1.5 rounded-md text-xs font-medium text-white transition-colors hover:bg-white/20"
+            className="mt-2 w-full py-1.5 rounded-md text-xs font-medium text-white transition-colors hover:bg-white/20"
             style={{ background: 'rgba(255,255,255,0.1)' }}
-            title={collapsed ? 'Log out' : undefined}
           >
-            {collapsed ? '⏻' : 'Log out'}
+            Log out
           </button>
         </div>
       </aside>
@@ -129,6 +134,7 @@ export default function AppLayout({ children }: Props) {
       <main className="flex-1 overflow-y-auto bg-[#f9fafb]">
         {children}
       </main>
+
     </div>
   )
 }
