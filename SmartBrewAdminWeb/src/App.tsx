@@ -10,6 +10,8 @@ import Modifiers from '@/screens/Modifiers'
 import Stock from '@/screens/Stock'
 import Users from '@/screens/Users'
 import SettingsPage from '@/screens/Settings'
+import VoidLog from '@/screens/VoidLog'
+import Reports from '@/screens/Reports'
 
 function Protected({ children }: { children: React.ReactNode }) {
   return <ProtectedRoute>{children}</ProtectedRoute>
@@ -30,6 +32,8 @@ export default function App() {
           <Route path="/stock"      element={<Protected><Stock /></Protected>} />
           <Route path="/users"      element={<Protected><Users /></Protected>} />
           <Route path="/settings"   element={<Protected><SettingsPage /></Protected>} />
+          <Route path="/voids"      element={<Protected><VoidLog /></Protected>} />
+          <Route path="/reports"    element={<Protected><Reports /></Protected>} />
           <Route path="*"           element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </AuthProvider>

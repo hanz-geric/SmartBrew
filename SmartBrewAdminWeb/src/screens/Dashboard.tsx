@@ -6,6 +6,12 @@ import { ordersCol, stockCol } from '@/firebase/collections'
 import AppLayout from '@/components/AppLayout'
 import type { Order } from '@/types'
 
+interface StockAlertItem {
+  name:     string
+  quantity: number
+  isOut:    boolean
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Stats {
@@ -74,27 +80,46 @@ function StatCard({ label, value, accent }: { label: string; value: string | num
   )
 }
 
-function StockAlertStrip({ low, out }: { low: number; out: number }) {
+function StockAlertStrip({ items }: { items: StockAlertItem[] }) {
   const navigate = useNavigate()
-  if (low === 0 && out === 0) return null
+  if (items.length === 0) return null
+  const outItems = items.filter(i => i.isOut)
+  const lowItems = items.filter(i => !i.isOut)
   return (
     <div
-      className="mt-4 rounded-lg px-4 py-3 flex items-center gap-3 flex-wrap cursor-pointer"
+      className="mt-4 rounded-lg px-4 py-3 cursor-pointer"
       style={{ background: '#fef2f2', border: '1px solid rgba(220,38,38,0.2)' }}
       onClick={() => navigate('/stock')}
     >
-      <span className="text-sm font-semibold" style={{ color: '#dc2626' }}>⚠ Stock Alerts</span>
-      {out > 0 && (
-        <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: '#dc2626', color: '#fff' }}>
-          {out} out of stock
-        </span>
-      )}
-      {low > 0 && (
-        <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: '#f97316', color: '#fff' }}>
-          {low} low stock
-        </span>
-      )}
-      <span className="ml-auto text-xs font-semibold" style={{ color: '#dc2626' }}>View Stock →</span>
+      <div className="flex items-center gap-3 mb-2">
+        <span className="text-sm font-semibold" style={{ color: '#dc2626' }}>⚠ Stock Alerts</span>
+        {outItems.length > 0 && (
+          <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: '#dc2626', color: '#fff' }}>
+            {outItems.length} out of stock
+          </span>
+        )}
+        {lowItems.length > 0 && (
+          <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: '#f97316', color: '#fff' }}>
+            {lowItems.length} low stock
+          </span>
+        )}
+        <span className="ml-auto text-xs font-semibold" style={{ color: '#dc2626' }}>View Stock →</span>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {items.map(item => (
+          <span
+            key={item.name}
+            className="text-xs font-medium px-2 py-0.5 rounded-md"
+            style={{
+              background: item.isOut ? '#fee2e2' : '#ffedd5',
+              color:      item.isOut ? '#b91c1c' : '#c2410c',
+              border:     `1px solid ${item.isOut ? 'rgba(185,28,28,0.2)' : 'rgba(194,65,12,0.2)'}`,
+            }}
+          >
+            {item.name} — {item.isOut ? 'out' : `${item.quantity} left`}
+          </span>
+        ))}
+      </div>
     </div>
   )
 }
@@ -182,7 +207,7 @@ export default function Dashboard() {
   const [stats, setStats] = useState<Stats>({ ordersToday: 0, revenueToday: 0, openSessions: 0, closedToday: 0 })
   const [buckets,  setBuckets]  = useState<DayBucket[]>([])
   const [products, setProducts] = useState<TopProduct[]>([])
-  const [stockAlerts, setStockAlerts] = useState({ low: 0, out: 0 })
+  const [stockAlerts, setStockAlerts] = useState<StockAlertItem[]>([])
 
   // Real-time stat cards
   useEffect(() => {
@@ -207,29 +232,34 @@ export default function Dashboard() {
     return () => { unsubOrders(); unsubOpen(); unsubClosed() }
   }, [])
 
-  // One-time fetches for charts + stock alerts
+  // One-time fetch for charts
   useEffect(() => {
     const week = weekStart()
-    Promise.all([
-      getDocs(query(ordersCol(), where('created_at', '>=', week))),
-      getDocs(stockCol()),
-    ]).then(([ordersSnap, stockSnap]) => {
+    getDocs(query(ordersCol(), where('created_at', '>=', week))).then(ordersSnap => {
       const orders = ordersSnap.docs
         .map(d => ({ id: d.id, ...(d.data() as Omit<Order, 'id'>) }))
         .filter(o => o.status === 'completed')
-
       setBuckets(buildDayBuckets(orders))
       setProducts(buildTopProducts(orders))
+    })
+  }, [])
 
-      let low = 0, out = 0
-      stockSnap.forEach(d => {
+  // Real-time stock alerts
+  useEffect(() => {
+    const unsub = onSnapshot(stockCol(), snap => {
+      const alerts: StockAlertItem[] = []
+      snap.forEach(d => {
         const item = d.data()
         if (!item.is_active) return
-        if (item.quantity_on_hand <= 0) out++
-        else if (item.quantity_on_hand <= item.reorder_level) low++
+        if (item.quantity_on_hand <= 0)
+          alerts.push({ name: item.name, quantity: 0, isOut: true })
+        else if (item.quantity_on_hand <= item.reorder_level)
+          alerts.push({ name: item.name, quantity: item.quantity_on_hand, isOut: false })
       })
-      setStockAlerts({ low, out })
+      alerts.sort((a, b) => Number(b.isOut) - Number(a.isOut))
+      setStockAlerts(alerts)
     })
+    return unsub
   }, [])
 
   return (
@@ -244,7 +274,7 @@ export default function Dashboard() {
           <StatCard label="Sessions closed today" value={stats.closedToday}                                accent="#6b7280" />
         </div>
 
-        <StockAlertStrip low={stockAlerts.low} out={stockAlerts.out} />
+        <StockAlertStrip items={stockAlerts} />
 
         <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
           {buckets.length > 0
