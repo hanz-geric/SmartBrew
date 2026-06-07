@@ -3,7 +3,7 @@ import { query, where, getDocs } from 'firebase/firestore'
 import { ordersCol } from '@/firebase/collections'
 import { useAuth } from '@/context/AuthContext'
 import AppLayout from '@/components/AppLayout'
-import type { Order, PaymentMethod } from '@/types'
+import type { Order } from '@/types'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
