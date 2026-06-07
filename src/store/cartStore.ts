@@ -21,6 +21,7 @@ interface CartState {
     stockItemId?:  string | null,
     recipeLines?:  RecipeLine[],
     needsKitchen?: boolean,
+    description?:  string,
   ) => void;
   updateQuantity: (cartKey: string, quantity: number) => void;
   updateNote: (cartKey: string, note: string) => void;
@@ -42,7 +43,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   items: {},
   total: 0,
 
-  addItem: (productId, name, basePrice, cost, modifiers, notes = '', trackingMode, stockItemId, recipeLines, needsKitchen) => {
+  addItem: (productId, name, basePrice, cost, modifiers, notes = '', trackingMode, stockItemId, recipeLines, needsKitchen, description) => {
     const modifierIds = modifiers.map((m) => m.modifier_id);
     const cartKey = buildCartKey(productId, modifierIds);
     const modifierTotal = modifiers.reduce((s, m) => s + m.price_delta, 0);
@@ -58,6 +59,7 @@ export const useCartStore = create<CartState>((set, get) => ({
               cart_key:       cartKey,
               product_id:     productId,
               name,
+              description,
               base_price:     basePrice,
               unit_cost:      cost,
               modifier_total: modifierTotal,

@@ -805,14 +805,14 @@ export default function POSScreen({ route, navigation }: Props) {
     if (product.modifier_groups.length > 0 && hasActiveModifiers) {
       setModProduct(product);
     } else {
-      addItem(product.id, product.name, product.price, product.cost, [], '', product.tracking_mode, product.stock_item_id, product.recipe_lines, product.needs_kitchen);
+      addItem(product.id, product.name, product.price, product.cost, [], '', product.tracking_mode, product.stock_item_id, product.recipe_lines, product.needs_kitchen, product.description);
     }
   }, [addItem]);
 
   function handleModifierAdd(mods: SelectedModifier[], qty: number) {
     if (!modProduct) return;
     for (let i = 0; i < qty; i++) {
-      addItem(modProduct.id, modProduct.name, modProduct.price, modProduct.cost, mods, '', modProduct.tracking_mode, modProduct.stock_item_id, modProduct.recipe_lines, modProduct.needs_kitchen);
+      addItem(modProduct.id, modProduct.name, modProduct.price, modProduct.cost, mods, '', modProduct.tracking_mode, modProduct.stock_item_id, modProduct.recipe_lines, modProduct.needs_kitchen, modProduct.description);
     }
     setModProduct(null);
   }

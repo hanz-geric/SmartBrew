@@ -70,6 +70,7 @@ export interface RecipeLine {
 export interface Product {
   id:              string;
   name:            string;
+  description?:    string;
   price:           number;
   cost:            number;
   category_id:     string;
@@ -104,6 +105,7 @@ export interface CartItem {
   cart_key:        string;
   product_id:      string;
   name:            string;
+  description?:    string;
   base_price:      number;
   unit_cost:       number;
   modifier_total:  number;
@@ -165,6 +167,7 @@ export interface Order {
 export interface OrderItem {
   product_id:     string;
   product_name:   string;
+  description?:   string;
   unit_price:     number;
   unit_cost:      number;
   quantity:       number;

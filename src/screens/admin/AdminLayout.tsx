@@ -16,7 +16,7 @@ import {
 
 type AdminNav  = NativeStackNavigationProp<AdminStackParamList>;
 type Screen    = keyof AdminStackParamList;
-type NavScreen = 'Dashboard' | 'Orders' | 'Sessions' | 'Products' | 'Modifiers' | 'Stock' | 'Users' | 'Settings';
+type NavScreen = 'Dashboard' | 'Reports' | 'Products' | 'Stock' | 'Users' | 'Settings';
 
 interface Props {
   active:   Screen;
@@ -25,11 +25,9 @@ interface Props {
 
 const NAV_ITEMS: { screen: NavScreen; label: string; icon: string; adminOnly?: boolean; managerOnly?: boolean }[] = [
   { screen: 'Dashboard', label: 'Dashboard',  icon: '📊' },
-  { screen: 'Orders',    label: 'Orders',     icon: '🧾' },
-  { screen: 'Sessions',  label: 'Sessions',   icon: '💰' },
+  { screen: 'Reports',   label: 'Reports',    icon: '📈' },
   { screen: 'Products',  label: 'Menu',       icon: '🍽️', adminOnly: true },
   { screen: 'Products',  label: 'Categories', icon: '🏷️', managerOnly: true },
-  { screen: 'Modifiers', label: 'Modifiers',  icon: '🎛️', adminOnly: true },
   { screen: 'Stock',     label: 'Stock',      icon: '📦' },
   { screen: 'Users',     label: 'Users',      icon: '👥', adminOnly: true },
   { screen: 'Settings',  label: 'Settings',   icon: '⚙️', adminOnly: true },

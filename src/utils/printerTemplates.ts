@@ -80,6 +80,7 @@ export function buildReceipt(
   // Items
   for (const item of (order.items ?? [])) {
     doc.bold(true).line(item.product_name).bold(false);
+    if (item.description) doc.line(`  ${item.description}`);
     if (item.modifiers?.length) {
       doc.line('  ' + item.modifiers.map((m) => m.modifier_name).join(', '));
     }
@@ -145,6 +146,7 @@ export function buildKitchenTicket(
     doc.bold(true).size(1, 2)
       .line(`${item.quantity}x ${item.product_name}`)
       .size(1, 1).bold(false);
+    if (item.description) doc.line(`  ${item.description}`);
     if (item.modifiers?.length) {
       doc.line('  > ' + item.modifiers.map((m) => m.modifier_name).join(', '));
     }

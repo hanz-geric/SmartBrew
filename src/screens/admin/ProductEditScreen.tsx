@@ -38,6 +38,7 @@ export default function ProductEditScreen() {
 
   // Form state
   const [name,                setName]                = useState('');
+  const [description,         setDescription]         = useState('');
   const [price,               setPrice]               = useState('');
   const [cost,                setCost]                = useState('');
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
@@ -82,6 +83,7 @@ export default function ProductEditScreen() {
         const prod  = prods.find((p) => p.id === productId);
         if (!prod) { setError('Product not found.'); return; }
         setName(prod.name);
+        setDescription(prod.description ?? '');
         setPrice(String(prod.price));
         setCost(String(prod.cost));
         setSelectedCategoryIds(prod.category_ids ?? [prod.category_id]);
@@ -162,6 +164,7 @@ export default function ProductEditScreen() {
       const builtRecipe = trackingMode === 'recipe' ? recipeLines : [];
       const baseData = {
         name:            trimmed,
+        description:     description.trim() || undefined,
         price:           priceNum,
         cost:            costNum,
         category_id:     primaryCatId,
@@ -297,6 +300,17 @@ export default function ProductEditScreen() {
                 onChangeText={setName}
                 placeholder="e.g. Caramel Latte"
                 placeholderTextColor={Colors.gray400}
+              />
+            </Field>
+
+            <Field label="Description" hint="Optional — printed on receipt and kitchen ticket (e.g. bundle contents)">
+              <TextInput
+                style={[s.input, { minHeight: 72, textAlignVertical: 'top' }]}
+                value={description}
+                onChangeText={setDescription}
+                placeholder="e.g. Includes: Pancakes, Coffee, Orange Juice"
+                placeholderTextColor={Colors.gray400}
+                multiline
               />
             </Field>
 

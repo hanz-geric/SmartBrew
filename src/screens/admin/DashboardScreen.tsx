@@ -3,15 +3,17 @@ import {
   ActivityIndicator, ScrollView,
   StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
+import { onSnapshot, query, where } from 'firebase/firestore';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useShallow } from 'zustand/react/shallow';
 import AdminLayout from './AdminLayout';
 import {
-  getOrdersInRange, getLifetimeStats, getProductCategoryCount, listStockItems, LifetimeStats,
+  getOrdersInRange, getLifetimeStats, getProductCategoryCount, LifetimeStats,
 } from '../../firebase/firestoreService';
+import { stockCol } from '../../firebase/collections';
 import { useAuthStore } from '../../store/authStore';
-import { Order, PaymentMethod } from '../../types';
+import { Order, PaymentMethod, StockItem, StockStatus } from '../../types';
 import {
   Colors, FontSize, FontWeight, Radius, Shadow, Spacing, rs,
 } from '../../constants/theme';
@@ -68,11 +70,46 @@ export default function DashboardScreen() {
   const [weekOrders,    setWeekOrders]    = useState<Order[]>([]);
   const [lifetime,      setLifetime]      = useState<LifetimeStats | null>(null);
   const [prodCatCount,  setProdCatCount]  = useState<{ product_count: number; category_count: number } | null>(null);
-  const [stockAlerts,   setStockAlerts]   = useState({ low: 0, out: 0 });
+  const [alertItems,    setAlertItems]    = useState<StockItem[]>([]);
   const [loading,       setLoading]       = useState(true);
   const [error,         setError]         = useState('');
 
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    const unsub = onSnapshot(
+      query(stockCol(), where('is_active', '==', true)),
+      (snap) => {
+        const items: StockItem[] = snap.docs
+          .map((d) => {
+            const data    = d.data();
+            const qty     = (data['quantity_on_hand'] as number) ?? 0;
+            const reorder = (data['reorder_level']    as number) ?? 0;
+            const status: StockStatus =
+              qty <= 0 ? 'out' : (reorder > 0 && qty <= reorder ? 'low' : 'ok');
+            return {
+              id:               d.id,
+              name:             (data['name'] as string) ?? '',
+              unit:             (data['unit'] as string) ?? '',
+              quantity_on_hand: qty,
+              reorder_level:    reorder,
+              cost_per_unit:    (data['cost_per_unit'] as number) ?? 0,
+              is_active:        true,
+              stock_status:     status,
+            };
+          })
+          .filter((item) => item.stock_status !== 'ok')
+          .sort((a, b) => {
+            if (a.stock_status === 'out' && b.stock_status !== 'out') return -1;
+            if (a.stock_status !== 'out' && b.stock_status === 'out') return  1;
+            return a.name.localeCompare(b.name);
+          });
+        setAlertItems(items);
+      },
+      () => {},
+    );
+    return unsub;
+  }, []);
 
   async function load() {
     setLoading(true);
@@ -92,18 +129,9 @@ export default function DashboardScreen() {
       setTodayOrders(tOrders);
       setWeekOrders(wOrders);
 
-      // Optional: lifetime stats, counts, stock alerts. Failures are silent.
+      // Optional: lifetime stats, counts. Failures are silent.
       getLifetimeStats().then(setLifetime).catch(() => {});
       getProductCategoryCount().then(setProdCatCount).catch(() => {});
-      listStockItems().then(items => {
-        let low = 0, out = 0;
-        for (const item of items) {
-          if (!item.is_active) continue;
-          if (item.stock_status === 'out') out++;
-          else if (item.stock_status === 'low') low++;
-        }
-        setStockAlerts({ low, out });
-      }).catch(() => {});
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(`Failed to load orders. ${msg}`);
@@ -194,8 +222,7 @@ export default function DashboardScreen() {
           <>
             {/* Stock alert banner */}
             <StockAlertBanner
-              low={stockAlerts.low}
-              out={stockAlerts.out}
+              items={alertItems}
               onPress={() => navigation.navigate('Stock')}
             />
 
@@ -393,22 +420,19 @@ export default function DashboardScreen() {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function StockAlertBanner({ low, out, onPress }: { low: number; out: number; onPress: () => void }) {
-  if (low === 0 && out === 0) return null;
+function StockAlertBanner({ items, onPress }: { items: StockItem[]; onPress: () => void }) {
+  if (items.length === 0) return null;
   return (
     <TouchableOpacity style={sb.container} onPress={onPress} activeOpacity={0.8}>
       <Text style={sb.title}>⚠ Stock Alerts</Text>
       <View style={sb.badges}>
-        {out > 0 && (
-          <View style={sb.badgeDanger}>
-            <Text style={sb.badgeDangerText}>{out} out of stock</Text>
+        {items.map((item) => (
+          <View key={item.id} style={item.stock_status === 'out' ? sb.badgeDanger : sb.badgeWarning}>
+            <Text style={item.stock_status === 'out' ? sb.badgeDangerText : sb.badgeWarningText}>
+              {item.name} ({item.quantity_on_hand} {item.unit})
+            </Text>
           </View>
-        )}
-        {low > 0 && (
-          <View style={sb.badgeWarning}>
-            <Text style={sb.badgeWarningText}>{low} low stock</Text>
-          </View>
-        )}
+        ))}
       </View>
       <Text style={sb.link}>View Stock →</Text>
     </TouchableOpacity>

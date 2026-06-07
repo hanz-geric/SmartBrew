@@ -1,5 +1,6 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import DashboardScreen         from '../screens/admin/DashboardScreen';
+import ReportsScreen           from '../screens/admin/ReportsScreen';
 import OrderHistoryScreen      from '../screens/admin/OrderHistoryScreen';
 import SessionsScreen          from '../screens/admin/SessionsScreen';
 import SessionDetailScreen     from '../screens/admin/SessionDetailScreen';
@@ -17,6 +18,7 @@ import { CashSession } from '../types';
 
 export type AdminStackParamList = {
   Dashboard:         undefined;
+  Reports:           undefined;
   Orders:            undefined;
   Sessions:          undefined;
   SessionDetail:     { session: CashSession };
@@ -38,6 +40,7 @@ export default function AdminStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false, animation: 'none' }}>
       <Stack.Screen name="Dashboard"         component={DashboardScreen} />
+      <Stack.Screen name="Reports"           component={ReportsScreen} />
       <Stack.Screen name="Orders"            component={OrderHistoryScreen} />
       <Stack.Screen name="Sessions"          component={SessionsScreen} />
       <Stack.Screen name="SessionDetail"     component={SessionDetailScreen} />

@@ -348,6 +348,7 @@ export async function createOrder(
   const items: OrderItem[] = payload.cart_snapshot.map((item: CartItem) => ({
     product_id:    item.product_id,
     product_name:  item.name,
+    description:   item.description,
     unit_price:    item.unit_price,
     unit_cost:     item.unit_cost,
     quantity:      item.quantity,

@@ -1,21 +1,21 @@
 ﻿import React, { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator, KeyboardAvoidingView, Modal, Platform, ScrollView, SectionList,
+  ActivityIndicator, FlatList, KeyboardAvoidingView, Modal, Platform, ScrollView, SectionList,
   StyleSheet, Switch, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AdminLayout from './AdminLayout';
 import { AdminStackParamList } from '../../navigation/AdminStack';
-import { getAllCategories, getAllProducts, upsertCategory } from '../../firebase/firestoreService';
+import { getAllCategories, getAllModifierGroups, getAllProducts, upsertCategory } from '../../firebase/firestoreService';
 import { useAuthStore } from '../../store/authStore';
-import { Category, Product } from '../../types';
+import { Category, ModifierGroup, Product } from '../../types';
 import {
   Colors, FontSize, FontWeight, Radius, Shadow, Spacing,
 } from '../../constants/theme';
 
 type Nav = NativeStackNavigationProp<AdminStackParamList>;
-type Tab = 'products' | 'categories';
+type Tab = 'products' | 'categories' | 'modifiers';
 
 export default function ProductsScreen() {
   const navigation = useNavigation<Nav>();
@@ -25,6 +25,7 @@ export default function ProductsScreen() {
   const [tab, setTab]             = useState<Tab>(isAdmin ? 'products' : 'categories');
   const [products,   setProducts]   = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [groups,     setGroups]     = useState<ModifierGroup[]>([]);
   const [loading,    setLoading]    = useState(true);
 
   // Category edit modal state
@@ -73,9 +74,12 @@ export default function ProductsScreen() {
   async function load() {
     setLoading(true);
     try {
-      const [prods, cats] = await Promise.all([getAllProducts(), getAllCategories()]);
+      const [prods, cats, mods] = await Promise.all([
+        getAllProducts(), getAllCategories(), getAllModifierGroups(),
+      ]);
       setProducts(prods);
       setCategories(cats);
+      setGroups(mods);
     } finally {
       setLoading(false);
     }
@@ -99,21 +103,23 @@ export default function ProductsScreen() {
             <TouchableOpacity
               style={s.addBtn}
               onPress={() =>
-                tab === 'products'
-                  ? navigation.navigate('ProductEdit', {})
-                  : openCatNew()
+                tab === 'products'  ? navigation.navigate('ProductEdit', {}) :
+                tab === 'modifiers' ? navigation.navigate('ModifierGroupEdit', {}) :
+                openCatNew()
               }
               activeOpacity={0.8}
             >
-              <Text style={s.addBtnText}>+ Add {tab === 'products' ? 'Product' : 'Category'}</Text>
+              <Text style={s.addBtnText}>
+                + Add {tab === 'products' ? 'Product' : tab === 'modifiers' ? 'Group' : 'Category'}
+              </Text>
             </TouchableOpacity>
           )}
         </View>
 
-        {/* Tabs — admin sees both; manager sees categories only */}
+        {/* Tabs — admin sees all three; manager sees categories only */}
         {isAdmin && (
           <View style={s.tabs}>
-            {(['products', 'categories'] as Tab[]).map((t) => (
+            {(['products', 'categories', 'modifiers'] as Tab[]).map((t) => (
               <TouchableOpacity
                 key={t}
                 style={[s.tab, tab === t && s.tabActive]}
@@ -121,7 +127,9 @@ export default function ProductsScreen() {
                 activeOpacity={0.7}
               >
                 <Text style={[s.tabText, tab === t && s.tabTextActive]}>
-                  {t === 'products' ? `Products (${products.length})` : `Categories (${categories.length})`}
+                  {t === 'products'   ? `Products (${products.length})` :
+                   t === 'categories' ? `Categories (${categories.length})` :
+                                       `Modifiers (${groups.length})`}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -164,7 +172,7 @@ export default function ProductsScreen() {
               </View>
             }
           />
-        ) : (
+        ) : tab === 'categories' ? (
           <ScrollView style={s.scroll} contentContainerStyle={s.scrollContent}>
             {categories.map((cat) => (
               <CategoryRow
@@ -180,6 +188,29 @@ export default function ProductsScreen() {
               </View>
             )}
           </ScrollView>
+        ) : (
+          <>
+            <Text style={s.modSubtitle}>
+              Modifier groups define the options customers pick from (e.g. Size: Small, Medium, Large). Assign them to products in the Products tab.
+            </Text>
+            <FlatList
+              data={groups}
+              keyExtractor={(g) => g.id}
+              style={s.scroll}
+              contentContainerStyle={s.scrollContent}
+              renderItem={({ item: g }) => (
+                <GroupCard
+                  group={g}
+                  onPress={() => navigation.navigate('ModifierGroupEdit', { groupId: g.id })}
+                />
+              )}
+              ListEmptyComponent={
+                <View style={s.empty}>
+                  <Text style={s.emptyText}>No modifier groups yet. Tap "+ Add Group" to create one.</Text>
+                </View>
+              }
+            />
+          </>
         )}
       </View>
 
@@ -312,6 +343,55 @@ function CategoryRow({
   );
 }
 
+function GroupCard({ group, onPress }: { group: ModifierGroup; onPress: () => void }) {
+  const active   = group.modifiers.filter((m) => m.is_active !== false);
+  const inactive = group.modifiers.filter((m) => m.is_active === false);
+
+  return (
+    <TouchableOpacity style={gc.card} onPress={onPress} activeOpacity={0.7}>
+      <View style={gc.header}>
+        <View style={gc.titleRow}>
+          <Text style={gc.name}>{group.name}</Text>
+          {group.is_active === false && (
+            <View style={[gc.badge, { backgroundColor: Colors.gray200, borderColor: Colors.gray400 }]}>
+              <Text style={[gc.badgeText, { color: Colors.gray500 }]}>Inactive</Text>
+            </View>
+          )}
+          {group.is_required && (
+            <View style={[gc.badge, { backgroundColor: Colors.green50, borderColor: Colors.green600 }]}>
+              <Text style={[gc.badgeText, { color: Colors.green700 }]}>Required</Text>
+            </View>
+          )}
+        </View>
+        <View style={gc.meta}>
+          <Text style={gc.metaText}>
+            Max select: {group.max_select} · {group.modifiers.length} option{group.modifiers.length !== 1 ? 's' : ''}
+            {inactive.length > 0 ? ` (${inactive.length} inactive)` : ''}
+          </Text>
+        </View>
+      </View>
+
+      <View style={gc.divider} />
+
+      <View style={gc.modifiers}>
+        {active.map((m) => (
+          <View key={m.id} style={gc.modRow}>
+            <Text style={gc.modName}>{m.name}</Text>
+            <Text style={gc.modPrice}>
+              {m.price_delta === 0 ? 'free' : `+₱${m.price_delta.toFixed(2)}`}
+            </Text>
+          </View>
+        ))}
+        {group.modifiers.length === 0 && (
+          <Text style={gc.noMods}>No modifiers — tap to add some.</Text>
+        )}
+      </View>
+
+      <Text style={gc.chevron}>›</Text>
+    </TouchableOpacity>
+  );
+}
+
 function Badge({ label, color }: { label: string; color: string }) {
   return (
     <View style={[bdg.root, { backgroundColor: color + '22', borderColor: color }]}>
@@ -388,8 +468,15 @@ const s = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  empty:     { paddingTop: Spacing.xxxl, alignItems: 'center' },
-  emptyText: { fontSize: FontSize.base, color: Colors.gray400 },
+  empty:       { paddingTop: Spacing.xxxl, alignItems: 'center' },
+  emptyText:   { fontSize: FontSize.base, color: Colors.gray400 },
+  modSubtitle: {
+    fontSize: FontSize.sm,
+    color: Colors.gray500,
+    paddingHorizontal: Spacing.xl,
+    paddingBottom: Spacing.md,
+    lineHeight: 18,
+  },
 });
 
 const pr = StyleSheet.create({
@@ -441,6 +528,47 @@ const bdg = StyleSheet.create({
     borderWidth: 1,
   },
   text: { fontSize: FontSize.xs, fontWeight: FontWeight.bold },
+});
+
+const gc = StyleSheet.create({
+  card: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: Spacing.lg,
+    gap: Spacing.sm,
+    ...Shadow.sm,
+  },
+  header:   { gap: Spacing.xs },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, flexWrap: 'wrap' },
+  name:     { fontSize: FontSize.lg, fontWeight: FontWeight.bold, color: Colors.gray900 },
+  badge: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
+    borderRadius: Radius.sm,
+    borderWidth: 1,
+  },
+  badgeText: { fontSize: FontSize.xs, fontWeight: FontWeight.bold },
+  meta:     {},
+  metaText: { fontSize: FontSize.xs, color: Colors.gray400 },
+  divider:  { height: 1, backgroundColor: Colors.border },
+  modifiers: { gap: 4 },
+  modRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  modName:  { fontSize: FontSize.sm, color: Colors.gray700, fontWeight: FontWeight.medium },
+  modPrice: { fontSize: FontSize.sm, color: Colors.gray400 },
+  noMods:   { fontSize: FontSize.sm, color: Colors.gray400, fontStyle: 'italic' },
+  chevron: {
+    position: 'absolute',
+    right: Spacing.lg,
+    top: Spacing.lg,
+    fontSize: 20,
+    color: Colors.gray400,
+  },
 });
 
 const cm = StyleSheet.create({
