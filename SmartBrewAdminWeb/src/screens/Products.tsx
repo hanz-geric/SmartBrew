@@ -1228,24 +1228,26 @@ export default function Products() {
       {/* ── Sticky header ── */}
       <div className="sticky top-0 z-10 bg-white" style={{ borderBottom: '1px solid #e5e7eb' }}>
         {/* Tabs row */}
-        <div className="flex items-center px-4 pt-3 pb-2 gap-1 min-w-0 overflow-x-auto">
-            {isAdmin
-              ? (['products', 'categories', 'modifiers'] as const).map(t => (
+        <div className="flex items-center px-4 pt-3 pb-2">
+          {isAdmin
+            ? (
+              <div className="flex rounded-md overflow-hidden shrink-0" style={{ border: '1px solid #e5e7eb' }}>
+                {(['products', 'categories', 'modifiers'] as const).map(t => (
                   <button key={t} onClick={() => setTab(t)}
-                    className="px-3 py-1.5 rounded-md text-sm whitespace-nowrap transition-colors shrink-0"
+                    className="px-3 py-1.5 text-sm font-semibold transition-colors whitespace-nowrap"
                     style={{
-                      border:     `1.5px solid ${tab === t ? '#166534' : '#e5e7eb'}`,
-                      background: tab === t ? '#f0fdf4' : 'transparent',
-                      color:      tab === t ? '#15803d' : '#6b7280',
-                      fontWeight: tab === t ? '700' : '500',
+                      background: tab === t ? '#166534' : '#ffffff',
+                      color:      tab === t ? '#ffffff'  : '#374151',
                     }}>
                     {t === 'products'    ? `Products (${products.length})`
                      : t === 'categories' ? `Categories (${categories.length})`
                      : `Modifiers (${modGroups.length})`}
                   </button>
-                ))
-              : <span className="text-base font-bold" style={{ color: '#111827' }}>Menu Management</span>
-            }
+                ))}
+              </div>
+            )
+            : <span className="text-base font-bold" style={{ color: '#111827' }}>Menu Management</span>
+          }
         </div>
 
         {/* Filter row — products tab only */}
