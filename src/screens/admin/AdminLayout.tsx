@@ -207,7 +207,7 @@ const s = StyleSheet.create({
     minWidth: SIDEBAR_W,
     maxWidth: SIDEBAR_W,
     zIndex: 50,
-    backgroundColor: 'rgba(22, 101, 52, 0.92)',
+    backgroundColor: Colors.green800,
   },
 
   // ── Brand ─────────────────────────────────────────────────────────────────
