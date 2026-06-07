@@ -28,6 +28,12 @@ interface PayBreakdown {
   count:   number
 }
 
+interface HourBucket {
+  hour:  number
+  label: string
+  count: number
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const GRANULARITIES: { value: Granularity; label: string }[] = [
@@ -130,24 +136,35 @@ function buildPayBreakdown(orders: Order[]): PayBreakdown[] {
     .sort((a, b) => b.revenue - a.revenue)
 }
 
+function buildPeakHours(orders: Order[]): HourBucket[] {
+  const counts = Array(24).fill(0)
+  for (const o of orders) counts[new Date(o.created_at).getHours()]++
+  return counts.map((count, hour) => {
+    const h = hour % 12 || 12
+    const ampm = hour < 12 ? 'am' : 'pm'
+    return { hour, label: `${h}${ampm}`, count }
+  })
+}
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function RevenueChart({ buckets, showProfit }: { buckets: Bucket[]; showProfit: boolean }) {
-  const max = Math.max(...buckets.map(b => b.revenue), 1)
-  const hasData = buckets.some(b => b.revenue > 0)
-  const showLabels = buckets.length <= 12
+function RevenueChart({ buckets, showProfit, granularity }: { buckets: Bucket[]; showProfit: boolean; granularity: Granularity }) {
+  const max         = Math.max(...buckets.map(b => b.revenue), 1)
+  const hasData     = buckets.some(b => b.revenue > 0)
+  const totalRev    = buckets.reduce((s, b) => s + b.revenue, 0)
+  const totalProfit = buckets.reduce((s, b) => s + b.profit,  0)
+  const totalCount  = buckets.reduce((s, b) => s + b.count,   0)
+  const avgOrder    = totalCount > 0 ? totalRev / totalCount : 0
+
+  // for daily (30 bars) only show a label every 5 days; weekly/monthly show all
+  const labelStep = granularity === 'daily' ? 5 : 1
 
   return (
     <div className="bg-white rounded-lg p-4 shadow-sm" style={{ border: '1px solid #e5e7eb' }}>
       <p className="text-sm font-semibold mb-4" style={{ color: '#374151' }}>Revenue</p>
-      <div className="flex items-end gap-1 h-36 overflow-x-auto">
+      <div className="flex items-end gap-1 h-36">
         {buckets.map((b, i) => (
-          <div key={i} className="flex-1 min-w-[6px] flex flex-col items-center gap-0">
-            {b.revenue > 0 && showLabels && (
-              <span className="text-center mb-1 leading-none" style={{ color: '#9ca3af', fontSize: '9px' }}>
-                ₱{b.revenue >= 1000 ? `${(b.revenue / 1000).toFixed(1)}k` : b.revenue.toFixed(0)}
-              </span>
-            )}
+          <div key={i} className="flex-1 min-w-[4px] flex flex-col items-center gap-0">
             <div className="w-full flex-1 flex items-end">
               <div
                 className="w-full rounded-t-sm transition-all"
@@ -160,52 +177,42 @@ function RevenueChart({ buckets, showProfit }: { buckets: Bucket[]; showProfit: 
           </div>
         ))}
       </div>
-      {showLabels && (
-        <div className="flex gap-1 mt-1.5">
-          {buckets.map((b, i) => (
-            <div key={i} className="flex-1 text-center">
-              <span className="text-center" style={{ color: '#9ca3af', fontSize: '9px' }}>{b.label}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="flex gap-1 mt-1.5">
+        {buckets.map((b, i) => (
+          <div key={i} className="flex-1 text-center">
+            <span style={{ color: '#9ca3af', fontSize: '9px' }}>
+              {i % labelStep === 0 || i === buckets.length - 1 ? b.label : ''}
+            </span>
+          </div>
+        ))}
+      </div>
       {!hasData && (
         <p className="text-xs text-center mt-2" style={{ color: '#9ca3af' }}>No data for this period</p>
       )}
-      {showProfit && hasData && (
-        <div className="mt-3 pt-3 flex items-center gap-6" style={{ borderTop: '1px solid #f3f4f6' }}>
+      {hasData && (
+        <div className="mt-3 pt-3 flex flex-wrap items-center gap-x-6 gap-y-2" style={{ borderTop: '1px solid #f3f4f6' }}>
           <div>
             <p className="text-xs" style={{ color: '#9ca3af' }}>Total Revenue</p>
             <p className="text-sm font-bold" style={{ color: '#15803d' }}>
-              ₱{buckets.reduce((s, b) => s + b.revenue, 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+              ₱{totalRev.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
             </p>
           </div>
-          <div>
-            <p className="text-xs" style={{ color: '#9ca3af' }}>Total Profit</p>
-            <p className="text-sm font-bold" style={{ color: '#2563eb' }}>
-              ₱{buckets.reduce((s, b) => s + b.profit, 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs" style={{ color: '#9ca3af' }}>Orders</p>
-            <p className="text-sm font-bold" style={{ color: '#374151' }}>
-              {buckets.reduce((s, b) => s + b.count, 0).toLocaleString()}
-            </p>
-          </div>
-        </div>
-      )}
-      {!showProfit && hasData && (
-        <div className="mt-3 pt-3 flex items-center gap-6" style={{ borderTop: '1px solid #f3f4f6' }}>
-          <div>
-            <p className="text-xs" style={{ color: '#9ca3af' }}>Total Revenue</p>
-            <p className="text-sm font-bold" style={{ color: '#15803d' }}>
-              ₱{buckets.reduce((s, b) => s + b.revenue, 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-            </p>
-          </div>
+          {showProfit && (
+            <div>
+              <p className="text-xs" style={{ color: '#9ca3af' }}>Total Profit</p>
+              <p className="text-sm font-bold" style={{ color: '#2563eb' }}>
+                ₱{totalProfit.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+              </p>
+            </div>
+          )}
           <div>
             <p className="text-xs" style={{ color: '#9ca3af' }}>Orders</p>
+            <p className="text-sm font-bold" style={{ color: '#374151' }}>{totalCount.toLocaleString()}</p>
+          </div>
+          <div>
+            <p className="text-xs" style={{ color: '#9ca3af' }}>Avg Order Value</p>
             <p className="text-sm font-bold" style={{ color: '#374151' }}>
-              {buckets.reduce((s, b) => s + b.count, 0).toLocaleString()}
+              ₱{avgOrder.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
             </p>
           </div>
         </div>
@@ -284,18 +291,59 @@ function PayBreakdownChart({ breakdown }: { breakdown: PayBreakdown[] }) {
   )
 }
 
+function PeakHoursChart({ hours }: { hours: HourBucket[] }) {
+  const max     = Math.max(...hours.map(h => h.count), 1)
+  const hasData = hours.some(h => h.count > 0)
+  // show label only at midnight, 6am, 12pm, 6pm
+  const showLabel = (h: number) => h % 6 === 0
+
+  return (
+    <div className="bg-white rounded-lg p-4 shadow-sm" style={{ border: '1px solid #e5e7eb' }}>
+      <p className="text-sm font-semibold mb-4" style={{ color: '#374151' }}>Peak Hours</p>
+      <div className="flex items-end gap-0.5 h-24">
+        {hours.map(h => (
+          <div key={h.hour} className="flex-1 flex flex-col items-center gap-0">
+            <div className="w-full flex-1 flex items-end">
+              <div
+                className="w-full rounded-t-sm transition-all"
+                style={{
+                  height:     h.count > 0 ? `${Math.max((h.count / max) * 100, 4)}%` : '2px',
+                  background: h.count > 0 ? '#15803d' : '#f3f4f6',
+                }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-0.5 mt-1.5">
+        {hours.map(h => (
+          <div key={h.hour} className="flex-1 text-center">
+            <span style={{ color: '#9ca3af', fontSize: '9px' }}>
+              {showLabel(h.hour) ? h.label : ''}
+            </span>
+          </div>
+        ))}
+      </div>
+      {!hasData && (
+        <p className="text-xs text-center mt-2" style={{ color: '#9ca3af' }}>No data for this period</p>
+      )}
+    </div>
+  )
+}
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function Reports() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
 
-  const [granularity, setGranularity] = useState<Granularity>('daily')
-  const [buckets,     setBuckets]     = useState<Bucket[]>([])
-  const [topProducts, setTopProducts] = useState<TopProduct[]>([])
+  const [granularity,  setGranularity]  = useState<Granularity>('daily')
+  const [buckets,      setBuckets]      = useState<Bucket[]>([])
+  const [topProducts,  setTopProducts]  = useState<TopProduct[]>([])
   const [payBreakdown, setPayBreakdown] = useState<PayBreakdown[]>([])
-  const [loading,     setLoading]     = useState(false)
-  const [error,       setError]       = useState('')
+  const [peakHours,    setPeakHours]    = useState<HourBucket[]>([])
+  const [loading,      setLoading]      = useState(false)
+  const [error,        setError]        = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -312,6 +360,7 @@ export default function Reports() {
         setBuckets(buildBuckets(orders, granularity))
         setTopProducts(buildTopProducts(orders))
         setPayBreakdown(buildPayBreakdown(orders))
+        setPeakHours(buildPeakHours(orders))
       } catch (e: unknown) {
         if (!cancelled) setError((e as Error).message)
       } finally {
@@ -368,11 +417,12 @@ export default function Reports() {
 
         {!loading && !error && (
           <div className="mt-2 flex flex-col gap-4">
-            <RevenueChart buckets={buckets} showProfit={isAdmin} />
+            <RevenueChart buckets={buckets} showProfit={isAdmin} granularity={granularity} />
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <TopProductsTable products={topProducts} />
               <PayBreakdownChart breakdown={payBreakdown} />
             </div>
+            <PeakHoursChart hours={peakHours} />
           </div>
         )}
       </div>
