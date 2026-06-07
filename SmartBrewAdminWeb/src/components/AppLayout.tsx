@@ -76,7 +76,7 @@ export default function AppLayout({ children }: Props) {
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
             title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
-            <span className="text-sm font-bold">{collapsed ? '›' : '‹'}</span>
+            <span className="text-base">{collapsed ? '☰' : '✕'}</span>
           </button>
         </div>
 
