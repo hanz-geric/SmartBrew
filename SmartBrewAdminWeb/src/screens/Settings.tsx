@@ -4,6 +4,64 @@ import { settingsDoc } from '@/firebase/collections'
 import AppLayout from '@/components/AppLayout'
 import type { Settings } from '@/types'
 
+// ─── Receipt preview ─────────────────────────────────────────────────────────
+
+const W = 32
+
+function center(s: string): string {
+  if (s.length >= W) return s.slice(0, W)
+  const pad = Math.floor((W - s.length) / 2)
+  return ' '.repeat(pad) + s
+}
+
+function ReceiptPreview({ name, address, phone, footer }: {
+  name: string; address: string; phone: string; footer: string
+}) {
+  const div = '─'.repeat(W)
+  const dbl = '═'.repeat(W)
+  const n   = name    || 'Your Business Name'
+  const f   = footer  || 'Thank you for your order!'
+  const today = new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
+
+  const lines = [
+    dbl,
+    center(n),
+    ...(address ? [center(address)] : []),
+    ...(phone   ? [center(phone)]   : []),
+    div,
+    `Order #0001              ${today}`,
+    `1x Caramel Latte         ₱150.00`,
+    div,
+    `              TOTAL:     ₱150.00`,
+    dbl,
+    center(f),
+    dbl,
+  ]
+
+  return (
+    <div>
+      <p className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: '#9ca3af' }}>
+        Receipt Preview
+      </p>
+      <div className="bg-white rounded-lg p-4" style={{ border: '1px solid #e5e7eb' }}>
+        <pre
+          className="overflow-x-auto rounded p-3 text-xs leading-relaxed"
+          style={{
+            fontFamily: '"Courier New", Courier, monospace',
+            background: '#fafaf8',
+            border:     '1px solid #e5e7eb',
+            color:      '#1f2937',
+            fontSize:   '11px',
+          }}>
+          {lines.join('\n')}
+        </pre>
+      </div>
+    </div>
+  )
+}
+
+// ─── Data helpers ─────────────────────────────────────────────────────────────
+
 async function loadSettings(): Promise<Settings> {
   const snap = await getDoc(settingsDoc())
   if (!snap.exists()) return {}
@@ -110,56 +168,71 @@ export default function SettingsPage() {
             <span className="text-sm" style={{ color: '#9ca3af' }}>Loading…</span>
           </div>
         ) : (
-          <div className="flex flex-col gap-6 max-w-xl mx-auto">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-4xl mx-auto items-start">
 
-            {/* Business Info */}
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: '#9ca3af' }}>
-                Business Info
-              </p>
-              <div className="bg-white rounded-lg p-5 flex flex-col gap-4"
-                style={{ border: '1px solid #e5e7eb' }}>
+            {/* ── Left: form ── */}
+            <div className="flex flex-col gap-6">
 
-                <div className="flex flex-col gap-1">
-                  <span className="text-sm font-semibold" style={{ color: '#374151' }}>Business Name</span>
-                  <input type="text" value={bizName} onChange={e => setBizName(e.target.value)}
-                    placeholder="SmartBrew Café"
-                    className={inputCls} style={inputStyle} />
-                </div>
+              {/* Business Info */}
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: '#9ca3af' }}>
+                  Business Info
+                </p>
+                <div className="bg-white rounded-lg p-5 flex flex-col gap-4"
+                  style={{ border: '1px solid #e5e7eb' }}>
 
-                <div className="flex flex-col gap-1">
-                  <span className="text-sm font-semibold" style={{ color: '#374151' }}>Address</span>
-                  <input type="text" value={bizAddress} onChange={e => setBizAddress(e.target.value)}
-                    placeholder="123 Main St, City"
-                    className={inputCls} style={inputStyle} />
-                </div>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-sm font-semibold" style={{ color: '#374151' }}>Business Name</span>
+                    <input type="text" value={bizName} onChange={e => setBizName(e.target.value)}
+                      placeholder="SmartBrew Café"
+                      className={inputCls} style={inputStyle} />
+                  </div>
 
-                <div className="flex flex-col gap-1">
-                  <span className="text-sm font-semibold" style={{ color: '#374151' }}>Phone</span>
-                  <input type="tel" value={bizPhone} onChange={e => setBizPhone(e.target.value)}
-                    placeholder="+63 900 000 0000"
-                    className={inputCls} style={inputStyle} />
+                  <div className="flex flex-col gap-1">
+                    <span className="text-sm font-semibold" style={{ color: '#374151' }}>Address</span>
+                    <input type="text" value={bizAddress} onChange={e => setBizAddress(e.target.value)}
+                      placeholder="123 Main St, City"
+                      className={inputCls} style={inputStyle} />
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <span className="text-sm font-semibold" style={{ color: '#374151' }}>Phone</span>
+                    <input type="tel" value={bizPhone} onChange={e => setBizPhone(e.target.value)}
+                      placeholder="+63 900 000 0000"
+                      className={inputCls} style={inputStyle} />
+                  </div>
                 </div>
               </div>
+
+              {/* Receipt */}
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: '#9ca3af' }}>
+                  Receipt
+                </p>
+                <div className="bg-white rounded-lg p-5"
+                  style={{ border: '1px solid #e5e7eb' }}>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-sm font-semibold" style={{ color: '#374151' }}>Footer Text</span>
+                    <p className="text-xs" style={{ color: '#9ca3af' }}>Printed at the bottom of every receipt.</p>
+                    <textarea value={footer} onChange={e => setFooter(e.target.value)}
+                      placeholder="Thank you for visiting!"
+                      rows={3}
+                      className="w-full rounded-md px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-green-600 resize-none"
+                      style={inputStyle} />
+                  </div>
+                </div>
+              </div>
+
             </div>
 
-            {/* Receipt */}
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: '#9ca3af' }}>
-                Receipt
-              </p>
-              <div className="bg-white rounded-lg p-5"
-                style={{ border: '1px solid #e5e7eb' }}>
-                <div className="flex flex-col gap-1">
-                  <span className="text-sm font-semibold" style={{ color: '#374151' }}>Footer Text</span>
-                  <p className="text-xs" style={{ color: '#9ca3af' }}>Printed at the bottom of every receipt.</p>
-                  <textarea value={footer} onChange={e => setFooter(e.target.value)}
-                    placeholder="Thank you for visiting!"
-                    rows={3}
-                    className="w-full rounded-md px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-green-600 resize-none"
-                    style={inputStyle} />
-                </div>
-              </div>
+            {/* ── Right: live preview ── */}
+            <div className="lg:sticky lg:top-24">
+              <ReceiptPreview
+                name={bizName}
+                address={bizAddress}
+                phone={bizPhone}
+                footer={footer}
+              />
             </div>
 
           </div>
