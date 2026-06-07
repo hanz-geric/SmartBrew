@@ -1227,9 +1227,8 @@ export default function Products() {
     <AppLayout>
       {/* ── Sticky header ── */}
       <div className="sticky top-0 z-10 bg-white" style={{ borderBottom: '1px solid #e5e7eb' }}>
-        {/* Tabs + actions in one row */}
-        <div className="flex items-center justify-between px-4 pt-3 pb-2 gap-2">
-          <div className="flex items-center gap-1 min-w-0 overflow-x-auto">
+        {/* Tabs row */}
+        <div className="flex items-center px-4 pt-3 pb-2 gap-1 min-w-0 overflow-x-auto">
             {isAdmin
               ? (['products', 'categories', 'modifiers'] as const).map(t => (
                   <button key={t} onClick={() => setTab(t)}
@@ -1247,25 +1246,6 @@ export default function Products() {
                 ))
               : <span className="text-base font-bold" style={{ color: '#111827' }}>Menu Management</span>
             }
-          </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button onClick={load} disabled={loading}
-              className="w-8 h-8 flex items-center justify-center rounded-md text-base disabled:opacity-50"
-              style={{ border: '1px solid #e5e7eb', color: '#15803d' }}
-              title="Refresh">
-              {loading ? '…' : '↻'}
-            </button>
-            <button
-              onClick={() =>
-                activeTab === 'products'  ? setView({ kind: 'editProduct',  id: null }) :
-                activeTab === 'modifiers' ? setView({ kind: 'editModifier', id: null }) :
-                setView({ kind: 'editCategory', id: null })
-              }
-              className="px-3 py-1.5 rounded-lg text-sm font-bold text-white whitespace-nowrap"
-              style={{ background: '#166534' }}>
-              + {activeTab === 'products' ? 'Product' : activeTab === 'modifiers' ? 'Group' : 'Category'}
-            </button>
-          </div>
         </div>
 
         {/* Filter row — products tab only */}
@@ -1296,7 +1276,7 @@ export default function Products() {
           grouped.length === 0 && uncategorised.length === 0 ? (
             <p className="text-center py-20 text-sm" style={{ color: '#9ca3af' }}>
               {products.length === 0
-                ? 'No products yet. Click "+ Add Product" to create one.'
+                ? 'No products yet. Tap the + button to create one.'
                 : 'No products match your search.'}
             </p>
           ) : (
@@ -1451,6 +1431,19 @@ export default function Products() {
           )
         )}
       </div>
+
+      {/* ── Floating action button ── */}
+      <button
+        onClick={() =>
+          activeTab === 'products'  ? setView({ kind: 'editProduct',  id: null }) :
+          activeTab === 'modifiers' ? setView({ kind: 'editModifier', id: null }) :
+          setView({ kind: 'editCategory', id: null })
+        }
+        className="fixed bottom-6 right-6 z-20 flex items-center gap-2 px-5 py-3.5 rounded-full text-sm font-bold text-white shadow-lg active:scale-95 transition-transform"
+        style={{ background: '#166534' }}>
+        <span className="text-lg leading-none">+</span>
+        {activeTab === 'products' ? 'Product' : activeTab === 'modifiers' ? 'Group' : 'Category'}
+      </button>
     </AppLayout>
   )
 }
