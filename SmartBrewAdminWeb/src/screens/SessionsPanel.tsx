@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type MutableRefObject } from 'react'
 import { query, where, orderBy, limit, getDocs } from 'firebase/firestore'
 import { ordersCol, sessionsCol } from '@/firebase/collections'
 import { useAuth } from '@/context/AuthContext'
@@ -513,7 +513,7 @@ function SessionDetail({ session, onBack }: { session: CashSession; onBack: () =
 
 // ─── SessionList ──────────────────────────────────────────────────────────────
 
-function SessionList({ onSelect }: { onSelect: (s: CashSession) => void }) {
+function SessionList({ onSelect, exportRef }: { onSelect: (s: CashSession) => void; exportRef?: MutableRefObject<(() => void) | null> }) {
   const [period,       setPeriod]       = useState<SessionPeriod>('week')
   const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'closed'>('all')
   const [search,       setSearch]       = useState('')
@@ -548,6 +548,9 @@ function SessionList({ onSelect }: { onSelect: (s: CashSession) => void }) {
     try { downloadSessionsCsv(visible) } finally { setExporting(false) }
   }
 
+  if (exportRef) exportRef.current = handleExport
+  useEffect(() => () => { if (exportRef) exportRef.current = null }, [exportRef])
+
   return (
     <>
       {/* Filter rows */}
@@ -577,15 +580,6 @@ function SessionList({ onSelect }: { onSelect: (s: CashSession) => void }) {
               </button>
             ))}
           </div>
-          <div className="flex-1" />
-          {!loading && visible.length > 0 && (
-            <button onClick={handleExport} disabled={exporting}
-              className="w-8 h-8 flex items-center justify-center rounded-md text-base font-bold disabled:opacity-50"
-              style={{ border: '1.5px solid #16a34a', color: '#15803d' }}
-              title="Export CSV">
-              {exporting ? '…' : '↓'}
-            </button>
-          )}
         </div>
         <input
           type="text"
@@ -677,9 +671,9 @@ function SessionList({ onSelect }: { onSelect: (s: CashSession) => void }) {
 
 // ─── SessionsPanel ────────────────────────────────────────────────────────────
 
-export default function SessionsPanel() {
+export default function SessionsPanel({ exportRef }: { exportRef?: MutableRefObject<(() => void) | null> }) {
   const [selected, setSelected] = useState<CashSession | null>(null)
   return selected
     ? <SessionDetail session={selected} onBack={() => setSelected(null)} />
-    : <SessionList onSelect={setSelected} />
+    : <SessionList onSelect={setSelected} exportRef={exportRef} />
 }

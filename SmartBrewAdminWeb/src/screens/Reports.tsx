@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { query, where, getDocs } from 'firebase/firestore'
 import { ordersCol } from '@/firebase/collections'
 import { useAuth } from '@/context/AuthContext'
@@ -373,6 +373,7 @@ export default function Reports() {
   const [peakHours,    setPeakHours]    = useState<HourBucket[]>([])
   const [loading,      setLoading]      = useState(false)
   const [error,        setError]        = useState('')
+  const panelExportRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -425,16 +426,17 @@ export default function Reports() {
               </button>
             ))}
           </div>
-          {tab === 'analytics' && (
-            <button
-              onClick={() => downloadCsv(buckets, topProducts, granularity, isAdmin)}
-              disabled={loading}
-              className="w-8 h-8 flex items-center justify-center rounded-md text-base font-bold disabled:opacity-40"
-              style={{ border: '1px solid #e5e7eb', color: '#374151' }}
-              title="Export CSV">
-              ↓
-            </button>
-          )}
+          <button
+            onClick={() => tab === 'analytics'
+              ? downloadCsv(buckets, topProducts, granularity, isAdmin)
+              : panelExportRef.current?.()
+            }
+            disabled={tab === 'analytics' && loading}
+            className="w-8 h-8 flex items-center justify-center rounded-md text-base font-bold disabled:opacity-40"
+            style={{ border: '1px solid #e5e7eb', color: '#374151' }}
+            title="Export CSV">
+            ↓
+          </button>
         </div>
         {/* Granularity row — analytics tab only */}
         {tab === 'analytics' && (
@@ -464,9 +466,9 @@ export default function Reports() {
 
       {/* ── Body ── */}
       {tab === 'sessions' ? (
-        <SessionsPanel />
+        <SessionsPanel exportRef={panelExportRef} />
       ) : tab === 'orders' ? (
-        <OrdersPanel />
+        <OrdersPanel exportRef={panelExportRef} />
       ) : (
         <div className="p-4 max-w-5xl mx-auto">
           {loading && (

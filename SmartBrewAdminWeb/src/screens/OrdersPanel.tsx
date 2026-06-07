@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react'
 import {
   query, where, orderBy, limit, startAfter, getDocs, updateDoc, doc,
   getAggregateFromServer, getCountFromServer, sum, count,
@@ -157,7 +157,7 @@ async function fetchPage(
 
 // ─── Panel ────────────────────────────────────────────────────────────────────
 
-export default function OrdersPanel() {
+export default function OrdersPanel({ exportRef }: { exportRef?: MutableRefObject<(() => void) | null> }) {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const canVoid = user?.role === 'admin' || user?.role === 'manager'
@@ -268,6 +268,9 @@ export default function OrdersPanel() {
   const q       = search.trim().toLowerCase()
   const visible = q ? orders.filter(o => o.order_number.toLowerCase().includes(q)) : orders
 
+  if (exportRef) exportRef.current = handleExport
+  useEffect(() => () => { if (exportRef) exportRef.current = null }, [exportRef])
+
   return (
     <>
       {/* ── Sticky header ── */}
@@ -317,17 +320,6 @@ export default function OrdersPanel() {
               <option value="takeaway">Takeaway</option>
               <option value="delivery">Delivery</option>
             </select>
-            {!loading && visible.length > 0 && (
-              <button
-                onClick={handleExport}
-                disabled={exporting}
-                className="ml-auto w-8 h-8 flex items-center justify-center rounded-md text-base font-bold transition-opacity disabled:opacity-50 shrink-0"
-                style={{ border: '1.5px solid #16a34a', color: '#15803d' }}
-                title="Export CSV"
-              >
-                {exporting ? '…' : '↓'}
-              </button>
-            )}
           </div>
           <input
             type="text"
