@@ -296,13 +296,13 @@ function StockItemEditForm({
             <input type="text" value={customUnit} onChange={e => { setCustomUnit(e.target.value); setError('') }}
               placeholder="e.g. sachets, tubs, gallons"
               autoFocus
-              className="w-48 rounded-md px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-green-600"
+              className="w-full rounded-md px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-green-600"
               style={{ border: '1px solid #d1d5db', color: '#111827' }} />
           )}
         </div>
 
         {/* Qty + Reorder */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="flex flex-col gap-1">
             <span className="text-sm font-semibold" style={{ color: '#374151' }}>Qty on Hand</span>
             <div className="flex items-center gap-1">
@@ -593,7 +593,7 @@ export default function Stock() {
         <div className="flex items-center gap-3 px-6 pb-3 flex-wrap">
           <input type="text" value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Search items…"
-            className="rounded-md px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-green-600 w-52"
+            className="flex-1 min-w-0 rounded-md px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-green-600"
             style={{ border: '1px solid #d1d5db', color: '#111827' }} />
           <div className="flex gap-1.5">
             {([
@@ -713,7 +713,7 @@ export default function Stock() {
                         <input type="number" step="0.001" value={adjustDelta}
                           onChange={e => { setAdjustDelta(e.target.value); setAdjustError('') }}
                           placeholder="e.g. 50 or -10"
-                          className="w-48 rounded-md px-3 py-2 text-lg font-bold outline-none focus:ring-2 focus:ring-green-600"
+                          className="w-full rounded-md px-3 py-2 text-lg font-bold outline-none focus:ring-2 focus:ring-green-600"
                           style={{ border: '1.5px solid #d1d5db', color: '#111827', background: '#fff' }} />
                       </div>
 

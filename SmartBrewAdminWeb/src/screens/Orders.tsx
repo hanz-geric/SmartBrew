@@ -363,7 +363,7 @@ export default function Orders() {
             placeholder="Search order #…"
             value={search}
             onChange={e => { setSearch(e.target.value); setExpanded(null) }}
-            className="ml-auto w-44 text-sm rounded-md px-3 py-1 outline-none focus:ring-2 focus:ring-green-600"
+            className="flex-1 min-w-0 ml-2 text-sm rounded-md px-3 py-1 outline-none focus:ring-2 focus:ring-green-600"
             style={{ border: '1px solid #d1d5db', color: '#111827' }}
           />
         </div>

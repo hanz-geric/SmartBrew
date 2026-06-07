@@ -356,7 +356,7 @@ function ModifierGroupEditForm({
           </div>
 
           {/* Max select + Sort order */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="flex flex-col gap-1">
               <span className="text-sm font-semibold" style={{ color: '#374151' }}>Max Selections</span>
               <p className="text-xs" style={{ color: '#9ca3af' }}>How many options a customer can pick</p>

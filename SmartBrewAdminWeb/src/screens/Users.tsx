@@ -103,8 +103,6 @@ function UserEditForm({
     }
   }
 
-  const rs = ROLE_STYLE
-
   return (
     <div className="p-6 max-w-lg mx-auto">
       <button onClick={onBack} className="text-sm font-medium mb-2 block" style={{ color: '#15803d' }}>
@@ -186,7 +184,7 @@ function UserEditForm({
       {/* Role */}
       <div className="mb-5">
         <p className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: '#9ca3af' }}>Role</p>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           {ROLES.map(r => {
             const sel = role === r
             return (

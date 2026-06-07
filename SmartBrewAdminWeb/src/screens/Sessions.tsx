@@ -280,10 +280,10 @@ function SessionList({ onSelect }: { onSelect: (s: CashSession) => void }) {
             placeholder="Search by cashier name…"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-48 text-sm rounded-md px-3 py-1 outline-none focus:ring-2 focus:ring-green-600"
+            className="flex-1 min-w-0 text-sm rounded-md px-3 py-1 outline-none focus:ring-2 focus:ring-green-600"
             style={{ border: '1px solid #d1d5db', color: '#111827' }}
           />
-          <div className="flex items-center gap-1.5 ml-2">
+          <div className="flex items-center gap-1.5 ml-2 shrink-0">
             {(['all', 'open', 'closed'] as const).map(f => (
               <button
                 key={f}
@@ -383,7 +383,7 @@ function SessionList({ onSelect }: { onSelect: (s: CashSession) => void }) {
                   </div>
 
                   {/* Cash grid */}
-                  <div className="flex" style={{ borderTop: '1px solid #e5e7eb' }}>
+                  <div className="flex overflow-x-auto" style={{ borderTop: '1px solid #e5e7eb' }}>
                     <CashCell label="Starting"  value={`₱${sess.starting_cash.toFixed(2)}`} />
                     <CashCell label="Collected" value={`₱${(sess.cash_collected ?? 0).toFixed(2)}`} />
                     <CashCell label="Expected"  value={sess.expected_cash != null ? `₱${sess.expected_cash.toFixed(2)}` : '—'} />
@@ -505,7 +505,7 @@ function SessionDetail({ session, onBack }: { session: CashSession; onBack: () =
 
         {/* Cash grid */}
         <div className="mx-6 mb-3 rounded-lg overflow-hidden" style={{ border: '1px solid #e5e7eb' }}>
-          <div className="flex">
+          <div className="flex overflow-x-auto">
             <CashCell label="Starting"  value={`₱${session.starting_cash.toFixed(2)}`} />
             <CashCell label="Collected" value={`₱${(session.cash_collected ?? 0).toFixed(2)}`} />
             <CashCell label="Expected"  value={session.expected_cash != null ? `₱${session.expected_cash.toFixed(2)}` : '—'} />
@@ -618,8 +618,8 @@ function SessionDetail({ session, onBack }: { session: CashSession; onBack: () =
             )}
           </div>
         ) : tab === 'products' ? (
-          <div className="max-w-3xl mx-auto">
-            <div className="bg-white rounded-lg overflow-hidden shadow-sm" style={{ border: '1px solid #e5e7eb' }}>
+          <div className="max-w-3xl mx-auto overflow-x-auto">
+            <div className="bg-white rounded-lg overflow-hidden shadow-sm" style={{ border: '1px solid #e5e7eb', minWidth: '360px' }}>
               {/* Header */}
               <div className="flex items-center px-4 py-2.5" style={{ background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
                 <span className="flex-1 text-xs font-bold uppercase tracking-wide" style={{ color: '#9ca3af' }}>Product</span>

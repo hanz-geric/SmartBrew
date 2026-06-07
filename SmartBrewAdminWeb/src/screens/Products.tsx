@@ -318,7 +318,7 @@ function ProductEditForm({
       let finalImage = imageUrl
       if (imageFile) {
         // For new products: create the doc first to get an ID, then upload under that ID
-        const targetId = editId ?? await addDoc(productsCol(), { ...baseData, image: null }).then(r => r.id)
+        const targetId = editId != null ? editId : await addDoc(productsCol(), { ...baseData, image: null }).then(r => r.id)
         finalImage = await uploadProductImage(imageFile, targetId)
         await setDoc(doc(db, 'products', targetId), { ...baseData, image: finalImage }, { merge: true })
       } else if (editId) {
@@ -422,7 +422,7 @@ function ProductEditForm({
               style={{ border: '1px solid #d1d5db', color: '#111827' }} />
           </Field>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Selling Price (₱)" required>
               <input type="number" min="0" step="0.01" value={price}
                 onChange={e => setPrice(e.target.value)} placeholder="0.00"
