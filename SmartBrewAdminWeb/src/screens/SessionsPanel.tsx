@@ -520,7 +520,6 @@ function SessionList({ onSelect, exportRef }: { onSelect: (s: CashSession) => vo
   const [sessions,     setSessions]     = useState<CashSession[]>([])
   const [loading,      setLoading]      = useState(true)
   const [error,        setError]        = useState('')
-  const [exporting,    setExporting]    = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true); setError('')
@@ -544,8 +543,7 @@ function SessionList({ onSelect, exportRef }: { onSelect: (s: CashSession) => vo
 
   async function handleExport() {
     if (!visible.length) return
-    setExporting(true)
-    try { downloadSessionsCsv(visible) } finally { setExporting(false) }
+    downloadSessionsCsv(visible)
   }
 
   if (exportRef) exportRef.current = handleExport

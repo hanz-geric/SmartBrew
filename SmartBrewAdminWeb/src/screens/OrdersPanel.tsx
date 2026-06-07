@@ -175,7 +175,6 @@ export default function OrdersPanel({ exportRef }: { exportRef?: MutableRefObjec
   const [expanded,    setExpanded]    = useState<string | null>(null)
   const [voiding,     setVoiding]     = useState<string | null>(null)
   const [voidTarget,  setVoidTarget]  = useState<Order | null>(null)
-  const [exporting,   setExporting]   = useState(false)
 
   const cursorRef = useRef<QueryDocumentSnapshot<DocumentData> | null>(null)
 
@@ -243,7 +242,6 @@ export default function OrdersPanel({ exportRef }: { exportRef?: MutableRefObjec
   }
 
   async function handleExport() {
-    setExporting(true)
     try {
       const { start, end } = getRange(period)
       const f    = filters()
@@ -260,8 +258,6 @@ export default function OrdersPanel({ exportRef }: { exportRef?: MutableRefObjec
       if (rows.length) downloadCsv(rows, isAdmin)
     } catch {
       // silently fail
-    } finally {
-      setExporting(false)
     }
   }
 
