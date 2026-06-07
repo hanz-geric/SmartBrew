@@ -45,7 +45,7 @@ export default function AppLayout({ children }: Props) {
   return (
     <div className="flex h-screen overflow-hidden">
 
-      {/* ── Reopen tab (visible only when collapsed) ── */}
+      {/* ── Reopen tab (always fixed, hidden when sidebar open) ── */}
       {collapsed && (
         <button
           onClick={() => setCollapsed(false)}
@@ -57,13 +57,25 @@ export default function AppLayout({ children }: Props) {
         </button>
       )}
 
-      {/* ── Sidebar ── */}
+      {/* ── Backdrop scrim ── */}
+      {!collapsed && (
+        <div
+          className="fixed inset-0 z-40"
+          style={{ background: 'rgba(0,0,0,0.4)' }}
+          onClick={() => setCollapsed(true)}
+        />
+      )}
+
+      {/* ── Sidebar (overlay, never pushes content) ── */}
       <aside
-        className="flex flex-col shrink-0 overflow-hidden"
+        className="fixed left-0 top-0 h-full flex flex-col z-50 overflow-hidden"
         style={{
-          width:      collapsed ? 0 : 220,
-          transition: 'width 200ms ease',
-          background: '#166534',
+          width:      220,
+          transform:  collapsed ? 'translateX(-100%)' : 'translateX(0)',
+          transition: 'transform 200ms ease',
+          background: 'rgba(22, 101, 52, 0.92)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
         }}
       >
         {/* Brand + collapse button */}
@@ -130,8 +142,8 @@ export default function AppLayout({ children }: Props) {
         </div>
       </aside>
 
-      {/* ── Main content ── */}
-      <main className="flex-1 overflow-y-auto bg-[#f9fafb]">
+      {/* ── Main content (always full width — sidebar overlays) ── */}
+      <main className="w-full h-full overflow-y-auto bg-[#f9fafb]">
         {children}
       </main>
 
