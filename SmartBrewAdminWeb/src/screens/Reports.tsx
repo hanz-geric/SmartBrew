@@ -3,7 +3,10 @@ import { query, where, getDocs } from 'firebase/firestore'
 import { ordersCol } from '@/firebase/collections'
 import { useAuth } from '@/context/AuthContext'
 import AppLayout from '@/components/AppLayout'
+import SessionsPanel from '@/screens/SessionsPanel'
 import type { Order } from '@/types'
+
+type ReportsTab = 'analytics' | 'sessions'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -337,6 +340,7 @@ export default function Reports() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
 
+  const [tab,          setTab]          = useState<ReportsTab>('analytics')
   const [granularity,  setGranularity]  = useState<Granularity>('daily')
   const [buckets,      setBuckets]      = useState<Bucket[]>([])
   const [topProducts,  setTopProducts]  = useState<TopProduct[]>([])
@@ -377,55 +381,77 @@ export default function Reports() {
       <div className="sticky top-0 z-10 bg-white" style={{ borderBottom: '1px solid #e5e7eb' }}>
         <div className="flex items-center gap-3 px-6 py-3">
           <h1 className="text-xl font-bold shrink-0" style={{ color: '#111827' }}>Reports</h1>
+          <div className="flex rounded-md overflow-hidden ml-4" style={{ border: '1px solid #e5e7eb' }}>
+            {([
+              { value: 'analytics', label: 'Analytics' },
+              { value: 'sessions',  label: 'Sessions'  },
+            ] as const).map(t => (
+              <button
+                key={t.value}
+                onClick={() => setTab(t.value)}
+                className="px-4 py-1.5 text-sm font-semibold transition-colors"
+                style={{
+                  background: tab === t.value ? '#166534' : '#ffffff',
+                  color:      tab === t.value ? '#ffffff'  : '#374151',
+                }}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
           <div className="flex-1" />
         </div>
-        <div className="flex items-center gap-3 px-6 py-2.5" style={{ borderTop: '1px solid #f3f4f6' }}>
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs font-bold" style={{ color: '#9ca3af' }}>RANGE</span>
-            <div className="flex rounded-md overflow-hidden" style={{ border: '1px solid #e5e7eb' }}>
-              {GRANULARITIES.map(g => (
-                <button
-                  key={g.value}
-                  onClick={() => setGranularity(g.value)}
-                  className="px-3 py-1 text-sm font-semibold transition-colors"
-                  style={{
-                    background: granularity === g.value ? '#166534' : '#ffffff',
-                    color:      granularity === g.value ? '#ffffff'  : '#374151',
-                  }}
-                >
-                  {g.label}
-                </button>
-              ))}
+        {tab === 'analytics' && (
+          <div className="flex items-center gap-3 px-6 py-2.5" style={{ borderTop: '1px solid #f3f4f6' }}>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-bold" style={{ color: '#9ca3af' }}>RANGE</span>
+              <div className="flex rounded-md overflow-hidden" style={{ border: '1px solid #e5e7eb' }}>
+                {GRANULARITIES.map(g => (
+                  <button
+                    key={g.value}
+                    onClick={() => setGranularity(g.value)}
+                    className="px-3 py-1 text-sm font-semibold transition-colors"
+                    style={{
+                      background: granularity === g.value ? '#166534' : '#ffffff',
+                      color:      granularity === g.value ? '#ffffff'  : '#374151',
+                    }}
+                  >
+                    {g.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* ── Body ── */}
-      <div className="p-4 max-w-5xl mx-auto">
-        {loading && (
-          <div className="flex justify-center py-16">
-            <span className="text-sm" style={{ color: '#9ca3af' }}>Loading…</span>
-          </div>
-        )}
-
-        {!loading && error && (
-          <div className="rounded-lg px-4 py-3 text-sm mt-4" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid rgba(220,38,38,0.2)' }}>
-            {error}
-          </div>
-        )}
-
-        {!loading && !error && (
-          <div className="mt-2 flex flex-col gap-4">
-            <RevenueChart buckets={buckets} showProfit={isAdmin} granularity={granularity} />
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <TopProductsTable products={topProducts} />
-              <PayBreakdownChart breakdown={payBreakdown} />
+      {tab === 'sessions' ? (
+        <SessionsPanel />
+      ) : (
+        <div className="p-4 max-w-5xl mx-auto">
+          {loading && (
+            <div className="flex justify-center py-16">
+              <span className="text-sm" style={{ color: '#9ca3af' }}>Loading…</span>
             </div>
-            <PeakHoursChart hours={peakHours} />
-          </div>
-        )}
-      </div>
+          )}
+          {!loading && error && (
+            <div className="rounded-lg px-4 py-3 text-sm mt-4" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid rgba(220,38,38,0.2)' }}>
+              {error}
+            </div>
+          )}
+          {!loading && !error && (
+            <div className="mt-2 flex flex-col gap-4">
+              <RevenueChart buckets={buckets} showProfit={isAdmin} granularity={granularity} />
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <TopProductsTable products={topProducts} />
+                <PayBreakdownChart breakdown={payBreakdown} />
+              </div>
+              <PeakHoursChart hours={peakHours} />
+            </div>
+          )}
+        </div>
+      )}
     </AppLayout>
   )
 }
