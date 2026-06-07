@@ -13,7 +13,6 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { path: '/dashboard', label: 'Dashboard',  icon: '📊' },
   { path: '/orders',    label: 'Orders',     icon: '🧾' },
-  { path: '/voids',     label: 'Void Log',   icon: '🚫' },
   { path: '/sessions',  label: 'Sessions',   icon: '💰' },
   { path: '/reports',   label: 'Reports',    icon: '📈' },
   { path: '/products',  label: 'Menu',       icon: '🍽️', adminOnly: true },
