@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 
@@ -28,6 +29,7 @@ interface Props {
 export default function AppLayout({ children }: Props) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const [collapsed, setCollapsed] = useState(() => window.innerWidth < 768)
 
   async function handleLogout() {
     await logout()
@@ -44,24 +46,38 @@ export default function AppLayout({ children }: Props) {
     <div className="flex h-screen overflow-hidden">
       {/* ── Sidebar ── */}
       <aside
-        className="flex flex-col shrink-0 overflow-hidden"
+        className="flex flex-col shrink-0 overflow-hidden transition-all duration-200"
         style={{
-          width: 'clamp(56px, 18vw, 220px)',
+          width:      collapsed ? 56 : 220,
           background: '#166534',
         }}
       >
-        {/* Brand */}
+        {/* Brand + toggle button */}
         <div
-          className="flex flex-col px-3 py-5 gap-1"
+          className="flex items-center gap-2 px-2 py-4"
           style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}
         >
-          <span className="text-white font-bold text-sm truncate hidden sm:block">SmartBrew</span>
-          <span
-            className="text-xs font-medium uppercase tracking-widest truncate hidden sm:block"
-            style={{ color: '#bbf7d0', letterSpacing: '0.08em' }}
+          {!collapsed && (
+            <div className="flex-1 min-w-0 pl-1">
+              <span className="text-white font-bold text-sm block truncate">SmartBrew</span>
+              <span
+                className="text-xs font-medium uppercase tracking-widest block truncate"
+                style={{ color: '#bbf7d0', letterSpacing: '0.08em' }}
+              >
+                {user?.role}
+              </span>
+            </div>
+          )}
+          <button
+            onClick={() => setCollapsed(c => !c)}
+            className="shrink-0 w-8 h-8 flex items-center justify-center rounded-md transition-colors"
+            style={{ color: '#bbf7d0' }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.1)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
-            {user?.role}
-          </span>
+            <span className="text-sm font-bold">{collapsed ? '›' : '‹'}</span>
+          </button>
         </div>
 
         {/* Nav items */}
@@ -72,37 +88,39 @@ export default function AppLayout({ children }: Props) {
               to={item.path}
               className={({ isActive }) =>
                 [
-                  'flex items-center gap-3 mx-1.5 my-0.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                  'flex items-center gap-3 mx-1.5 my-0.5 rounded-lg text-sm font-medium transition-colors',
+                  collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5',
                   isActive
                     ? 'bg-white/15 text-white'
                     : 'text-green-200 hover:bg-white/10 hover:text-white',
                 ].join(' ')
               }
+              title={collapsed ? item.label : undefined}
             >
               <span className="text-base shrink-0">{item.icon}</span>
-              <span className="truncate hidden sm:block">{item.label}</span>
+              {!collapsed && <span className="truncate">{item.label}</span>}
             </NavLink>
           ))}
         </nav>
 
         {/* Footer */}
         <div
-          className="px-3 py-4 flex flex-col gap-1"
+          className="px-2 py-4 flex flex-col gap-1"
           style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }}
         >
-          <span className="text-white text-xs font-semibold truncate hidden sm:block">
-            {user?.full_name}
-          </span>
-          <span className="text-xs truncate hidden sm:block" style={{ color: '#bbf7d0' }}>
-            @{user?.username}
-          </span>
+          {!collapsed && (
+            <>
+              <span className="text-white text-xs font-semibold truncate px-1">{user?.full_name}</span>
+              <span className="text-xs truncate px-1" style={{ color: '#bbf7d0' }}>@{user?.username}</span>
+            </>
+          )}
           <button
             onClick={handleLogout}
-            className="mt-2 w-full py-1.5 rounded-md text-xs font-medium text-white transition-colors hover:bg-white/20"
+            className="mt-1 w-full py-1.5 rounded-md text-xs font-medium text-white transition-colors hover:bg-white/20"
             style={{ background: 'rgba(255,255,255,0.1)' }}
+            title={collapsed ? 'Log out' : undefined}
           >
-            <span className="hidden sm:inline">Log out</span>
-            <span className="sm:hidden">⏻</span>
+            {collapsed ? '⏻' : 'Log out'}
           </button>
         </div>
       </aside>
