@@ -733,21 +733,21 @@ function ReceiptPreview({
         <View style={rp.gap} />
         <Text style={rp.center}>Order #00042</Text>
         <Text style={rp.center}>{SAMPLE_DATE}</Text>
-        <Text style={rp.center}>Dine In · Table 3</Text>
+        <Text style={rp.center}>Dine In</Text>
+        <Text style={rp.center}>Table: 3</Text>
         <Ruler />
 
         <Text style={rp.itemName}>Caramel Macchiato</Text>
-        <RcptRow left="  ×1" right="₱150.00" />
+        <RcptRow left="  x1" right="P150.00" />
         <Text style={rp.itemName}>Espresso</Text>
-        <Text style={rp.itemMod}>  · Extra Shot</Text>
-        <RcptRow left="  ×2" right="₱180.00" />
+        <Text style={rp.itemMod}>  . Extra Shot</Text>
+        <RcptRow left="  x2" right="P180.00" />
         <Ruler />
 
-        <RcptRow left="Subtotal:" right="₱330.00" />
-        <RcptRow left="TOTAL:" right="₱330.00" bold />
+        <RcptRow left="TOTAL:" right="P330.00" bold />
         <View style={rp.gap} />
         <RcptRow left="Payment:" right="Cash" />
-        <RcptRow left="Change:"  right="₱70.00" />
+        <RcptRow left="Change:"  right="P70.00" />
         <RcptRow left="Cashier:" right="Juan" />
         <Ruler />
 
@@ -763,7 +763,7 @@ function ReceiptPreview({
 }
 
 function Ruler() {
-  return <View style={rp.ruler} />;
+  return <Text style={rp.ruler}>{'-'.repeat(32)}</Text>;
 }
 
 function RcptRow({ left, right, bold }: { left: string; right: string; bold?: boolean }) {
@@ -1028,7 +1028,7 @@ const rp = StyleSheet.create({
   bizMeta:  { fontSize: FontSize.sm, textAlign: 'center', color: Colors.gray600 },
   center:   { fontSize: FontSize.sm, textAlign: 'center', color: Colors.gray700 },
   gap:      { height: Spacing.sm },
-  ruler:    { height: 1, backgroundColor: '#d8d4bb', marginVertical: Spacing.sm },
+  ruler:    { fontSize: FontSize.xs, color: Colors.gray400, marginVertical: Spacing.xs },
   itemName: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.gray800 },
   itemMod:  { fontSize: FontSize.xs, color: Colors.gray500 },
   row:      { flexDirection: 'row', justifyContent: 'space-between' },
