@@ -3,16 +3,19 @@ import {
   ActivityIndicator, ScrollView,
   StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useShallow } from 'zustand/react/shallow';
 import AdminLayout from './AdminLayout';
 import {
-  getOrdersInRange, getLifetimeStats, getProductCategoryCount, LifetimeStats,
+  getOrdersInRange, getLifetimeStats, getProductCategoryCount, listStockItems, LifetimeStats,
 } from '../../firebase/firestoreService';
 import { useAuthStore } from '../../store/authStore';
 import { Order, PaymentMethod } from '../../types';
 import {
   Colors, FontSize, FontWeight, Radius, Shadow, Spacing, rs,
 } from '../../constants/theme';
+import type { AdminStackParamList } from '../../navigation/AdminStack';
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 
@@ -57,6 +60,7 @@ function fmtPeso(n: number): string {
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 export default function DashboardScreen() {
+  const navigation = useNavigation<NativeStackNavigationProp<AdminStackParamList>>();
   const role    = useAuthStore(useShallow((s) => s.user?.role));
   const isAdmin = role === 'admin';
 
@@ -64,6 +68,7 @@ export default function DashboardScreen() {
   const [weekOrders,    setWeekOrders]    = useState<Order[]>([]);
   const [lifetime,      setLifetime]      = useState<LifetimeStats | null>(null);
   const [prodCatCount,  setProdCatCount]  = useState<{ product_count: number; category_count: number } | null>(null);
+  const [stockAlerts,   setStockAlerts]   = useState({ low: 0, out: 0 });
   const [loading,       setLoading]       = useState(true);
   const [error,         setError]         = useState('');
 
@@ -87,9 +92,18 @@ export default function DashboardScreen() {
       setTodayOrders(tOrders);
       setWeekOrders(wOrders);
 
-      // Optional: lifetime stats + counts. Failures are silent — sections just stay hidden.
+      // Optional: lifetime stats, counts, stock alerts. Failures are silent.
       getLifetimeStats().then(setLifetime).catch(() => {});
       getProductCategoryCount().then(setProdCatCount).catch(() => {});
+      listStockItems().then(items => {
+        let low = 0, out = 0;
+        for (const item of items) {
+          if (!item.is_active) continue;
+          if (item.stock_status === 'out') out++;
+          else if (item.stock_status === 'low') low++;
+        }
+        setStockAlerts({ low, out });
+      }).catch(() => {});
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(`Failed to load orders. ${msg}`);
@@ -120,9 +134,12 @@ export default function DashboardScreen() {
     }, {},
   );
 
-  // ── Top 5 products (today, non-cancelled) ──
+  // ── 7-day table ──
+  const weekActive = weekOrders.filter((o) => o.status !== 'cancelled');
+
+  // ── Top 5 products (last 7 days, non-cancelled) ──
   const productMap: Record<string, { name: string; qty: number; revenue: number }> = {};
-  for (const order of active) {
+  for (const order of weekActive) {
     for (const item of (order.items ?? [])) {
       if (!productMap[item.product_id]) {
         productMap[item.product_id] = { name: item.product_name, qty: 0, revenue: 0 };
@@ -134,9 +151,6 @@ export default function DashboardScreen() {
   const top5 = Object.values(productMap)
     .sort((a, b) => b.qty - a.qty)
     .slice(0, 5);
-
-  // ── 7-day table ──
-  const weekActive = weekOrders.filter((o) => o.status !== 'cancelled');
   const dayMap: Record<string, { revenue: number; profit: number }> = {};
   for (const order of weekActive) {
     const key = isoDateKey(order.created_at);
@@ -178,6 +192,13 @@ export default function DashboardScreen() {
           </View>
         ) : (
           <>
+            {/* Stock alert banner */}
+            <StockAlertBanner
+              low={stockAlerts.low}
+              out={stockAlerts.out}
+              onPress={() => navigation.navigate('Stock')}
+            />
+
             {/* Stat cards */}
             <View style={s.statsRow}>
               <StatCard
@@ -282,7 +303,7 @@ export default function DashboardScreen() {
             {/* Top 5 Products */}
             {top5.length > 0 && (
               <View style={s.section}>
-                <Text style={s.sectionTitle}>Top Products Today</Text>
+                <Text style={s.sectionTitle}>Top Products – Last 7 Days</Text>
                 <View style={s.tableCard}>
                   <View style={[s.tableRow, s.tableHeader]}>
                     <Text style={[s.tableCell, s.tableCellFlex, s.tableHeaderText]}>Product</Text>
@@ -371,6 +392,77 @@ export default function DashboardScreen() {
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
+
+function StockAlertBanner({ low, out, onPress }: { low: number; out: number; onPress: () => void }) {
+  if (low === 0 && out === 0) return null;
+  return (
+    <TouchableOpacity style={sb.container} onPress={onPress} activeOpacity={0.8}>
+      <Text style={sb.title}>⚠ Stock Alerts</Text>
+      <View style={sb.badges}>
+        {out > 0 && (
+          <View style={sb.badgeDanger}>
+            <Text style={sb.badgeDangerText}>{out} out of stock</Text>
+          </View>
+        )}
+        {low > 0 && (
+          <View style={sb.badgeWarning}>
+            <Text style={sb.badgeWarningText}>{low} low stock</Text>
+          </View>
+        )}
+      </View>
+      <Text style={sb.link}>View Stock →</Text>
+    </TouchableOpacity>
+  );
+}
+
+const sb = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: Spacing.md,
+    backgroundColor: Colors.dangerBg,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.danger + '44',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+  },
+  title: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.bold,
+    color: Colors.danger,
+  },
+  badges: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap' },
+  badgeDanger: {
+    backgroundColor: Colors.danger,
+    borderRadius: Radius.full,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 2,
+  },
+  badgeDangerText: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.bold,
+    color: '#fff',
+  },
+  badgeWarning: {
+    backgroundColor: Colors.warning,
+    borderRadius: Radius.full,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 2,
+  },
+  badgeWarningText: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.bold,
+    color: '#fff',
+  },
+  link: {
+    marginLeft: 'auto' as unknown as number,
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.semibold,
+    color: Colors.danger,
+  },
+});
 
 function StatCard({ label, value, color }: { label: string; value: string; color: string }) {
   return (
