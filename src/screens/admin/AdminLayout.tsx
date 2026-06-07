@@ -1,5 +1,8 @@
-import React, { useCallback } from 'react';
-import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Animated, Image, ScrollView, StyleSheet, Text,
+  TouchableOpacity, View, useWindowDimensions,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AdminStackParamList } from '../../navigation/AdminStack';
@@ -32,49 +35,107 @@ const NAV_ITEMS: { screen: NavScreen; label: string; icon: string; adminOnly?: b
   { screen: 'Settings',  label: 'Settings',   icon: '⚙️', adminOnly: true },
 ];
 
+const SIDEBAR_W = 220;
+
 export default function AdminLayout({ active, children }: Props) {
   const navigation = useNavigation<AdminNav>();
   const user       = useAuthStore((s) => s.user)!;
   const { width }  = useWindowDimensions();
-  const compact    = width < 960;
+
+  const isPhone = width < 768;
+  // compact (icon-only) applies to medium tablets only — not phones (phones use overlay)
+  const compact = !isPhone && width < 960;
+
+  const [sidebarOpen, setSidebarOpen] = useState(!isPhone);
+  const translateX = useRef(new Animated.Value(isPhone ? -SIDEBAR_W : 0)).current;
+
+  // When device rotates from phone to tablet, always show sidebar
+  useEffect(() => {
+    if (!isPhone) {
+      translateX.setValue(0);
+      setSidebarOpen(true);
+    }
+  }, [isPhone, translateX]);
+
+  const openSidebar = () => {
+    setSidebarOpen(true);
+    Animated.timing(translateX, {
+      toValue: 0, duration: 200, useNativeDriver: true,
+    }).start();
+  };
+
+  const closeSidebar = () => {
+    Animated.timing(translateX, {
+      toValue: -SIDEBAR_W, duration: 200, useNativeDriver: true,
+    }).start(() => setSidebarOpen(false));
+  };
 
   const handleLogout = useCallback(() => { logout(); }, []);
-
   const resetIdleTimer = useIdleTimeout(ADMIN_IDLE_TIMEOUT_MS, handleLogout);
+
+  const visibleItems = NAV_ITEMS.filter((item) => {
+    if (item.adminOnly   && user.role !== 'admin')   return false;
+    if (item.managerOnly && user.role !== 'manager') return false;
+    return true;
+  });
 
   return (
     <View
       style={s.root}
       onStartShouldSetResponderCapture={() => { resetIdleTimer(); return false; }}
     >
+
+      {/* ── Scrim (phone only, dismisses sidebar on tap) ── */}
+      {isPhone && sidebarOpen && (
+        <TouchableOpacity
+          style={s.scrim}
+          activeOpacity={1}
+          onPress={closeSidebar}
+        />
+      )}
+
       {/* ── Sidebar ── */}
-      <View style={[s.sidebar, compact && s.sidebarCompact]}>
-        <View style={[s.brand, compact && s.brandCompact]}>
-          <Image
-            source={require('../../../assets/images/SmartBrew_logo.jpg')}
-            style={compact ? s.brandLogoCompact : s.brandLogo}
-            resizeMode="cover"
-          />
-          {!compact && <Text style={s.brandName}>SmartBrew</Text>}
-          {!compact && (
-            <Text style={s.brandRole}>
-              {user.role === 'admin' ? 'Admin' : 'Manager'}
-            </Text>
+      <Animated.View
+        style={[
+          s.sidebar,
+          compact && s.sidebarCompact,
+          isPhone  && s.sidebarPhone,
+          isPhone  && { transform: [{ translateX }] },
+        ]}
+      >
+        {/* Brand area */}
+        <View style={[s.brand, compact && s.brandCompact, isPhone && s.brandPhone]}>
+          <View style={{ flex: 1 }}>
+            <Image
+              source={require('../../../assets/images/SmartBrew_logo.jpg')}
+              style={compact ? s.brandLogoCompact : s.brandLogo}
+              resizeMode="cover"
+            />
+            {!compact && <Text style={s.brandName}>SmartBrew</Text>}
+            {!compact && (
+              <Text style={s.brandRole}>
+                {user.role === 'admin' ? 'Admin' : 'Manager'}
+              </Text>
+            )}
+          </View>
+          {isPhone && (
+            <TouchableOpacity style={s.collapseBtn} onPress={closeSidebar} activeOpacity={0.7}>
+              <Text style={s.collapseBtnText}>‹‹</Text>
+            </TouchableOpacity>
           )}
         </View>
 
         <ScrollView style={s.navItems} showsVerticalScrollIndicator={false}>
-          {NAV_ITEMS.filter((item) => {
-            if (item.adminOnly   && user.role !== 'admin')   return false;
-            if (item.managerOnly && user.role !== 'manager') return false;
-            return true;
-          }).map(({ screen, label, icon }) => {
+          {visibleItems.map(({ screen, label, icon }) => {
             const isActive = active === screen;
             return (
               <TouchableOpacity
                 key={`${screen}-${label}`}
                 style={[s.navItem, isActive && s.navItemActive, compact && s.navItemCompact]}
-                onPress={() => navigation.navigate(screen)}
+                onPress={() => {
+                  navigation.navigate(screen);
+                  if (isPhone) closeSidebar();
+                }}
                 activeOpacity={0.7}
               >
                 <Text style={s.navIcon}>{icon}</Text>
@@ -95,14 +156,21 @@ export default function AdminLayout({ active, children }: Props) {
             <Text style={s.logoutText}>{compact ? '⏻' : 'Log out'}</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </Animated.View>
 
       {/* ── Main content ── */}
-      <View style={s.content}>
+      <View style={[s.content, isPhone && s.contentPhone]}>
+        {/* Reopen tab (phone only, when sidebar is hidden) */}
+        {isPhone && !sidebarOpen && (
+          <TouchableOpacity style={s.openBtn} onPress={openSidebar} activeOpacity={0.8}>
+            <Text style={s.openBtnText}>›</Text>
+          </TouchableOpacity>
+        )}
         <View style={s.contentInner}>
           {children}
         </View>
       </View>
+
     </View>
   );
 }
@@ -114,7 +182,7 @@ const s = StyleSheet.create({
     backgroundColor: Colors.background,
   },
 
-  // Sidebar
+  // ── Sidebar ──────────────────────────────────────────────────────────────
   sidebar: {
     width: '20%',
     minWidth: 160,
@@ -129,6 +197,20 @@ const s = StyleSheet.create({
     minWidth: 56,
     maxWidth: 56,
   },
+  // Phone: absolutely positioned overlay, slides over content
+  sidebarPhone: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: SIDEBAR_W,
+    minWidth: SIDEBAR_W,
+    maxWidth: SIDEBAR_W,
+    zIndex: 50,
+    backgroundColor: 'rgba(22, 101, 52, 0.92)',
+  },
+
+  // ── Brand ─────────────────────────────────────────────────────────────────
   brand: {
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.xxl,
@@ -140,6 +222,10 @@ const s = StyleSheet.create({
     paddingHorizontal: Spacing.xs,
     paddingBottom: Spacing.lg,
     alignItems: 'center',
+  },
+  brandPhone: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
   },
   brandLogo: {
     width: 56,
@@ -169,7 +255,18 @@ const s = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
+  collapseBtn: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    marginTop: Spacing.xs,
+  },
+  collapseBtnText: {
+    color: Colors.green200,
+    fontSize: FontSize.base,
+    fontWeight: FontWeight.bold,
+  },
 
+  // ── Nav items ─────────────────────────────────────────────────────────────
   navItems: {
     flex: 1,
     paddingTop: Spacing.sm,
@@ -204,6 +301,7 @@ const s = StyleSheet.create({
     fontWeight: FontWeight.bold,
   },
 
+  // ── Footer ────────────────────────────────────────────────────────────────
   sidebarFooter: {
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.lg,
@@ -237,10 +335,45 @@ const s = StyleSheet.create({
     fontWeight: FontWeight.medium,
   },
 
-  // Content
+  // ── Scrim ─────────────────────────────────────────────────────────────────
+  scrim: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    zIndex: 40,
+  },
+
+  // ── Open tab (phone, sidebar hidden) ─────────────────────────────────────
+  openBtn: {
+    position: 'absolute',
+    left: 0,
+    top: 16,
+    zIndex: 10,
+    width: 28,
+    height: 36,
+    borderTopRightRadius: 8,
+    borderBottomRightRadius: 8,
+    backgroundColor: Colors.green800,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  openBtnText: {
+    color: Colors.white,
+    fontSize: 16,
+    fontWeight: FontWeight.bold,
+  },
+
+  // ── Content ───────────────────────────────────────────────────────────────
   content: {
     flex: 1,
     overflow: 'hidden',
+  },
+  contentPhone: {
+    // Stays full-width; sidebar overlays from the left
+    position: 'relative',
   },
   contentInner: {
     flex: 1,
