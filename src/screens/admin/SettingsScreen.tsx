@@ -345,6 +345,13 @@ export default function SettingsScreen() {
                     multiline numberOfLines={3} />
                 </Field>
               </Section>
+
+              <ReceiptPreview
+                bizName={bizName}
+                bizAddress={bizAddress}
+                bizPhone={bizPhone}
+                footer={footer}
+              />
             </>
           )}
 
@@ -702,6 +709,73 @@ function WidthToggle({ value, onChange }: { value: PaperWidth; onChange: (v: Pap
   );
 }
 
+// ─── ReceiptPreview ───────────────────────────────────────────────────────────
+
+const SAMPLE_DATE = new Date().toLocaleString('en-PH', {
+  month: 'short', day: 'numeric', year: 'numeric',
+  hour: 'numeric', minute: '2-digit', hour12: true,
+});
+
+function ReceiptPreview({
+  bizName, bizAddress, bizPhone, footer,
+}: { bizName: string; bizAddress: string; bizPhone: string; footer: string }) {
+  const name       = bizName || 'SmartBrew Café';
+  const footerText = footer  || 'Thank you for visiting!';
+
+  return (
+    <View style={rp.wrapper}>
+      <Text style={rp.wrapLabel}>Receipt Preview</Text>
+      <View style={rp.paper}>
+        <Text style={rp.bizName}>{name}</Text>
+        {!!bizAddress && <Text style={rp.bizMeta}>{bizAddress}</Text>}
+        {!!bizPhone   && <Text style={rp.bizMeta}>{bizPhone}</Text>}
+
+        <View style={rp.gap} />
+        <Text style={rp.center}>Order #00042</Text>
+        <Text style={rp.center}>{SAMPLE_DATE}</Text>
+        <Text style={rp.center}>Dine In · Table 3</Text>
+        <Ruler />
+
+        <Text style={rp.itemName}>Caramel Macchiato</Text>
+        <RcptRow left="  ×1" right="₱150.00" />
+        <Text style={rp.itemName}>Espresso</Text>
+        <Text style={rp.itemMod}>  · Extra Shot</Text>
+        <RcptRow left="  ×2" right="₱180.00" />
+        <Ruler />
+
+        <RcptRow left="Subtotal:" right="₱330.00" />
+        <RcptRow left="TOTAL:" right="₱330.00" bold />
+        <View style={rp.gap} />
+        <RcptRow left="Payment:" right="Cash" />
+        <RcptRow left="Change:"  right="₱70.00" />
+        <RcptRow left="Cashier:" right="Juan" />
+        <Ruler />
+
+        <Text style={rp.footer}>{footerText}</Text>
+
+        <View style={rp.cutRow}>
+          <Text style={rp.scissors}>✂</Text>
+          <View style={rp.cutDash} />
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function Ruler() {
+  return <View style={rp.ruler} />;
+}
+
+function RcptRow({ left, right, bold }: { left: string; right: string; bold?: boolean }) {
+  const ts = bold ? [rp.rowText, rp.rowBold] : [rp.rowText];
+  return (
+    <View style={rp.row}>
+      <Text style={ts}>{left}</Text>
+      <Text style={ts}>{right}</Text>
+    </View>
+  );
+}
+
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
@@ -927,4 +1001,41 @@ const sm = StyleSheet.create({
     paddingVertical: Spacing.md, alignItems: 'center',
   },
   closeBtnText: { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: Colors.white },
+});
+
+const rp = StyleSheet.create({
+  wrapper:   { gap: Spacing.sm },
+  wrapLabel: {
+    fontSize: FontSize.base, fontWeight: FontWeight.bold, color: Colors.gray500,
+    textTransform: 'uppercase', letterSpacing: 0.5,
+  },
+  paper: {
+    backgroundColor: '#fffef8',
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: '#e3dfc4',
+    padding: Spacing.xl,
+    gap: Spacing.xs,
+    ...Shadow.sm,
+    alignSelf: 'center',
+    width: '100%',
+    maxWidth: 320,
+  },
+  bizName: {
+    fontSize: FontSize.xl, fontWeight: FontWeight.bold,
+    textAlign: 'center', color: Colors.gray900, letterSpacing: 0.3,
+  },
+  bizMeta:  { fontSize: FontSize.sm, textAlign: 'center', color: Colors.gray600 },
+  center:   { fontSize: FontSize.sm, textAlign: 'center', color: Colors.gray700 },
+  gap:      { height: Spacing.sm },
+  ruler:    { height: 1, backgroundColor: '#d8d4bb', marginVertical: Spacing.sm },
+  itemName: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.gray800 },
+  itemMod:  { fontSize: FontSize.xs, color: Colors.gray500 },
+  row:      { flexDirection: 'row', justifyContent: 'space-between' },
+  rowText:  { fontSize: FontSize.sm, color: Colors.gray700 },
+  rowBold:  { fontWeight: FontWeight.bold, color: Colors.gray900, fontSize: FontSize.base },
+  footer:   { fontSize: FontSize.sm, textAlign: 'center', color: Colors.gray600, marginTop: Spacing.xs },
+  cutRow:   { flexDirection: 'row', alignItems: 'center', marginTop: Spacing.md, gap: Spacing.xs },
+  scissors: { fontSize: FontSize.sm, color: Colors.gray300 },
+  cutDash:  { flex: 1, height: 1, borderWidth: 1, borderColor: Colors.gray300, borderStyle: 'dashed' },
 });
