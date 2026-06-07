@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { MutableRefObject, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator, FlatList, Modal, ScrollView, StyleSheet, Text,
   TextInput, TouchableOpacity, View, useWindowDimensions,
@@ -102,7 +102,7 @@ function buildOrdersCsv(orders: Order[], includeProfit: boolean): Parameters<typ
 
 type Nav = NativeStackNavigationProp<AdminStackParamList>;
 
-export default function OrdersPanel() {
+export default function OrdersPanel({ exportRef }: { exportRef?: MutableRefObject<(() => void) | null> }) {
   const navigation  = useNavigation<Nav>();
   const { width: winW } = useWindowDimensions();
   const sidebarW = winW < 960 ? 56 : Math.max(160, Math.round(winW * 0.2));
@@ -128,7 +128,6 @@ export default function OrdersPanel() {
   const [typeFilter,    setTypeFilter]    = useState<OrderType | 'all'>('all');
   const [openDropdown,  setOpenDropdown]  = useState<'pay' | 'type' | null>(null);
   const [search,        setSearch]        = useState('');
-  const [exporting,     setExporting]     = useState(false);
   const [syncVersion,   setSyncVersion]   = useState(0);
   const [settings,      setSettings]      = useState<Settings>({});
   const [reprinting,    setReprinting]    = useState<string | null>(null);
@@ -233,7 +232,6 @@ export default function OrdersPanel() {
     : orders;
 
   async function handleExport() {
-    setExporting(true);
     try {
       const { start, end } = getRange(period);
       const filters = buildFilters();
@@ -250,19 +248,19 @@ export default function OrdersPanel() {
       await exportCsv(...buildOrdersCsv(rows, isAdmin));
     } catch {
       toast.error('Could not export CSV. Check storage permissions.');
-    } finally {
-      setExporting(false);
     }
   }
+
+  if (exportRef) exportRef.current = handleExport;
+  useEffect(() => () => { if (exportRef) exportRef.current = null; }, [exportRef]);
 
   // suppress unused warning — navigation is available for future drill-down
   void navigation;
 
   return (
     <View style={s.root}>
-      {/* Compact header: title + period tabs + actions */}
+      {/* Period tabs */}
       <View style={s.header}>
-        <Text style={s.title}>Orders</Text>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -281,21 +279,6 @@ export default function OrdersPanel() {
             </TouchableOpacity>
           ))}
         </ScrollView>
-        <View style={s.titleActions}>
-          {!loading && visibleOrders.length > 0 && (
-            <TouchableOpacity
-              style={[s.exportBtn, exporting && s.exportBtnOff]}
-              onPress={handleExport}
-              disabled={exporting}
-              activeOpacity={0.8}
-            >
-              <Text style={s.exportBtnText}>{exporting ? '…' : '⬇ Export'}</Text>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity style={s.refreshBtn} onPress={load} disabled={loading}>
-            <Text style={s.refreshText}>{loading ? '…' : '↻ Refresh'}</Text>
-          </TouchableOpacity>
-        </View>
       </View>
 
       {/* Filter row */}
@@ -575,39 +558,6 @@ const s = StyleSheet.create({
     borderColor: Colors.border,
     gap: Spacing.sm,
   },
-  titleActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    flexShrink: 0,
-  },
-  title: {
-    fontSize: FontSize.xl,
-    fontWeight: FontWeight.bold,
-    color: Colors.gray900,
-    flexShrink: 0,
-  },
-  exportBtn: {
-    borderWidth: 1.5,
-    borderColor: Colors.green600,
-    borderRadius: Radius.md,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-  },
-  exportBtnOff: { opacity: 0.5 },
-  exportBtnText: {
-    fontSize: FontSize.sm,
-    fontWeight: FontWeight.semibold,
-    color: Colors.green700,
-  },
-  refreshBtn: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderRadius: Radius.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  refreshText: { fontSize: FontSize.sm, color: Colors.green700, fontWeight: FontWeight.semibold },
   periodScroll: { flex: 1 },
   periodTabsContent: { flexDirection: 'row', gap: Spacing.xs, alignItems: 'center' },
   periodTab: {

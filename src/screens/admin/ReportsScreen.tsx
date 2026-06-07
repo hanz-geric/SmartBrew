@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator, ScrollView, StyleSheet,
   Text, TouchableOpacity, View,
@@ -445,6 +445,7 @@ export default function ReportsScreen() {
   const [loading,   setLoading]   = useState(true);
   const [error,     setError]     = useState('');
   const [exporting, setExporting] = useState(false);
+  const panelExportRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -500,16 +501,14 @@ export default function ReportsScreen() {
             ))}
           </View>
 
-          {tab === 'analytics' && !loading && hasData && (
-            <TouchableOpacity
-              style={[s.exportBtn, exporting && s.exportBtnOff]}
-              onPress={handleExport}
-              disabled={exporting}
-              activeOpacity={0.8}
-            >
-              <Text style={s.exportBtnText}>{exporting ? '…' : '⬇ Export'}</Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            style={[s.exportBtn, (tab === 'analytics' && (loading || exporting)) && s.exportBtnOff]}
+            onPress={() => tab === 'analytics' ? handleExport() : panelExportRef.current?.()}
+            disabled={tab === 'analytics' && (loading || exporting)}
+            activeOpacity={0.8}
+          >
+            <Text style={s.exportBtnText}>{exporting ? '…' : '⬇'}</Text>
+          </TouchableOpacity>
         </View>
 
         {/* ── Analytics tab ── */}
@@ -548,10 +547,10 @@ export default function ReportsScreen() {
         )}
 
         {/* ── Sessions tab ── */}
-        {tab === 'sessions' && <SessionsPanel />}
+        {tab === 'sessions' && <SessionsPanel exportRef={panelExportRef} />}
 
         {/* ── Orders tab ── */}
-        {tab === 'orders' && <OrdersPanel />}
+        {tab === 'orders' && <OrdersPanel exportRef={panelExportRef} />}
 
       </View>
     </AdminLayout>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { MutableRefObject, useEffect, useState } from 'react';
 import {
   ActivityIndicator, FlatList, ScrollView, TextInput,
   StyleSheet, Text, TouchableOpacity, View,
@@ -85,7 +85,7 @@ function buildSessionsCsv(sessions: CashSession[]): Parameters<typeof exportCsv>
   return [`sessions_${new Date().toISOString().slice(0, 10)}.csv`, headers, rows];
 }
 
-export default function SessionsPanel() {
+export default function SessionsPanel({ exportRef }: { exportRef?: MutableRefObject<(() => void) | null> }) {
   const navigation = useNavigation<Nav>();
 
   const [sessions,      setSessions]      = useState<CashSession[]>([]);
@@ -94,7 +94,6 @@ export default function SessionsPanel() {
   const [period,        setPeriod]        = useState<SessionPeriod>('week');
   const [statusFilter,  setStatusFilter]  = useState<'all' | 'open' | 'closed'>('all');
   const [cashierSearch, setCashierSearch] = useState('');
-  const [exporting,     setExporting]     = useState(false);
   const [syncVersion,   setSyncVersion]   = useState(0);
 
   const { subscribe } = useSyncEvents();
@@ -133,16 +132,17 @@ export default function SessionsPanel() {
 
   async function handleExport() {
     if (!filteredSessions.length) return;
-    setExporting(true);
     try {
       await exportCsv(...buildSessionsCsv(filteredSessions));
     } catch { /* ignore share cancellation */ }
-    finally { setExporting(false); }
   }
+
+  if (exportRef) exportRef.current = handleExport;
+  useEffect(() => () => { if (exportRef) exportRef.current = null; }, [exportRef]);
 
   return (
     <View style={s.root}>
-      {/* Header */}
+      {/* Period tabs */}
       <View style={s.header}>
         <ScrollView
           horizontal
@@ -162,21 +162,6 @@ export default function SessionsPanel() {
             </TouchableOpacity>
           ))}
         </ScrollView>
-        <View style={s.titleActions}>
-          {!loading && filteredSessions.length > 0 && (
-            <TouchableOpacity
-              style={[s.exportBtn, exporting && s.exportBtnOff]}
-              onPress={handleExport}
-              disabled={exporting}
-              activeOpacity={0.8}
-            >
-              <Text style={s.exportBtnText}>{exporting ? '…' : '⬇ Export'}</Text>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity style={s.refreshBtn} onPress={load} disabled={loading}>
-            <Text style={s.refreshText}>{loading ? '…' : '↻ Refresh'}</Text>
-          </TouchableOpacity>
-        </View>
       </View>
 
       {/* Search + status filters */}
@@ -314,13 +299,6 @@ const s = StyleSheet.create({
     borderBottomWidth: 1, borderColor: Colors.border,
     gap: Spacing.sm,
   },
-  titleActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, flexShrink: 0 },
-  exportBtn: {
-    borderWidth: 1.5, borderColor: Colors.green600,
-    borderRadius: Radius.md, paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs,
-  },
-  exportBtnOff: { opacity: 0.5 },
-  exportBtnText: { fontSize: FontSize.sm, fontWeight: FontWeight.semibold, color: Colors.green700 },
   periodScroll: { flex: 1 },
   periodTabsContent: { flexDirection: 'row', gap: Spacing.xs, alignItems: 'center' },
   periodTab: {
@@ -330,13 +308,6 @@ const s = StyleSheet.create({
   periodTabSel:     { backgroundColor: Colors.green600 },
   periodTabText:    { fontSize: FontSize.sm, fontWeight: FontWeight.medium, color: Colors.gray600 },
   periodTabTextSel: { color: Colors.white, fontWeight: FontWeight.bold },
-  refreshBtn: {
-    paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs,
-    borderRadius: Radius.md, backgroundColor: Colors.surface,
-    borderWidth: 1, borderColor: Colors.border,
-  },
-  refreshText: { fontSize: FontSize.sm, color: Colors.green700, fontWeight: FontWeight.semibold },
-
   searchFilterRow: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
     paddingHorizontal: Spacing.xl, paddingVertical: Spacing.sm,

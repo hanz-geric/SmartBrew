@@ -144,23 +144,6 @@ export default function StockScreen() {
   return (
     <AdminLayout active="Stock">
       <View style={s.root}>
-        {/* Header */}
-        <View style={s.header}>
-          <View>
-            <Text style={s.title}>Stock</Text>
-            <Text style={s.subtitle}>{activeItems.length} active items</Text>
-          </View>
-          {isAdmin && (
-            <TouchableOpacity
-              style={s.addBtn}
-              onPress={() => navigation.navigate('StockEdit', {})}
-              activeOpacity={0.8}
-            >
-              <Text style={s.addBtnText}>+ Add Item</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
         {/* Alert strip */}
         {!loading && hasAlerts && (
           <View style={s.alertStrip}>
@@ -345,6 +328,16 @@ export default function StockScreen() {
             }}
           />
         )}
+
+        {isAdmin && (
+          <TouchableOpacity
+            style={s.fab}
+            onPress={() => navigation.navigate('StockEdit', { itemId: undefined })}
+            activeOpacity={0.8}
+          >
+            <Text style={s.fabText}>+</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </AdminLayout>
   );
@@ -354,17 +347,6 @@ export default function StockScreen() {
 
 const s = StyleSheet.create({
   root:       { flex: 1, backgroundColor: Colors.background },
-  header:     {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: Spacing.xl, paddingTop: Spacing.xl, paddingBottom: Spacing.md,
-  },
-  title:      { fontSize: FontSize.display, fontWeight: FontWeight.bold, color: Colors.gray900 },
-  subtitle:   { fontSize: FontSize.sm, color: Colors.gray400, marginTop: 2 },
-  addBtn:     {
-    backgroundColor: Colors.green600, borderRadius: Radius.md,
-    paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md, ...Shadow.sm,
-  },
-  addBtnText: { fontSize: FontSize.base, fontWeight: FontWeight.bold, color: Colors.white },
 
   alertStrip: {
     marginHorizontal: Spacing.xl, marginBottom: Spacing.sm,
@@ -376,8 +358,16 @@ const s = StyleSheet.create({
 
   filterRow:  {
     flexDirection: 'row', gap: Spacing.sm, alignItems: 'center',
-    paddingHorizontal: Spacing.xl, paddingBottom: Spacing.md,
+    paddingHorizontal: Spacing.xl, paddingTop: Spacing.xl, paddingBottom: Spacing.md,
   },
+  fab: {
+    position: 'absolute', bottom: Spacing.xl, right: Spacing.xl,
+    width: 56, height: 56, borderRadius: 28,
+    backgroundColor: Colors.green600,
+    alignItems: 'center', justifyContent: 'center',
+    zIndex: 10, ...Shadow.sm,
+  },
+  fabText: { fontSize: 28, color: Colors.white, fontWeight: FontWeight.bold, lineHeight: 32 },
   searchInput: {
     flex: 1, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border,
     borderRadius: Radius.md, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm,
