@@ -550,30 +550,23 @@ function SessionList({ onSelect }: { onSelect: (s: CashSession) => void }) {
 
   return (
     <>
-      {/* Filter row */}
-      <div className="bg-white px-6 py-3 flex flex-wrap items-center gap-3" style={{ borderBottom: '1px solid #e5e7eb' }}>
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs font-bold" style={{ color: '#9ca3af' }}>PERIOD</span>
+      {/* Filter rows */}
+      <div className="bg-white px-4 pt-2.5 pb-2 flex flex-col gap-2" style={{ borderBottom: '1px solid #e5e7eb' }}>
+        <div className="flex items-center gap-2">
           <select
             value={period}
             onChange={e => { setPeriod(e.target.value as SessionPeriod); setStatusFilter('all') }}
-            className="text-sm font-semibold rounded-md px-2 py-1 outline-none cursor-pointer"
+            className="text-sm rounded-md px-2 py-1.5 outline-none cursor-pointer shrink-0"
             style={{ border: '1px solid #e5e7eb', color: '#374151', background: '#ffffff' }}
           >
             {PERIODS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
           </select>
-        </div>
-
-        <div className="w-px h-4" style={{ background: '#e5e7eb' }} />
-
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs font-bold" style={{ color: '#9ca3af' }}>STATUS</span>
           <div className="flex gap-1">
             {(['all', 'open', 'closed'] as const).map(f => (
               <button
                 key={f}
                 onClick={() => setStatusFilter(f)}
-                className="px-2.5 py-1 rounded-md text-xs font-semibold transition-colors"
+                className="px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors"
                 style={{
                   background: statusFilter === f ? '#f0fdf4' : '#f9fafb',
                   color:      statusFilter === f ? '#15803d' : '#6b7280',
@@ -584,27 +577,24 @@ function SessionList({ onSelect }: { onSelect: (s: CashSession) => void }) {
               </button>
             ))}
           </div>
-        </div>
-
-        <input
-          type="text"
-          placeholder="Search by cashier…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="flex-1 min-w-[140px] text-sm rounded-md px-3 py-1 outline-none focus:ring-2 focus:ring-green-600"
-          style={{ border: '1px solid #d1d5db', color: '#111827' }}
-        />
-
-        <div className="flex items-center gap-2 shrink-0">
+          <div className="flex-1" />
           {!loading && visible.length > 0 && (
-            <button onClick={handleExport} disabled={exporting} className="px-3 py-1 rounded-md text-sm font-semibold disabled:opacity-50" style={{ border: '1.5px solid #16a34a', color: '#15803d' }}>
-              {exporting ? '…' : '⬇ Export'}
+            <button onClick={handleExport} disabled={exporting}
+              className="w-8 h-8 flex items-center justify-center rounded-md text-base font-bold disabled:opacity-50"
+              style={{ border: '1.5px solid #16a34a', color: '#15803d' }}
+              title="Export CSV">
+              {exporting ? '…' : '↓'}
             </button>
           )}
-          <button onClick={load} disabled={loading} className="px-3 py-1 rounded-md text-sm font-semibold disabled:opacity-50" style={{ border: '1px solid #e5e7eb', color: '#15803d' }}>
-            {loading ? '…' : '↻ Refresh'}
-          </button>
         </div>
+        <input
+          type="text"
+          placeholder="Search cashier…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="w-full text-sm rounded-md px-3 py-1.5 outline-none focus:ring-2 focus:ring-green-600"
+          style={{ border: '1px solid #d1d5db', color: '#111827' }}
+        />
       </div>
 
       {/* Summary bar */}

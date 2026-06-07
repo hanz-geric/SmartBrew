@@ -272,100 +272,70 @@ export default function OrdersPanel() {
     <>
       {/* ── Sticky header ── */}
       <div className="sticky top-0 z-10 bg-white" style={{ borderBottom: '1px solid #e5e7eb' }}>
-        {/* Title + actions */}
-        <div className="flex items-center gap-3 px-4 py-3">
-          <h2 className="text-lg font-bold shrink-0" style={{ color: '#111827' }}>Orders</h2>
-          <div className="flex-1" />
-          <div className="flex items-center gap-2 shrink-0">
+        {/* Filter rows */}
+        <div className="px-4 pt-2.5 pb-2 flex flex-col gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <select
+              value={period}
+              onChange={e => { setPeriod(e.target.value as Period); setExpanded(null) }}
+              className="text-sm rounded-md px-2 py-1.5 outline-none cursor-pointer shrink-0"
+              style={{ border: '1px solid #e5e7eb', color: '#374151', background: '#ffffff' }}
+            >
+              {PERIODS.map(p => (
+                <option key={p.value} value={p.value}>{p.label}</option>
+              ))}
+            </select>
+            <select
+              value={payFilter}
+              onChange={e => { setPayFilter(e.target.value as PaymentMethod | 'all'); setExpanded(null) }}
+              className="text-sm rounded-md px-2 py-1.5 outline-none cursor-pointer shrink-0"
+              style={{
+                border:     '1px solid #e5e7eb',
+                color:      payFilter !== 'all' ? '#15803d' : '#9ca3af',
+                background: payFilter !== 'all' ? '#f0fdf4' : '#ffffff',
+              }}
+            >
+              <option value="all">All payment</option>
+              <option value="cash">Cash</option>
+              <option value="card">Card</option>
+              <option value="qr">QR</option>
+              <option value="gift_card">Gift Card</option>
+              <option value="pay_later">Pay Later</option>
+            </select>
+            <select
+              value={typeFilter}
+              onChange={e => { setTypeFilter(e.target.value as OrderType | 'all'); setExpanded(null) }}
+              className="text-sm rounded-md px-2 py-1.5 outline-none cursor-pointer shrink-0"
+              style={{
+                border:     '1px solid #e5e7eb',
+                color:      typeFilter !== 'all' ? '#15803d' : '#9ca3af',
+                background: typeFilter !== 'all' ? '#f0fdf4' : '#ffffff',
+              }}
+            >
+              <option value="all">All type</option>
+              <option value="dine_in">Dine In</option>
+              <option value="takeaway">Takeaway</option>
+              <option value="delivery">Delivery</option>
+            </select>
+            <div className="flex-1" />
             {!loading && visible.length > 0 && (
               <button
                 onClick={handleExport}
                 disabled={exporting}
-                className="px-3 py-1 rounded-md text-sm font-semibold transition-opacity disabled:opacity-50"
+                className="w-8 h-8 flex items-center justify-center rounded-md text-base font-bold transition-opacity disabled:opacity-50 shrink-0"
                 style={{ border: '1.5px solid #16a34a', color: '#15803d' }}
+                title="Export CSV"
               >
-                {exporting ? '…' : '⬇ Export'}
+                {exporting ? '…' : '↓'}
               </button>
             )}
-            <button
-              onClick={load}
-              disabled={loading}
-              className="px-3 py-1 rounded-md text-sm font-semibold disabled:opacity-50"
-              style={{ border: '1px solid #e5e7eb', color: '#15803d' }}
-            >
-              {loading ? '…' : '↻ Refresh'}
-            </button>
           </div>
-        </div>
-
-        {/* Filter + search row */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5" style={{ borderTop: '1px solid #f3f4f6' }}>
-          <div className="flex items-center gap-x-3 flex-wrap gap-y-2">
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs font-bold" style={{ color: '#9ca3af' }}>PERIOD</span>
-              <select
-                value={period}
-                onChange={e => { setPeriod(e.target.value as Period); setExpanded(null) }}
-                className="text-sm font-semibold rounded-md px-2 py-1 outline-none cursor-pointer"
-                style={{ border: '1px solid #e5e7eb', color: '#374151', background: '#ffffff' }}
-              >
-                {PERIODS.map(p => (
-                  <option key={p.value} value={p.value}>{p.label}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="w-px h-4 hidden sm:block" style={{ background: '#e5e7eb' }} />
-
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs font-bold" style={{ color: '#9ca3af' }}>PAY</span>
-              <select
-                value={payFilter}
-                onChange={e => { setPayFilter(e.target.value as PaymentMethod | 'all'); setExpanded(null) }}
-                className="text-sm font-semibold rounded-md px-2 py-1 outline-none cursor-pointer"
-                style={{
-                  border:     '1px solid #e5e7eb',
-                  color:      payFilter !== 'all' ? '#15803d' : '#374151',
-                  background: payFilter !== 'all' ? '#f0fdf4' : '#ffffff',
-                }}
-              >
-                <option value="all">All</option>
-                <option value="cash">Cash</option>
-                <option value="card">Card</option>
-                <option value="qr">QR</option>
-                <option value="gift_card">Gift Card</option>
-                <option value="pay_later">Pay Later</option>
-              </select>
-            </div>
-
-            <div className="w-px h-4 hidden sm:block" style={{ background: '#e5e7eb' }} />
-
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs font-bold" style={{ color: '#9ca3af' }}>TYPE</span>
-              <select
-                value={typeFilter}
-                onChange={e => { setTypeFilter(e.target.value as OrderType | 'all'); setExpanded(null) }}
-                className="text-sm font-semibold rounded-md px-2 py-1 outline-none cursor-pointer"
-                style={{
-                  border:     '1px solid #e5e7eb',
-                  color:      typeFilter !== 'all' ? '#15803d' : '#374151',
-                  background: typeFilter !== 'all' ? '#f0fdf4' : '#ffffff',
-                }}
-              >
-                <option value="all">All</option>
-                <option value="dine_in">Dine In</option>
-                <option value="takeaway">Takeaway</option>
-                <option value="delivery">Delivery</option>
-              </select>
-            </div>
-          </div>
-
           <input
             type="text"
             placeholder="Search order #…"
             value={search}
             onChange={e => { setSearch(e.target.value); setExpanded(null) }}
-            className="flex-1 min-w-[160px] text-sm rounded-md px-3 py-1 outline-none focus:ring-2 focus:ring-green-600"
+            className="w-full text-sm rounded-md px-3 py-1.5 outline-none focus:ring-2 focus:ring-green-600"
             style={{ border: '1px solid #d1d5db', color: '#111827' }}
           />
         </div>
