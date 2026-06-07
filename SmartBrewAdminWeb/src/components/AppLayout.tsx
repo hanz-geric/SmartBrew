@@ -47,7 +47,7 @@ export default function AppLayout({ children }: Props) {
       {collapsed && (
         <button
           onClick={() => setCollapsed(false)}
-          className="fixed left-0 top-4 z-50 flex items-center justify-center w-7 h-9 rounded-r-lg text-sm font-bold text-white shadow-md transition-colors hover:opacity-90"
+          className="fixed left-0 top-1/2 -translate-y-1/2 z-50 flex items-center justify-center w-7 h-9 rounded-r-lg text-sm font-bold text-white shadow-md transition-colors hover:opacity-90"
           style={{ background: '#166534' }}
           title="Open sidebar"
         >
