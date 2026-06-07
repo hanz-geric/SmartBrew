@@ -273,25 +273,10 @@ export default function Orders() {
     <AppLayout>
       {/* ── Sticky header ── */}
       <div className="sticky top-0 z-10 bg-white" style={{ borderBottom: '1px solid #e5e7eb' }}>
-        {/* Title + period tabs + actions */}
+        {/* Title + actions */}
         <div className="flex items-center gap-3 px-6 py-3">
           <h1 className="text-xl font-bold shrink-0" style={{ color: '#111827' }}>Orders</h1>
-          <div className="flex-1 flex items-center gap-1.5 overflow-x-auto">
-            {PERIODS.map(p => (
-              <button
-                key={p.value}
-                onClick={() => setPeriod(p.value)}
-                className="px-3 py-1 rounded-full text-sm shrink-0 transition-colors"
-                style={{
-                  background: period === p.value ? '#166534' : '#f3f4f6',
-                  color:      period === p.value ? '#ffffff'  : '#6b7280',
-                  fontWeight: period === p.value ? '700'      : '500',
-                }}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
+          <div className="flex-1" />
           <div className="flex items-center gap-2 shrink-0">
             {!loading && visible.length > 0 && (
               <button
@@ -316,6 +301,26 @@ export default function Orders() {
 
         {/* Filter + search row */}
         <div className="flex items-center gap-3 px-6 py-2.5" style={{ borderTop: '1px solid #f3f4f6' }}>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-bold" style={{ color: '#9ca3af' }}>PERIOD</span>
+            <select
+              value={period}
+              onChange={e => { setPeriod(e.target.value as Period); setExpanded(null) }}
+              className="text-sm font-semibold rounded-md px-2 py-1 outline-none cursor-pointer"
+              style={{
+                border:     '1px solid #e5e7eb',
+                color:      '#374151',
+                background: '#ffffff',
+              }}
+            >
+              {PERIODS.map(p => (
+                <option key={p.value} value={p.value}>{p.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="w-px h-4" style={{ background: '#e5e7eb' }} />
+
           <div className="flex items-center gap-1.5">
             <span className="text-xs font-bold" style={{ color: '#9ca3af' }}>PAY</span>
             <select
