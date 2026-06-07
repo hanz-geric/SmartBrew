@@ -334,6 +334,35 @@ function PeakHoursChart({ hours }: { hours: HourBucket[] }) {
   )
 }
 
+// ─── CSV export ──────────────────────────────────────────────────────────────
+
+function downloadCsv(buckets: Bucket[], topProducts: TopProduct[], granularity: Granularity, includeProfit: boolean) {
+  const esc   = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`
+  const toRow = (r: (string | number)[]) => r.map(esc).join(',')
+
+  const revenueHeaders = ['Period', 'Revenue (₱)', 'Orders', 'Avg Order (₱)', ...(includeProfit ? ['Profit (₱)'] : [])]
+  const revenueRows    = buckets.map(b => {
+    const avg = b.count > 0 ? (b.revenue / b.count).toFixed(2) : '0.00'
+    return [b.label, b.revenue.toFixed(2), b.count, avg, ...(includeProfit ? [b.profit.toFixed(2)] : [])]
+  })
+
+  const productHeaders = ['Product', 'Units Sold']
+  const productRows    = topProducts.map(p => [p.name, p.qty])
+
+  const csv = [
+    toRow(revenueHeaders),
+    ...revenueRows.map(toRow),
+    '',
+    toRow(productHeaders),
+    ...productRows.map(toRow),
+  ].join('\n')
+
+  const a    = document.createElement('a')
+  a.href     = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
+  a.download = `reports_${granularity}_${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+}
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function Reports() {
@@ -421,6 +450,14 @@ export default function Reports() {
                 ))}
               </div>
             </div>
+            <div className="flex-1" />
+            <button
+              onClick={() => downloadCsv(buckets, topProducts, granularity, isAdmin)}
+              disabled={loading}
+              className="px-3 py-1.5 rounded-md text-sm font-semibold disabled:opacity-40"
+              style={{ border: '1px solid #e5e7eb', color: '#374151' }}>
+              ↓ Export CSV
+            </button>
           </div>
         )}
       </div>
