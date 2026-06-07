@@ -274,7 +274,7 @@ export default function Orders() {
       {/* ── Sticky header ── */}
       <div className="sticky top-0 z-10 bg-white" style={{ borderBottom: '1px solid #e5e7eb' }}>
         {/* Title + actions */}
-        <div className="flex items-center gap-3 px-6 py-3">
+        <div className="flex items-center gap-3 px-4 py-3">
           <h1 className="text-xl font-bold shrink-0" style={{ color: '#111827' }}>Orders</h1>
           <div className="flex-1" />
           <div className="flex items-center gap-2 shrink-0">
@@ -300,75 +300,75 @@ export default function Orders() {
         </div>
 
         {/* Filter + search row */}
-        <div className="flex items-center gap-3 px-6 py-2.5" style={{ borderTop: '1px solid #f3f4f6' }}>
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs font-bold" style={{ color: '#9ca3af' }}>PERIOD</span>
-            <select
-              value={period}
-              onChange={e => { setPeriod(e.target.value as Period); setExpanded(null) }}
-              className="text-sm font-semibold rounded-md px-2 py-1 outline-none cursor-pointer"
-              style={{
-                border:     '1px solid #e5e7eb',
-                color:      '#374151',
-                background: '#ffffff',
-              }}
-            >
-              {PERIODS.map(p => (
-                <option key={p.value} value={p.value}>{p.label}</option>
-              ))}
-            </select>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5" style={{ borderTop: '1px solid #f3f4f6' }}>
+          {/* Dropdowns group — stays on one line, wraps as a unit */}
+          <div className="flex items-center gap-x-3 flex-wrap gap-y-2">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-bold" style={{ color: '#9ca3af' }}>PERIOD</span>
+              <select
+                value={period}
+                onChange={e => { setPeriod(e.target.value as Period); setExpanded(null) }}
+                className="text-sm font-semibold rounded-md px-2 py-1 outline-none cursor-pointer"
+                style={{ border: '1px solid #e5e7eb', color: '#374151', background: '#ffffff' }}
+              >
+                {PERIODS.map(p => (
+                  <option key={p.value} value={p.value}>{p.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="w-px h-4 hidden sm:block" style={{ background: '#e5e7eb' }} />
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-bold" style={{ color: '#9ca3af' }}>PAY</span>
+              <select
+                value={payFilter}
+                onChange={e => { setPayFilter(e.target.value as PaymentMethod | 'all'); setExpanded(null) }}
+                className="text-sm font-semibold rounded-md px-2 py-1 outline-none cursor-pointer"
+                style={{
+                  border:     '1px solid #e5e7eb',
+                  color:      payFilter !== 'all' ? '#15803d' : '#374151',
+                  background: payFilter !== 'all' ? '#f0fdf4' : '#ffffff',
+                }}
+              >
+                <option value="all">All</option>
+                <option value="cash">Cash</option>
+                <option value="card">Card</option>
+                <option value="qr">QR</option>
+                <option value="gift_card">Gift Card</option>
+                <option value="pay_later">Pay Later</option>
+              </select>
+            </div>
+
+            <div className="w-px h-4 hidden sm:block" style={{ background: '#e5e7eb' }} />
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-bold" style={{ color: '#9ca3af' }}>TYPE</span>
+              <select
+                value={typeFilter}
+                onChange={e => { setTypeFilter(e.target.value as OrderType | 'all'); setExpanded(null) }}
+                className="text-sm font-semibold rounded-md px-2 py-1 outline-none cursor-pointer"
+                style={{
+                  border:     '1px solid #e5e7eb',
+                  color:      typeFilter !== 'all' ? '#15803d' : '#374151',
+                  background: typeFilter !== 'all' ? '#f0fdf4' : '#ffffff',
+                }}
+              >
+                <option value="all">All</option>
+                <option value="dine_in">Dine In</option>
+                <option value="takeaway">Takeaway</option>
+                <option value="delivery">Delivery</option>
+              </select>
+            </div>
           </div>
 
-          <div className="w-px h-4" style={{ background: '#e5e7eb' }} />
-
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs font-bold" style={{ color: '#9ca3af' }}>PAY</span>
-            <select
-              value={payFilter}
-              onChange={e => { setPayFilter(e.target.value as PaymentMethod | 'all'); setExpanded(null) }}
-              className="text-sm font-semibold rounded-md px-2 py-1 outline-none cursor-pointer"
-              style={{
-                border:     '1px solid #e5e7eb',
-                color:      payFilter !== 'all' ? '#15803d' : '#374151',
-                background: payFilter !== 'all' ? '#f0fdf4' : '#ffffff',
-              }}
-            >
-              <option value="all">All</option>
-              <option value="cash">Cash</option>
-              <option value="card">Card</option>
-              <option value="qr">QR</option>
-              <option value="gift_card">Gift Card</option>
-              <option value="pay_later">Pay Later</option>
-            </select>
-          </div>
-
-          <div className="w-px h-4" style={{ background: '#e5e7eb' }} />
-
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs font-bold" style={{ color: '#9ca3af' }}>TYPE</span>
-            <select
-              value={typeFilter}
-              onChange={e => { setTypeFilter(e.target.value as OrderType | 'all'); setExpanded(null) }}
-              className="text-sm font-semibold rounded-md px-2 py-1 outline-none cursor-pointer"
-              style={{
-                border:     '1px solid #e5e7eb',
-                color:      typeFilter !== 'all' ? '#15803d' : '#374151',
-                background: typeFilter !== 'all' ? '#f0fdf4' : '#ffffff',
-              }}
-            >
-              <option value="all">All</option>
-              <option value="dine_in">Dine In</option>
-              <option value="takeaway">Takeaway</option>
-              <option value="delivery">Delivery</option>
-            </select>
-          </div>
-
+          {/* Search — grows to fill remaining space; wraps below dropdowns on small screens */}
           <input
             type="text"
             placeholder="Search order #…"
             value={search}
             onChange={e => { setSearch(e.target.value); setExpanded(null) }}
-            className="flex-1 min-w-0 ml-2 text-sm rounded-md px-3 py-1 outline-none focus:ring-2 focus:ring-green-600"
+            className="flex-1 min-w-[160px] text-sm rounded-md px-3 py-1 outline-none focus:ring-2 focus:ring-green-600"
             style={{ border: '1px solid #d1d5db', color: '#111827' }}
           />
         </div>
@@ -376,7 +376,7 @@ export default function Orders() {
         {/* Summary bar */}
         {!loading && !error && summary && (
           <div
-            className="flex items-center justify-between px-6 py-2 flex-wrap gap-2"
+            className="flex items-center justify-between px-4 py-2 flex-wrap gap-2"
             style={{ background: '#f0fdf4', borderTop: '1px solid #bbf7d0' }}
           >
             <span className="text-sm font-medium" style={{ color: '#15803d' }}>
@@ -398,7 +398,7 @@ export default function Orders() {
       </div>
 
       {/* ── Content ── */}
-      <div className="p-4" style={{ background: '#f9fafb', minHeight: '100%' }}>
+      <div className="px-3 py-4 sm:px-4" style={{ background: '#f9fafb', minHeight: '100%' }}>
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <span className="text-sm" style={{ color: '#9ca3af' }}>Loading…</span>
