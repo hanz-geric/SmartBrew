@@ -58,7 +58,7 @@ export default function Login() {
               value={username}
               onChange={e => setUsername(e.target.value)}
               required
-              className="w-full rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-green-600"
+              className="w-full rounded-lg px-3 py-2 text-base outline-none focus:ring-2 focus:ring-green-600"
               style={{ background: '#fff', border: '1px solid #d1d5db', color: '#111827' }}
             />
           </div>
@@ -74,7 +74,7 @@ export default function Login() {
               value={pin}
               onChange={e => setPin(e.target.value)}
               required
-              className="w-full rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-green-600"
+              className="w-full rounded-lg px-3 py-2 text-base outline-none focus:ring-2 focus:ring-green-600"
               style={{ background: '#fff', border: '1px solid #d1d5db', color: '#111827' }}
             />
           </div>
