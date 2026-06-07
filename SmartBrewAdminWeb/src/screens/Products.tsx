@@ -738,6 +738,8 @@ export default function Products() {
   const [loading,    setLoading]    = useState(true)
   const [tab,        setTab]        = useState<'products' | 'categories'>('products')
   const [view,       setView]       = useState<View>({ kind: 'list' })
+  const [search,     setSearch]     = useState('')
+  const [catFilter,  setCatFilter]  = useState('all')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -795,17 +797,23 @@ export default function Products() {
 
   // ── List view ────────────────────────────────────────────────────────────────
 
+  const activeTab = isAdmin ? tab : 'categories'
+
+  const filteredProducts = products.filter(p => {
+    const matchesSearch = search === '' || p.name.toLowerCase().includes(search.toLowerCase())
+    const matchesCat    = catFilter === 'all' || (p.category_ids ?? [p.category_id]).includes(catFilter)
+    return matchesSearch && matchesCat
+  })
+
   // Products grouped by category
   const grouped = categories.map(cat => ({
     cat,
-    items: products.filter(p => (p.category_ids ?? [p.category_id]).includes(cat.id)),
+    items: filteredProducts.filter(p => (p.category_ids ?? [p.category_id]).includes(cat.id)),
   })).filter(g => g.items.length > 0)
 
-  const uncategorised = products.filter(
+  const uncategorised = filteredProducts.filter(
     p => !categories.some(c => (p.category_ids ?? [p.category_id]).includes(c.id)),
   )
-
-  const activeTab = isAdmin ? tab : 'categories'
 
   return (
     <AppLayout>
@@ -850,6 +858,28 @@ export default function Products() {
             ))}
           </div>
         )}
+
+        {/* Filter row — products tab only */}
+        {activeTab === 'products' && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5" style={{ borderTop: '1px solid #f3f4f6' }}>
+            <div className="flex items-center gap-x-3 flex-wrap gap-y-2">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-bold" style={{ color: '#9ca3af' }}>CATEGORY</span>
+                <select value={catFilter} onChange={e => setCatFilter(e.target.value)}
+                  className="text-sm font-semibold rounded-md px-2 py-1 outline-none cursor-pointer"
+                  style={{ border: '1px solid #e5e7eb', color: '#374151', background: '#ffffff' }}>
+                  <option value="all">All</option>
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div className="w-px h-4 hidden sm:block" style={{ background: '#e5e7eb' }} />
+            </div>
+            <input type="text" placeholder="Search products…" value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="flex-1 min-w-[160px] text-sm rounded-md px-3 py-1 outline-none focus:ring-2 focus:ring-green-600"
+              style={{ border: '1px solid #d1d5db', color: '#111827' }} />
+          </div>
+        )}
       </div>
 
       {/* ── Content ── */}
@@ -862,7 +892,9 @@ export default function Products() {
           /* ── Products list ── */
           grouped.length === 0 && uncategorised.length === 0 ? (
             <p className="text-center py-20 text-sm" style={{ color: '#9ca3af' }}>
-              No products yet. Click "+ Add Product" to create one.
+              {products.length === 0
+                ? 'No products yet. Click "+ Add Product" to create one.'
+                : 'No products match your search.'}
             </p>
           ) : (
             <div className="flex flex-col gap-6 max-w-3xl mx-auto">
