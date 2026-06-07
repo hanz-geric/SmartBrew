@@ -1227,13 +1227,33 @@ export default function Products() {
     <AppLayout>
       {/* ── Sticky header ── */}
       <div className="sticky top-0 z-10 bg-white" style={{ borderBottom: '1px solid #e5e7eb' }}>
-        <div className="flex items-center justify-between px-6 py-4">
-          <h1 className="text-xl font-bold" style={{ color: '#111827' }}>Menu Management</h1>
-          <div className="flex items-center gap-2">
+        {/* Tabs + actions in one row */}
+        <div className="flex items-center justify-between px-4 pt-3 pb-2 gap-2">
+          <div className="flex items-center gap-1 min-w-0 overflow-x-auto">
+            {isAdmin
+              ? (['products', 'categories', 'modifiers'] as const).map(t => (
+                  <button key={t} onClick={() => setTab(t)}
+                    className="px-3 py-1.5 rounded-md text-sm whitespace-nowrap transition-colors shrink-0"
+                    style={{
+                      border:     `1.5px solid ${tab === t ? '#166534' : '#e5e7eb'}`,
+                      background: tab === t ? '#f0fdf4' : 'transparent',
+                      color:      tab === t ? '#15803d' : '#6b7280',
+                      fontWeight: tab === t ? '700' : '500',
+                    }}>
+                    {t === 'products'    ? `Products (${products.length})`
+                     : t === 'categories' ? `Categories (${categories.length})`
+                     : `Modifiers (${modGroups.length})`}
+                  </button>
+                ))
+              : <span className="text-base font-bold" style={{ color: '#111827' }}>Menu Management</span>
+            }
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
             <button onClick={load} disabled={loading}
-              className="px-3 py-1 rounded-md text-sm font-semibold disabled:opacity-50"
-              style={{ border: '1px solid #e5e7eb', color: '#15803d' }}>
-              {loading ? '…' : '↻ Refresh'}
+              className="w-8 h-8 flex items-center justify-center rounded-md text-base disabled:opacity-50"
+              style={{ border: '1px solid #e5e7eb', color: '#15803d' }}
+              title="Refresh">
+              {loading ? '…' : '↻'}
             </button>
             <button
               onClick={() =>
@@ -1241,51 +1261,25 @@ export default function Products() {
                 activeTab === 'modifiers' ? setView({ kind: 'editModifier', id: null }) :
                 setView({ kind: 'editCategory', id: null })
               }
-              className="px-4 py-2 rounded-lg text-sm font-bold text-white"
+              className="px-3 py-1.5 rounded-lg text-sm font-bold text-white whitespace-nowrap"
               style={{ background: '#166534' }}>
-              + Add {activeTab === 'products' ? 'Product' : activeTab === 'modifiers' ? 'Group' : 'Category'}
+              + {activeTab === 'products' ? 'Product' : activeTab === 'modifiers' ? 'Group' : 'Category'}
             </button>
           </div>
         </div>
 
-        {/* Tabs — admin sees all three */}
-        {isAdmin && (
-          <div className="flex gap-2 px-6 pb-3">
-            {(['products', 'categories', 'modifiers'] as const).map(t => (
-              <button key={t} onClick={() => setTab(t)}
-                className="px-4 py-1.5 rounded-md text-sm font-medium transition-colors"
-                style={{
-                  border:     `1.5px solid ${tab === t ? '#166534' : '#e5e7eb'}`,
-                  background: tab === t ? '#f0fdf4' : '#fff',
-                  color:      tab === t ? '#15803d' : '#6b7280',
-                  fontWeight: tab === t ? '700' : '500',
-                }}>
-                {t === 'products'   ? `Products (${products.length})`
-                 : t === 'categories' ? `Categories (${categories.length})`
-                 : `Modifiers (${modGroups.length})`}
-              </button>
-            ))}
-          </div>
-        )}
-
         {/* Filter row — products tab only */}
         {activeTab === 'products' && (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5" style={{ borderTop: '1px solid #f3f4f6' }}>
-            <div className="flex items-center gap-x-3 flex-wrap gap-y-2">
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs font-bold" style={{ color: '#9ca3af' }}>CATEGORY</span>
-                <select value={catFilter} onChange={e => setCatFilter(e.target.value)}
-                  className="text-sm font-semibold rounded-md px-2 py-1 outline-none cursor-pointer"
-                  style={{ border: '1px solid #e5e7eb', color: '#374151', background: '#ffffff' }}>
-                  <option value="all">All</option>
-                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </div>
-              <div className="w-px h-4 hidden sm:block" style={{ background: '#e5e7eb' }} />
-            </div>
-            <input type="text" placeholder="Search products…" value={search}
+          <div className="flex items-center gap-2 px-4 pb-2.5" style={{ borderTop: '1px solid #f3f4f6' }}>
+            <select value={catFilter} onChange={e => setCatFilter(e.target.value)}
+              className="text-sm rounded-md px-2 py-1.5 outline-none cursor-pointer shrink-0"
+              style={{ border: '1px solid #e5e7eb', color: catFilter === 'all' ? '#9ca3af' : '#374151', background: '#fff' }}>
+              <option value="all">All categories</option>
+              {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            <input type="text" placeholder="Search…" value={search}
               onChange={e => setSearch(e.target.value)}
-              className="flex-1 min-w-[160px] text-sm rounded-md px-3 py-1 outline-none focus:ring-2 focus:ring-green-600"
+              className="flex-1 min-w-0 text-sm rounded-md px-3 py-1.5 outline-none focus:ring-2 focus:ring-green-600"
               style={{ border: '1px solid #d1d5db', color: '#111827' }} />
           </div>
         )}
