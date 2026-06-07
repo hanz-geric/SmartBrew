@@ -22,10 +22,10 @@ export default function App() {
         <Routes>
           <Route path="/login"      element={<Login />} />
           <Route path="/dashboard"  element={<Protected><Dashboard /></Protected>} />
-          <Route path="/orders"     element={<Protected><Orders /></Protected>} />
+          <Route path="/orders"     element={<Navigate to="/reports" replace />} />
           <Route path="/products"   element={<Protected><Products /></Protected>} />
           <Route path="/categories" element={<Protected><Products /></Protected>} />
-          <Route path="/modifiers"  element={<Protected><Modifiers /></Protected>} />
+          <Route path="/modifiers"  element={<Navigate to="/products" replace />} />
           <Route path="/stock"      element={<Protected><Stock /></Protected>} />
           <Route path="/users"      element={<Protected><Users /></Protected>} />
           <Route path="/settings"   element={<Protected><SettingsPage /></Protected>} />

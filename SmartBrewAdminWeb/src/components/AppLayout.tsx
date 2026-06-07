@@ -12,11 +12,9 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { path: '/dashboard', label: 'Dashboard',  icon: '📊' },
-  { path: '/orders',    label: 'Orders',     icon: '🧾' },
   { path: '/reports',   label: 'Reports',    icon: '📈' },
   { path: '/products',  label: 'Menu',       icon: '🍽️', adminOnly: true },
   { path: '/categories',label: 'Categories', icon: '🏷️', managerOnly: true },
-  { path: '/modifiers', label: 'Modifiers',  icon: '🎛️', adminOnly: true },
   { path: '/stock',     label: 'Stock',      icon: '📦' },
   { path: '/users',     label: 'Users',      icon: '👥', adminOnly: true },
   { path: '/settings',  label: 'Settings',   icon: '⚙️', adminOnly: true },

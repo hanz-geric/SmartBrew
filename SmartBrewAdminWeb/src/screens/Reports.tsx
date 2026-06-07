@@ -4,9 +4,10 @@ import { ordersCol } from '@/firebase/collections'
 import { useAuth } from '@/context/AuthContext'
 import AppLayout from '@/components/AppLayout'
 import SessionsPanel from '@/screens/SessionsPanel'
+import OrdersPanel from '@/screens/OrdersPanel'
 import type { Order } from '@/types'
 
-type ReportsTab = 'analytics' | 'sessions'
+type ReportsTab = 'analytics' | 'sessions' | 'orders'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -414,6 +415,7 @@ export default function Reports() {
             {([
               { value: 'analytics', label: 'Analytics' },
               { value: 'sessions',  label: 'Sessions'  },
+              { value: 'orders',    label: 'Orders'    },
             ] as const).map(t => (
               <button
                 key={t.value}
@@ -465,6 +467,8 @@ export default function Reports() {
       {/* ── Body ── */}
       {tab === 'sessions' ? (
         <SessionsPanel />
+      ) : tab === 'orders' ? (
+        <OrdersPanel />
       ) : (
         <div className="p-4 max-w-5xl mx-auto">
           {loading && (
