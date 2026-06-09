@@ -1,7 +1,10 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { loginWithUsername, logout } from '@/firebase/auth'
 import { useAuth } from '@/context/AuthContext'
+import PinKeypad from '@/components/PinKeypad'
+
+const DESKTOP_BP = 1024
 
 export default function Login() {
   const { user } = useAuth()
@@ -11,6 +14,13 @@ export default function Login() {
   const [pin, setPin]           = useState('')
   const [error, setError]       = useState('')
   const [loading, setLoading]   = useState(false)
+  const [isDesktop, setIsDesktop] = useState(() => window.innerWidth >= DESKTOP_BP)
+
+  useEffect(() => {
+    function onResize() { setIsDesktop(window.innerWidth >= DESKTOP_BP) }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   if (user) {
     navigate('/dashboard', { replace: true })
@@ -64,19 +74,23 @@ export default function Login() {
           </div>
 
           <div>
-            <label htmlFor="pin" className="block text-sm font-medium mb-1" style={{ color: '#374151' }}>
+            <label className="block text-sm font-medium mb-1" style={{ color: '#374151' }}>
               PIN
             </label>
-            <input
-              id="pin"
-              type="password"
-              inputMode="numeric"
-              value={pin}
-              onChange={e => setPin(e.target.value)}
-              required
-              className="w-full rounded-lg px-3 py-2 text-base outline-none focus:ring-2 focus:ring-green-600"
-              style={{ background: '#fff', border: '1px solid #d1d5db', color: '#111827' }}
-            />
+            {isDesktop ? (
+              <input
+                id="pin"
+                type="password"
+                inputMode="numeric"
+                value={pin}
+                onChange={e => setPin(e.target.value)}
+                required
+                className="w-full rounded-lg px-3 py-2 text-base outline-none focus:ring-2 focus:ring-green-600"
+                style={{ background: '#fff', border: '1px solid #d1d5db', color: '#111827' }}
+              />
+            ) : (
+              <PinKeypad value={pin} onChange={setPin} />
+            )}
           </div>
 
           {error && (
