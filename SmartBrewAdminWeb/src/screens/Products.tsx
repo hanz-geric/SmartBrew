@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import {
   getDocs, setDoc, addDoc, deleteDoc, doc, query, orderBy,
 } from 'firebase/firestore'
@@ -22,6 +22,8 @@ type View =
 interface LocalModifier extends Modifier {
   _key: string
 }
+
+const OPTIONS_COLLAPSE_THRESHOLD = 15
 
 function makeKey() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2)
@@ -112,6 +114,56 @@ function SectionLabel({ title }: { title: string }) {
 
 function inputCls() {
   return 'w-full rounded-md px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-green-600'
+}
+
+function StockItemPicker({
+  stockItems, selectedId, onSelect, showStock = false,
+}: {
+  stockItems: StockItem[]
+  selectedId: string
+  onSelect:   (id: string) => void
+  showStock?: boolean
+}) {
+  const [search, setSearch] = useState('')
+  const filtered = search.trim()
+    ? stockItems.filter(s => s.name.toLowerCase().includes(search.trim().toLowerCase()))
+    : stockItems
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {stockItems.length > 8 && (
+        <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+          placeholder="Search stock items…"
+          className="w-full rounded-md px-2 py-1.5 text-xs outline-none focus:ring-1 focus:ring-green-600"
+          style={{ border: '1px solid #d1d5db' }} />
+      )}
+      <div className="flex flex-wrap gap-1.5 max-h-44 overflow-y-auto p-0.5">
+        {filtered.length === 0 ? (
+          <p className="text-xs" style={{ color: '#9ca3af' }}>No matching stock items.</p>
+        ) : filtered.map(si => {
+          const sel = selectedId === si.id
+          return showStock ? (
+            <button key={si.id} type="button" onClick={() => onSelect(si.id)}
+              className="flex flex-col px-3 py-1.5 rounded-md text-left"
+              style={{ border: `1.5px solid ${sel ? '#166534' : '#e5e7eb'}`, background: sel ? '#f0fdf4' : '#fff' }}>
+              <span className="text-sm font-medium" style={{ color: sel ? '#15803d' : '#374151' }}>{si.name}</span>
+              <span className="text-xs" style={{ color: '#9ca3af' }}>{si.quantity_on_hand} {si.unit} on hand</span>
+            </button>
+          ) : (
+            <button key={si.id} type="button" onClick={() => onSelect(si.id)}
+              className="px-2 py-1 rounded text-xs font-medium"
+              style={{
+                border:     `1.5px solid ${sel ? '#166534' : '#e5e7eb'}`,
+                background: sel ? '#f0fdf4' : '#fff',
+                color:      sel ? '#15803d' : '#6b7280',
+              }}>
+              {si.name}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
 }
 
 // ─── CategoryEditForm ─────────────────────────────────────────────────────────
@@ -207,13 +259,13 @@ function CategoryEditForm({
 
 // ─── ModifierRow ──────────────────────────────────────────────────────────────
 
-function ModifierRow({
+const ModifierRow = memo(function ModifierRow({
   modifier, index, onChange, onRemove, canRemove, stockItems,
 }: {
   modifier:   LocalModifier
   index:      number
-  onChange:   (patch: Partial<LocalModifier>) => void
-  onRemove:   () => void
+  onChange:   (key: string, patch: Partial<LocalModifier>) => void
+  onRemove:   (key: string) => void
   canRemove:  boolean
   stockItems: StockItem[]
 }) {
@@ -221,20 +273,24 @@ function ModifierRow({
   const validLines = lines.filter(l => l.stock_item_id && l.quantity_required > 0)
   const [showRecipe, setShowRecipe] = useState(lines.length > 0)
 
-  function updateLine(i: number, patch: Partial<RecipeLine>) {
-    onChange({ recipe_lines: lines.map((l, idx) => idx === i ? { ...l, ...patch } : l) })
+  function patch(p: Partial<LocalModifier>) {
+    onChange(modifier._key, p)
+  }
+
+  function updateLine(i: number, p: Partial<RecipeLine>) {
+    patch({ recipe_lines: lines.map((l, idx) => idx === i ? { ...l, ...p } : l) })
   }
 
   function addLine() {
-    onChange({ recipe_lines: [...lines, { stock_item_id: '', quantity_required: 0 }] })
+    patch({ recipe_lines: [...lines, { stock_item_id: '', quantity_required: 0 }] })
   }
 
   function removeLine(i: number) {
-    onChange({ recipe_lines: lines.filter((_, idx) => idx !== i) })
+    patch({ recipe_lines: lines.filter((_, idx) => idx !== i) })
   }
 
   function toggleRecipe() {
-    if (showRecipe && lines.length > 0) onChange({ recipe_lines: [] })
+    if (showRecipe && lines.length > 0) patch({ recipe_lines: [] })
     setShowRecipe(v => !v)
   }
 
@@ -246,7 +302,7 @@ function ModifierRow({
           <span className="text-xs font-bold" style={{ color: '#6b7280' }}>{index + 1}</span>
         </div>
         <div className="flex flex-col gap-2 flex-1 min-w-0">
-          <input type="text" value={modifier.name} onChange={e => onChange({ name: e.target.value })}
+          <input type="text" value={modifier.name} onChange={e => patch({ name: e.target.value })}
             placeholder="Option name (e.g. Extra Cream, Large)"
             className="w-full rounded-md px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-green-600"
             style={{ border: '1px solid #d1d5db', color: '#111827' }} />
@@ -256,19 +312,19 @@ function ModifierRow({
               <span className="px-2 text-sm font-medium" style={{ color: '#6b7280' }}>+₱</span>
               <input type="number" min="0" step="0.01"
                 value={modifier.price_delta === 0 ? '' : modifier.price_delta}
-                onChange={e => onChange({ price_delta: parseFloat(e.target.value) || 0 })}
+                onChange={e => patch({ price_delta: parseFloat(e.target.value) || 0 })}
                 placeholder="0.00"
                 className="w-20 px-2 py-1.5 text-sm outline-none"
                 style={{ color: '#111827' }} />
             </div>
             <div className="flex items-center gap-1.5">
               <span className="text-xs" style={{ color: '#6b7280' }}>Active</span>
-              <Toggle value={modifier.is_active} onChange={v => onChange({ is_active: v })} />
+              <Toggle value={modifier.is_active} onChange={v => patch({ is_active: v })} />
             </div>
           </div>
         </div>
         {canRemove && (
-          <button type="button" onClick={onRemove}
+          <button type="button" onClick={() => onRemove(modifier._key)}
             className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
             style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid rgba(220,38,38,0.2)' }}>
             ✕
@@ -296,23 +352,8 @@ function ModifierRow({
                 return (
                   <div key={li} className="rounded-md p-2 flex flex-col gap-2"
                     style={{ background: '#fff', border: '1px solid #e5e7eb' }}>
-                    <div className="flex flex-wrap gap-1">
-                      {stockItems.map(si => {
-                        const sel = line.stock_item_id === si.id
-                        return (
-                          <button key={si.id} type="button"
-                            onClick={() => updateLine(li, { stock_item_id: si.id })}
-                            className="px-2 py-1 rounded text-xs font-medium"
-                            style={{
-                              border:     `1.5px solid ${sel ? '#166534' : '#e5e7eb'}`,
-                              background: sel ? '#f0fdf4' : '#fff',
-                              color:      sel ? '#15803d' : '#6b7280',
-                            }}>
-                            {si.name}
-                          </button>
-                        )
-                      })}
-                    </div>
+                    <StockItemPicker stockItems={stockItems} selectedId={line.stock_item_id}
+                      onSelect={id => updateLine(li, { stock_item_id: id })} />
                     <div className="flex items-center gap-2">
                       <input type="number" min="0" step="0.001"
                         value={line.quantity_required || ''}
@@ -341,7 +382,7 @@ function ModifierRow({
       )}
     </div>
   )
-}
+})
 
 // ─── ModifierGroupEditForm ────────────────────────────────────────────────────
 
@@ -367,21 +408,22 @@ function ModifierGroupEditForm({
       ? existing.modifiers.map(m => ({ ...m, _key: m.id }))
       : [makeNewModifier()],
   )
-  const [saving,      setSaving]      = useState(false)
-  const [deleting,    setDeleting]    = useState(false)
-  const [deleteModal, setDeleteModal] = useState(false)
-  const [error,       setError]       = useState('')
+  const [saving,         setSaving]         = useState(false)
+  const [deleting,       setDeleting]       = useState(false)
+  const [deleteModal,    setDeleteModal]    = useState(false)
+  const [showAllOptions, setShowAllOptions] = useState(false)
+  const [error,          setError]          = useState('')
 
-  function updateModifier(key: string, patch: Partial<LocalModifier>) {
+  const updateModifier = useCallback((key: string, patch: Partial<LocalModifier>) => {
     setModifiers(prev => prev.map(m => m._key === key ? { ...m, ...patch } : m))
-  }
+  }, [])
 
-  function removeModifier(key: string) {
+  const removeModifier = useCallback((key: string) => {
     setModifiers(prev => {
       const next = prev.filter(m => m._key !== key)
       return next.length > 0 ? next : [makeNewModifier()]
     })
-  }
+  }, [])
 
   async function handleSave() {
     setError('')
@@ -506,19 +548,27 @@ function ModifierGroupEditForm({
           Each option appears as a selectable button when adding a product to the cart.
         </p>
         <div className="flex flex-col gap-3">
-          {modifiers.map((m, i) => (
+          {(showAllOptions ? modifiers : modifiers.slice(0, OPTIONS_COLLAPSE_THRESHOLD)).map((m, i) => (
             <ModifierRow
               key={m._key}
               modifier={m}
               index={i}
-              onChange={patch => updateModifier(m._key, patch)}
-              onRemove={() => removeModifier(m._key)}
+              onChange={updateModifier}
+              onRemove={removeModifier}
               canRemove={modifiers.length > 1 || m.name.trim() !== ''}
               stockItems={stockItems}
             />
           ))}
+          {!showAllOptions && modifiers.length > OPTIONS_COLLAPSE_THRESHOLD && (
+            <button type="button"
+              onClick={() => setShowAllOptions(true)}
+              className="py-2 rounded-lg text-sm font-medium"
+              style={{ border: '1px solid #d1d5db', color: '#6b7280' }}>
+              Show all {modifiers.length} options
+            </button>
+          )}
           <button type="button"
-            onClick={() => setModifiers(prev => [...prev, makeNewModifier()])}
+            onClick={() => { setModifiers(prev => [...prev, makeNewModifier()]); setShowAllOptions(true) }}
             className="py-2.5 rounded-lg text-sm font-semibold"
             style={{ border: '1.5px dashed #16a34a', color: '#15803d' }}>
             + Add Option
@@ -904,18 +954,9 @@ function ProductEditForm({
               {stockItems.length === 0
                 ? <p className="text-sm" style={{ color: '#9ca3af' }}>No active stock items. Create one in Stock Management.</p>
                 : (
-                  <div className="flex flex-wrap gap-2 mt-1">
-                    {stockItems.map(item => {
-                      const sel = stockItemId === item.id
-                      return (
-                        <button key={item.id} type="button" onClick={() => setStockItemId(item.id)}
-                          className="flex flex-col px-3 py-1.5 rounded-md text-left"
-                          style={{ border: `1.5px solid ${sel ? '#166534' : '#e5e7eb'}`, background: sel ? '#f0fdf4' : '#fff' }}>
-                          <span className="text-sm font-medium" style={{ color: sel ? '#15803d' : '#374151' }}>{item.name}</span>
-                          <span className="text-xs" style={{ color: '#9ca3af' }}>{item.quantity_on_hand} {item.unit} on hand</span>
-                        </button>
-                      )
-                    })}
+                  <div className="mt-1">
+                    <StockItemPicker stockItems={stockItems} selectedId={stockItemId ?? ''}
+                      onSelect={setStockItemId} showStock />
                   </div>
                 )
               }
@@ -934,28 +975,13 @@ function ProductEditForm({
                       return (
                         <div key={idx} className="rounded-md p-3 flex flex-col gap-2"
                           style={{ border: '1.5px solid #e5e7eb' }}>
-                          {/* Stock item chips */}
-                          <div className="flex flex-wrap gap-1.5">
-                            {stockItems.map(si => {
-                              const sel = line.stock_item_id === si.id
-                              return (
-                                <button key={si.id} type="button"
-                                  onClick={() => {
-                                    const u = [...recipeLines]
-                                    u[idx] = { ...u[idx], stock_item_id: si.id }
-                                    setRecipeLines(u)
-                                  }}
-                                  className="px-2 py-1 rounded-md text-xs font-medium"
-                                  style={{
-                                    border:     `1.5px solid ${sel ? '#166534' : '#e5e7eb'}`,
-                                    background: sel ? '#f0fdf4' : '#fff',
-                                    color:      sel ? '#15803d' : '#6b7280',
-                                  }}>
-                                  {si.name}
-                                </button>
-                              )
-                            })}
-                          </div>
+                          {/* Stock item picker */}
+                          <StockItemPicker stockItems={stockItems} selectedId={line.stock_item_id}
+                            onSelect={id => {
+                              const u = [...recipeLines]
+                              u[idx] = { ...u[idx], stock_item_id: id }
+                              setRecipeLines(u)
+                            }} />
                           {/* Qty + unit + remove */}
                           <div className="flex items-center gap-2">
                             <input type="number" min="0" step="0.001"
