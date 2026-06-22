@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { memo, useCallback, useEffect, useState } from 'react'
 import { getDocs, setDoc, addDoc, deleteDoc, doc, query, orderBy } from 'firebase/firestore'
 import { db } from '@/firebase/config'
 import { modGroupsCol, stockCol } from '@/firebase/collections'
@@ -74,13 +74,13 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
 
 // ─── ModifierRow ──────────────────────────────────────────────────────────────
 
-function ModifierRow({
+const ModifierRow = memo(function ModifierRow({
   modifier, index, onChange, onRemove, canRemove, stockItems,
 }: {
   modifier:   LocalModifier
   index:      number
-  onChange:   (patch: Partial<LocalModifier>) => void
-  onRemove:   () => void
+  onChange:   (key: string, patch: Partial<LocalModifier>) => void
+  onRemove:   (key: string) => void
   canRemove:  boolean
   stockItems: StockItem[]
 }) {
@@ -88,20 +88,24 @@ function ModifierRow({
   const validLines = lines.filter(l => l.stock_item_id && l.quantity_required > 0)
   const [showRecipe, setShowRecipe] = useState(lines.length > 0)
 
-  function updateLine(i: number, patch: Partial<RecipeLine>) {
-    onChange({ recipe_lines: lines.map((l, idx) => idx === i ? { ...l, ...patch } : l) })
+  function patch(p: Partial<LocalModifier>) {
+    onChange(modifier._key, p)
+  }
+
+  function updateLine(i: number, p: Partial<RecipeLine>) {
+    patch({ recipe_lines: lines.map((l, idx) => idx === i ? { ...l, ...p } : l) })
   }
 
   function addLine() {
-    onChange({ recipe_lines: [...lines, { stock_item_id: '', quantity_required: 0 }] })
+    patch({ recipe_lines: [...lines, { stock_item_id: '', quantity_required: 0 }] })
   }
 
   function removeLine(i: number) {
-    onChange({ recipe_lines: lines.filter((_, idx) => idx !== i) })
+    patch({ recipe_lines: lines.filter((_, idx) => idx !== i) })
   }
 
   function toggleRecipe() {
-    if (showRecipe && lines.length > 0) onChange({ recipe_lines: [] })
+    if (showRecipe && lines.length > 0) patch({ recipe_lines: [] })
     setShowRecipe(v => !v)
   }
 
@@ -117,7 +121,7 @@ function ModifierRow({
 
         {/* Fields */}
         <div className="flex flex-col gap-2 flex-1 min-w-0">
-          <input type="text" value={modifier.name} onChange={e => onChange({ name: e.target.value })}
+          <input type="text" value={modifier.name} onChange={e => patch({ name: e.target.value })}
             placeholder="Option name (e.g. Extra Cream, Large)"
             className="w-full rounded-md px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-green-600"
             style={{ border: '1px solid #d1d5db', color: '#111827' }} />
@@ -129,7 +133,7 @@ function ModifierRow({
               <span className="px-2 text-sm font-medium" style={{ color: '#6b7280' }}>+₱</span>
               <input type="number" min="0" step="0.01"
                 value={modifier.price_delta === 0 ? '' : modifier.price_delta}
-                onChange={e => onChange({ price_delta: parseFloat(e.target.value) || 0 })}
+                onChange={e => patch({ price_delta: parseFloat(e.target.value) || 0 })}
                 placeholder="0.00"
                 className="w-20 px-2 py-1.5 text-sm outline-none"
                 style={{ color: '#111827' }} />
@@ -138,14 +142,14 @@ function ModifierRow({
             {/* Active toggle */}
             <div className="flex items-center gap-1.5">
               <span className="text-xs" style={{ color: '#6b7280' }}>Active</span>
-              <Toggle value={modifier.is_active} onChange={v => onChange({ is_active: v })} />
+              <Toggle value={modifier.is_active} onChange={v => patch({ is_active: v })} />
             </div>
           </div>
         </div>
 
         {/* Remove */}
         {canRemove && (
-          <button type="button" onClick={onRemove}
+          <button type="button" onClick={() => onRemove(modifier._key)}
             className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
             style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid rgba(220,38,38,0.2)' }}>
             ✕
@@ -228,7 +232,7 @@ function ModifierRow({
       )}
     </div>
   )
-}
+})
 
 // ─── ModifierGroupEditForm ────────────────────────────────────────────────────
 
@@ -259,16 +263,16 @@ function ModifierGroupEditForm({
   const [deleteModal, setDeleteModal] = useState(false)
   const [error,       setError]       = useState('')
 
-  function updateModifier(key: string, patch: Partial<LocalModifier>) {
+  const updateModifier = useCallback((key: string, patch: Partial<LocalModifier>) => {
     setModifiers(prev => prev.map(m => m._key === key ? { ...m, ...patch } : m))
-  }
+  }, [])
 
-  function removeModifier(key: string) {
+  const removeModifier = useCallback((key: string) => {
     setModifiers(prev => {
       const next = prev.filter(m => m._key !== key)
       return next.length > 0 ? next : [makeNewModifier()]
     })
-  }
+  }, [])
 
   async function handleSave() {
     setError('')
@@ -407,8 +411,8 @@ function ModifierGroupEditForm({
               key={m._key}
               modifier={m}
               index={i}
-              onChange={patch => updateModifier(m._key, patch)}
-              onRemove={() => removeModifier(m._key)}
+              onChange={updateModifier}
+              onRemove={removeModifier}
               canRemove={modifiers.length > 1 || m.name.trim() !== ''}
               stockItems={stockItems}
             />
