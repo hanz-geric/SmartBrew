@@ -1298,7 +1298,7 @@ export default function Products() {
                         style={{ border: '1px solid #e5e7eb' }}
                         onClick={() => setView({ kind: 'editProduct', id: p.id })}>
                         {p.image && (
-                          <img src={p.image} alt={p.name}
+                          <img src={p.image} alt={p.name} loading="lazy"
                             className="w-10 h-10 rounded-md object-cover shrink-0" />
                         )}
                         <div className="flex-1 min-w-0">
