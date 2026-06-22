@@ -692,7 +692,7 @@ function ProductEditForm({
     try {
       const baseData = {
         name:            trimmed,
-        description:     description.trim() || undefined,
+        description:     description.trim() || null,
         price:           priceNum,
         cost:            costNum,
         category_id:     primaryCatId,

@@ -68,7 +68,7 @@ export interface RecipeLine {
 export interface Product {
   id:              string;
   name:            string;
-  description?:    string;
+  description?:    string | null;
   price:           number;
   cost:            number;
   category_id:     string;
