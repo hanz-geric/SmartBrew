@@ -13,6 +13,8 @@ interface LocalModifier extends Modifier {
   _key: string
 }
 
+const OPTIONS_COLLAPSE_THRESHOLD = 15
+
 function makeKey() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2)
 }
@@ -258,10 +260,11 @@ function ModifierGroupEditForm({
       ? existing.modifiers.map(m => ({ ...m, _key: m.id }))
       : [makeNewModifier()],
   )
-  const [saving,      setSaving]      = useState(false)
-  const [deleting,    setDeleting]    = useState(false)
-  const [deleteModal, setDeleteModal] = useState(false)
-  const [error,       setError]       = useState('')
+  const [saving,         setSaving]         = useState(false)
+  const [deleting,       setDeleting]       = useState(false)
+  const [deleteModal,    setDeleteModal]    = useState(false)
+  const [showAllOptions, setShowAllOptions] = useState(false)
+  const [error,          setError]          = useState('')
 
   const updateModifier = useCallback((key: string, patch: Partial<LocalModifier>) => {
     setModifiers(prev => prev.map(m => m._key === key ? { ...m, ...patch } : m))
@@ -406,7 +409,7 @@ function ModifierGroupEditForm({
           Each option appears as a selectable button when adding a product to the cart.
         </p>
         <div className="flex flex-col gap-3">
-          {modifiers.map((m, i) => (
+          {(showAllOptions ? modifiers : modifiers.slice(0, OPTIONS_COLLAPSE_THRESHOLD)).map((m, i) => (
             <ModifierRow
               key={m._key}
               modifier={m}
@@ -417,8 +420,16 @@ function ModifierGroupEditForm({
               stockItems={stockItems}
             />
           ))}
+          {!showAllOptions && modifiers.length > OPTIONS_COLLAPSE_THRESHOLD && (
+            <button type="button"
+              onClick={() => setShowAllOptions(true)}
+              className="py-2 rounded-lg text-sm font-medium"
+              style={{ border: '1px solid #d1d5db', color: '#6b7280' }}>
+              Show all {modifiers.length} options
+            </button>
+          )}
           <button type="button"
-            onClick={() => setModifiers(prev => [...prev, makeNewModifier()])}
+            onClick={() => { setModifiers(prev => [...prev, makeNewModifier()]); setShowAllOptions(true) }}
             className="py-2.5 rounded-lg text-sm font-semibold"
             style={{ border: '1.5px dashed #16a34a', color: '#15803d' }}>
             + Add Option
