@@ -280,10 +280,24 @@ function UserEditForm({
                 className="px-4 py-2 rounded-lg text-sm font-semibold"
                 style={{ border: '1px solid #e5e7eb', color: '#374151' }}>Cancel</button>
               <button
-                onClick={() => { setToggleConfirm(false); setIsActive(v => !v) }}
-                className="px-4 py-2 rounded-lg text-sm font-semibold text-white"
+                disabled={saving}
+                onClick={async () => {
+                  const next = !isActive
+                  setError('')
+                  setSaving(true)
+                  try {
+                    await updateUserProfile(editUid!, { is_active: next })
+                    setIsActive(next)
+                    setToggleConfirm(false)
+                  } catch (e: unknown) {
+                    setError((e as Error).message || 'Failed to update status.')
+                  } finally {
+                    setSaving(false)
+                  }
+                }}
+                className="px-4 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
                 style={{ background: isActive ? '#dc2626' : '#166534' }}>
-                {isActive ? 'Deactivate' : 'Activate'}
+                {saving ? 'Saving…' : isActive ? 'Deactivate' : 'Activate'}
               </button>
             </div>
           </div>
