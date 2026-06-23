@@ -520,7 +520,7 @@ export default function Stock() {
     setAdjustError('')
     try {
       await updateDoc(doc(db, 'stock_items', target.id), { quantity_on_hand: increment(delta) })
-      const newQty = Math.max(0, target.quantity_on_hand + delta)
+      const newQty = target.quantity_on_hand + delta
       setItems(prev => prev.map(i => {
         if (i.id !== target.id) return i
         return { ...i, quantity_on_hand: newQty, stock_status: stockStatus(newQty, i.reorder_level) }
